@@ -1,6 +1,6 @@
 # Archived: Kernel sources have disappeared, does not build anymore
 # Reference: <https://postmarketos.org/devicepkg>
-maintainer="Hadi Charara <hadicharara@ymail.com>"
+maintainer="Ryan Brue <ryanbrue.dev@gmail.com>"
 pkgname=device-amazon-suez
 pkgdesc="Amazon Fire HD 10"
 pkgver=4
