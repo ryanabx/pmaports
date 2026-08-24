@@ -1,0 +1,26 @@
+Remove obsolete section definition
+
+The legacy ".text.init" section flag syntax (#alloc, #execinstr) is no
+longer understood by modern binutils, so building with newer binutils
+fails with:
+
+  arch/arm64/mm/proc.S:189: Error: junk at end of line, first unrecognized character is `#'
+
+Upstream Linux removed this line in commit f00083cae331 ("arm64: mm:
+place __cpu_setup in .text"): the ".text.init" section name was legacy
+and unused elsewhere, so the section assignment is dropped entirely and
+__cpu_setup simply lives in .text. Do the same here.
+
+diff --git a/arch/arm64/mm/proc.S b/arch/arm64/mm/proc.S
+index 387976102e14..4770b5078645 100644
+--- a/arch/arm64/mm/proc.S
++++ b/arch/arm64/mm/proc.S
+@@ -186,8 +186,6 @@
+ 	ret
+ ENDPROC(cpu_do_switch_mm)
+ 
+-	.section ".text.init", #alloc, #execinstr
+-
+ /*
+  *	__cpu_setup
+  *
