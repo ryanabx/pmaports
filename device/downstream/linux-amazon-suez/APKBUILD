@@ -3,7 +3,7 @@
 maintainer="Ryan Brue <ryanbrue.dev@gmail.com>"
 pkgname=linux-amazon-suez
 pkgver=3.18.19
-pkgrel=5
+pkgrel=6
 pkgdesc="Amazon Fire HD 10 kernel fork"
 arch="aarch64"
 _carch="arm64"
@@ -51,7 +51,7 @@ package() {
 
 sha512sums="
 32e06c12e5ae291d1d7535a25ceca5b8257b4b43d02cc3ad387061bb7ea3dc57eadfc7710f97f4d675c56d64fff7581fc0425998b1e999720367335e7c4726ef  linux-amazon-suez-566d913d996294ef920ddd45b3c6d024dd1b27e1.tar.gz
-eb70b859fb457f0b65935bd9f2f3aaaffdc8938cda53174d1bd42f4e3db57331ed0c744e9b91efaf5fd3132aacdd6b3b05a830e575e3b4ef793d643a76bff28b  config-amazon-suez.aarch64
+784ee7a8c2e2e3e010754667032a632b1502150205d166217657944d91bec4cadeba50643609b9319e40d14a8604f47d0e92bd3f6fb9a7785664dac2665e27bc  config-amazon-suez.aarch64
 2b48f1bf0e3f70703d2cdafc47d5e615cc7c56c70bec56b2e3297d3fa4a7a1321d649a8679614553dde8fe52ff1051dae38d5990e3744c9ca986d92187dcdbeb  gcc10-extern_YYLOC_global_declaration.patch
 455b185f2d7cd31612e5b321c514610e5f94d49a7c88fe76f5d667b2586ba71037828f095ff58620c68ff07a73d99ddcc43f083edd12157a9b678969a27c5251  section-text-init.patch
 "
