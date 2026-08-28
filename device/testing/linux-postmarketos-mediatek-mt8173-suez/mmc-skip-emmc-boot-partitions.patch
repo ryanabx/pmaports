@@ -1,0 +1,35 @@
+--- a/drivers/mmc/core/block.c
++++ b/drivers/mmc/core/block.c
+@@ -2949,7 +2949,31 @@
+ 		return 0;
+ 
+ 	for (idx = 0; idx < card->nr_parts; idx++) {
+-		if (card->part[idx].area_type & MMC_BLK_DATA_AREA_RPMB) {
++		if (card->part[idx].area_type & MMC_BLK_DATA_AREA_BOOT) {
++			/*
++			 * HACK (amazon-suez): do not expose the eMMC boot
++			 * partitions as block devices at all.
++			 *
++			 * On this MT8173 tablet, libblkid probing
++			 * /dev/mmcblk0boot0 hard-freezes the whole SoC: the
++			 * kernel stops entirely and mtk-wdt resets the board
++			 * ~31s later. A plain read of the same device -- both
++			 * sector 0 and its last sector -- succeeds, and every
++			 * one of the other 20 block devices reads fine, so
++			 * this is neither the CMD6 partition switch nor a
++			 * plain read. The pmOS initramfs calls
++			 * "blkid --uuid" to find the rootfs, which scans
++			 * every device in /proc/partitions and therefore
++			 * always hits boot0.
++			 *
++			 * Not creating the devices keeps them out of
++			 * /proc/partitions, so nothing can probe them. The
++			 * real bug is somewhere in the mmc/msdc path and is
++			 * still unidentified; this only buys a bootable
++			 * system in the meantime.
++			 */
++			continue;
++		} else if (card->part[idx].area_type & MMC_BLK_DATA_AREA_RPMB) {
+ 			/*
+ 			 * RPMB partitions does not provide block access, they
+ 			 * are only accessed using ioctl():s. Thus create
