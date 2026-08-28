@@ -1,6 +1,6 @@
 diff -urN dorig/arch/arm64/boot/dts/mediatek/Makefile dw8/arch/arm64/boot/dts/mediatek/Makefile
---- dorig/arch/arm64/boot/dts/mediatek/Makefile	2026-08-28 12:12:59.810846361 -0500
-+++ dw8/arch/arm64/boot/dts/mediatek/Makefile	2026-08-28 12:12:59.815168089 -0500
+--- dorig/arch/arm64/boot/dts/mediatek/Makefile	2026-08-28 16:24:05.724647961 -0500
++++ dw8/arch/arm64/boot/dts/mediatek/Makefile	2026-08-28 16:24:05.729875683 -0500
 @@ -93,6 +93,7 @@
  	mt7988a-bananapi-bpi-r4-pro-cn18.dtbo
  dtb-$(CONFIG_ARCH_MEDIATEK) += mt7988a-bananapi-bpi-r4-pro-8x-sd-cn18.dtb
@@ -11,8 +11,8 @@ diff -urN dorig/arch/arm64/boot/dts/mediatek/Makefile dw8/arch/arm64/boot/dts/me
  dtb-$(CONFIG_ARCH_MEDIATEK) += mt8173-elm-hana-rev7.dtb
 diff -urN dorig/arch/arm64/boot/dts/mediatek/mt8173-amazon-suez.dts dw8/arch/arm64/boot/dts/mediatek/mt8173-amazon-suez.dts
 --- dorig/arch/arm64/boot/dts/mediatek/mt8173-amazon-suez.dts	1969-12-31 18:00:00.000000000 -0600
-+++ dw8/arch/arm64/boot/dts/mediatek/mt8173-amazon-suez.dts	2026-08-28 12:13:11.297196952 -0500
-@@ -0,0 +1,462 @@
++++ dw8/arch/arm64/boot/dts/mediatek/mt8173-amazon-suez.dts	2026-08-28 16:24:05.750032072 -0500
+@@ -0,0 +1,511 @@
 +// SPDX-License-Identifier: (GPL-2.0 OR MIT)
 +/*
 + * Copyright (c) 2026 Ryan Brue <ryanbrue.dev@gmail.com>
@@ -374,6 +374,55 @@ diff -urN dorig/arch/arm64/boot/dts/mediatek/mt8173-amazon-suez.dts dw8/arch/arm
 + * Revisit if/when the Mali GPU is wired up.
 + */
 +/delete-node/ &mfg_async;
++
++&i2c0 {
++	/*
++	 * The capacitive touch controller. The vendor DTS (identical across
++	 * suez hvt/evt/dvt) describes it as:
++	 *
++	 *   cap_touch@38 {
++	 *       compatible = "mediatek,cap_touch";
++	 *       reg = <0x38>;
++	 *       interrupt-parent = <&pio>;
++	 *       interrupts = <14 IRQ_TYPE_EDGE_FALLING>;
++	 *       rst-gpio = <&pio6397 12 0>;
++	 *   };
++	 *
++	 * and the vendor kernel builds it with CONFIG_TOUCHSCREEN_MTK_FT5726,
++	 * i.e. a FocalTech FT5726. Mainline's edt-ft5x06 covers that part under
++	 * the "evervision,ev-ft5726" compatible (mapped to edt_ft5506_data).
++	 *
++	 * Reset is active low: the vendor driver drives the line to 0 to assert
++	 * reset and 1 to release it, so the mainline binding -- which requests
++	 * the GPIO as GPIOD_OUT_HIGH meaning "asserted" -- needs
++	 * GPIO_ACTIVE_LOW. It hangs off the PMIC's own pinctrl, which does
++	 * register a gpiochip (41 GPIOs on mt6397-pinctrl) now that pkgrel 30
++	 * instantiates the PMIC sub-devices.
++	 *
++	 * Supplies come from the vendor's &touch node: vtouch -> vgp3,
++	 * vtouchio -> vgp4.
++	 *
++	 * i2c0 only needs status = "okay"; mt8173.dtsi already supplies
++	 * pinctrl-0 = <&i2c0_pins_a>.
++	 *
++	 * Deliberately no touchscreen-size-x/y: edt-ft5x06 reads the geometry
++	 * from the chip, and the vendor's tpd-resolution = <720 1280> does not
++	 * match this 1200x1920 panel, so it is not a trustworthy source. Add
++	 * size/inversion/swap properties only if the axes actually come out
++	 * wrong.
++	 */
++	status = "okay";
++
++	touchscreen@38 {
++		compatible = "evervision,ev-ft5726";
++		reg = <0x38>;
++		interrupt-parent = <&pio>;
++		interrupts = <14 IRQ_TYPE_EDGE_FALLING>;
++		reset-gpios = <&mt6397pin 12 GPIO_ACTIVE_LOW>;
++		vcc-supply = <&mt6397_vgp3_reg>;
++		iovcc-supply = <&mt6397_vgp4_reg>;
++	};
++};
 +
 +&mmc0 {
 +	status = "okay";
