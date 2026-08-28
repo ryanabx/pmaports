@@ -1,8 +1,17 @@
+# SIZE BUDGET (measured, do not exceed):
+#   r27 without ftrace  = 27.71 MiB decompressed -> BOOTS
+#   r28 with ftrace     = 28.84 MiB decompressed -> DOES NOT BOOT
+#     (LK runs, shows the Amazon logo, never starts the kernel)
+# So the real ceiling is between 27.71 and 28.84 MiB, NOT "28 to 32" as the
+# comment below claims -- that older figure came from synthetic payloads.
+# FUNCTION_TRACER costs +1.13 MiB, so built-in code had to be trimmed to pay
+# for it. Note trimming sound/media/vcodec/mediatek-DRM saves NOTHING: they
+# are all =m, and modules are not part of the Image.
 # Kernel config based on: device/community/linux-postmarketos-mediatek-mt8173
 maintainer="Ryan Brue <ryanbrue.dev@gmail.com>"
 pkgname=linux-postmarketos-mediatek-mt8173-suez
 pkgver=7.1.8
-pkgrel=28
+pkgrel=29
 pkgdesc="Mainline kernel fork for the Amazon Fire HD 10 (2017)"
 arch="aarch64"
 _carch="arm64"
@@ -99,7 +108,7 @@ package() {
 
 sha512sums="
 e17057478fd498fd4d83c4b6d3712fdfc3c6ae1d077114ea74ee41186cbd75add292f5e5f810fdf41242fd506a476d34447392b1c8194b5e8a6af1a59ac48a74  linux-7.1.8.tar.xz
-8c4ceb3051fb86fc21e29ac326884698cacbb2bd71f4fc671411d15b6e7f9d5821f2d206b5a2765f6c7e1f0c44a7c80124cb0629afffade1712710f50e9e972b  config-postmarketos-mediatek-mt8173-suez.aarch64
+651c88c09e21a766dd99a06a0b8b8b52a6f5b207c782bb4004be918b17564ecf5c17e81db142a323411062031273d0ec6f87f594b8cd1b947041c4400f134aca  config-postmarketos-mediatek-mt8173-suez.aarch64
 901780c4c468ebf8b6af7c27530fafb0439dfae889208c35f22aa7447902078d147db69a1c8e2115cd13f51c641eef878d9335b7527dc7fa2240cd617e045aab  0001-resolve_btfids-preserve-parameter-names-when-process.patch
 aedbf42178f26a0b38b0deee02cbf24a7d3cfaf90cdcf30da12ff1cc334be1e14eada0d924b0082830812d16eebd432230a1476542d23238acd9da527973facf  0003-display-blank.patch
 3c6e5d84c6680c45a65cbf267680087d27fd450a00ab2517327e9d9b030019553184a58c5b9cccac02e58ba28dae862cdc3b566ab0f9e96ef72d569385800808  add-amazon-suez-dts.patch
