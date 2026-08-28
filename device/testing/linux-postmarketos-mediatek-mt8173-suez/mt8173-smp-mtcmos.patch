@@ -32,8 +32,8 @@ diff -urN dorig/arch/arm64/kernel/Makefile dw8/arch/arm64/kernel/Makefile
  obj-$(CONFIG_COMPAT)			+= sigreturn32.o
 diff -urN dorig/arch/arm64/kernel/smp_mtk.c dw8/arch/arm64/kernel/smp_mtk.c
 --- dorig/arch/arm64/kernel/smp_mtk.c	1969-12-31 18:00:00.000000000 -0600
-+++ dw8/arch/arm64/kernel/smp_mtk.c	2026-08-28 17:21:03.480584829 -0500
-@@ -0,0 +1,363 @@
++++ dw8/arch/arm64/kernel/smp_mtk.c	2026-08-28 17:43:18.269977982 -0500
+@@ -0,0 +1,403 @@
 +// SPDX-License-Identifier: GPL-2.0-only
 +/*
 + * MediaTek MT8173 secondary CPU bring-up.
@@ -391,9 +391,49 @@ diff -urN dorig/arch/arm64/kernel/smp_mtk.c dw8/arch/arm64/kernel/smp_mtk.c
 +	return mtk_cpu_power_on(cpu);
 +}
 +
++#ifdef CONFIG_HOTPLUG_CPU
++/*
++ * Hotplug matters here for more than unplugging: the A72 rail is an i2c
++ * regulator (MT6311) whose driver probes long after smp_init(), so those cores
++ * cannot be brought up at boot -- there is no supply yet. Booting with
++ * maxcpus=2 and onlining them once userspace is up is the only ordering that
++ * gives them a powered rail.
++ *
++ * Everything is delegated to PSCI. The MTCMOS domain is deliberately left
++ * powered on the way down: the power-down sequences are transcribed but
++ * unproven, and leaking a little power is a far better failure mode than
++ * wedging a core mid-teardown.
++ */
++static bool mtk_cpu_can_disable(unsigned int cpu)
++{
++	return cpu_psci_ops.cpu_can_disable(cpu);
++}
++
++static int mtk_cpu_disable(unsigned int cpu)
++{
++	return cpu_psci_ops.cpu_disable(cpu);
++}
++
++static void mtk_cpu_die(unsigned int cpu)
++{
++	cpu_psci_ops.cpu_die(cpu);
++}
++
++static int mtk_cpu_kill(unsigned int cpu)
++{
++	return cpu_psci_ops.cpu_kill(cpu);
++}
++#endif
++
 +const struct cpu_operations mtk_cpu_ops = {
 +	.name		= "mediatek,mt8173-smp",
 +	.cpu_init	= mtk_cpu_init,
 +	.cpu_prepare	= mtk_cpu_prepare,
 +	.cpu_boot	= mtk_cpu_boot,
++#ifdef CONFIG_HOTPLUG_CPU
++	.cpu_can_disable = mtk_cpu_can_disable,
++	.cpu_disable	= mtk_cpu_disable,
++	.cpu_die	= mtk_cpu_die,
++	.cpu_kill	= mtk_cpu_kill,
++#endif
 +};

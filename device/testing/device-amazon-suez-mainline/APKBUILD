@@ -3,7 +3,7 @@ maintainer="Ryan Brue <ryanbrue.dev@gmail.com>"
 pkgname=device-amazon-suez-mainline
 pkgdesc="Amazon Fire HD 10 (2017) (mainline)"
 pkgver=1
-pkgrel=14
+pkgrel=15
 url="https://postmarketos.org"
 license="MIT"
 arch="aarch64"
@@ -30,6 +30,6 @@ package() {
 
 sha512sums="
 2b67cd8aee55bb498674f0392d133f865ff9d6a4da5766ac9cc48a93371b6f248478cf1e16e2981ed087200c5b1d86492a266477ff38487201715196ff02f2e5  deviceinfo
-596ecf73e61b4b6bae5fd413c011fd1e04e1735c07d196e4297907191c7f162263c82e64e4f28962bee83329a0478250fd339c21d77869749f6d1248e525a695  kernel-cmdline.conf
+2908ae41691f537fb7c1f668b5fc17b2000d45eeecd5f5767089b9fe1d9f6ee0fc8e80f558ea5a20aea451af4101cea9654eaa038dcf1331ff38548ca1746eb5  kernel-cmdline.conf
 d89fa6205d2ec177514a6e47877f27c7c69745d30994e36597ac6940c114a71868940d7050ba67dc5a260dc338ca5d789c521e35c37d7f2d3645762ab02101a9  modules-initfs
 "
