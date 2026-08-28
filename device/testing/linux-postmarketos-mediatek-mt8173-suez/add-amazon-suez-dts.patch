@@ -1,0 +1,419 @@
+diff -urN dorig/arch/arm64/boot/dts/mediatek/Makefile dw8/arch/arm64/boot/dts/mediatek/Makefile
+--- dorig/arch/arm64/boot/dts/mediatek/Makefile	2026-08-09 13:26:58.000000000 -0500
++++ dw8/arch/arm64/boot/dts/mediatek/Makefile	2026-08-27 16:37:28.117653432 -0500
+@@ -93,6 +93,7 @@
+ 	mt7988a-bananapi-bpi-r4-pro-cn18.dtbo
+ dtb-$(CONFIG_ARCH_MEDIATEK) += mt7988a-bananapi-bpi-r4-pro-8x-sd-cn18.dtb
+ dtb-$(CONFIG_ARCH_MEDIATEK) += mt8167-pumpkin.dtb
++dtb-$(CONFIG_ARCH_MEDIATEK) += mt8173-amazon-suez.dtb
+ dtb-$(CONFIG_ARCH_MEDIATEK) += mt8173-elm.dtb
+ dtb-$(CONFIG_ARCH_MEDIATEK) += mt8173-elm-hana.dtb
+ dtb-$(CONFIG_ARCH_MEDIATEK) += mt8173-elm-hana-rev7.dtb
+diff -urN dorig/arch/arm64/boot/dts/mediatek/mt8173-amazon-suez.dts dw8/arch/arm64/boot/dts/mediatek/mt8173-amazon-suez.dts
+--- dorig/arch/arm64/boot/dts/mediatek/mt8173-amazon-suez.dts	1969-12-31 18:00:00.000000000 -0600
++++ dw8/arch/arm64/boot/dts/mediatek/mt8173-amazon-suez.dts	2026-08-27 16:37:28.137587419 -0500
+@@ -0,0 +1,404 @@
++// SPDX-License-Identifier: (GPL-2.0 OR MIT)
++/*
++ * Copyright (c) 2026 Ryan Brue <ryanbrue.dev@gmail.com>
++ *
++ * Amazon Fire HD 10 (2017), codename "suez".
++ */
++
++/dts-v1/;
++#include <dt-bindings/gpio/gpio.h>
++#include "mt8173.dtsi"
++
++/ {
++	model = "Amazon Fire HD 10 (2017)";
++	compatible = "mediatek,suez", "mediatek,mt8173";
++
++	/*
++	 * The vendor bootloader (LK) chooses which appended DTB to hand to the
++	 * kernel by board revision: shipping only the vendor "hvt" DTB does not
++	 * boot, shipping only the vendor "dvt" one does, and this unit reports
++	 * version = "dvt". A DTB LK does not select is silently ignored and the
++	 * kernel is never entered at all - which is why a mainline DTB carrying
++	 * neither property never got control.
++	 *
++	 * Setting both of these together is what LK accepts; which one alone is
++	 * sufficient has not been tested. Both are vendor-isms needed only to
++	 * get past LK - nothing in mainline binds to them - so they belong in
++	 * the boot-image packaging rather than here before any upstreaming.
++	 */
++	version = "dvt";
++
++	aliases {
++		serial0 = &uart0;
++	};
++
++	chosen {
++		#address-cells = <2>;
++		#size-cells = <2>;
++		ranges;
++
++		stdout-path = "serial0:921600n8";
++
++		/*
++		 * The bootloader initialises the DSI panel to draw its logo and
++		 * leaves it running. Describing that framebuffer gives a working
++		 * console long before there is a display driver, which is the
++		 * only way to see anything on a device with no exposed UART.
++		 *
++		 * Base address and size were read back from the running vendor
++		 * kernel: the bootloader passes them in the ATAG_VIDEOLFB it
++		 * hands over. NOTE: System RAM stopping at 0xb4bbffff is true
++		 * of the *downstream* kernel, whose vendor DT reserves this
++		 * window; LK's rewritten /memory node does not, so we reserve
++		 * it ourselves in reserved-memory below.
++		 */
++		framebuffer@b4bc0000 {
++			compatible = "simple-framebuffer";
++			reg = <0 0xb4bc0000 0 (1216 * 1920 * 4)>;
++			width = <1200>;
++			height = <1920>;
++			/*
++			 * Scanlines are padded to 1216 px (64-byte aligned):
++			 * the vendor mtkfb reports stride 4864, not 1200*4.
++			 * Getting this wrong shears the image 16 px per row.
++			 */
++			stride = <(1216 * 4)>;
++			format = "a8r8g8b8";
++		};
++	};
++
++	memory@40000000 {
++		device_type = "memory";
++		reg = <0 0x40000000 0 0x80000000>;
++	};
++
++	reserved-memory {
++		#address-cells = <2>;
++		#size-cells = <2>;
++		ranges;
++
++		/*
++		 * Deliberately NOT at 0x44400000. That window is the vendor
++		 * "ram_console", and TWRP's kernel re-initialises it on every
++		 * boot - which destroys the log in the very act of booting the
++		 * recovery you need in order to read it.
++		 *
++		 * Address chosen by measurement, not assumption. Dumped /dev/mem
++		 * from a booted downstream kernel: 0x90000000 (and 0x80000000)
++		 * read back readable and entirely zero, while 0x70000000,
++		 * 0xa0000000, 0xb0000000 and 0xb4000000 all held live data.
++		 *
++		 * Rejected candidates, all of which lose the log:
++		 *   0x44400000 - vendor "ram_console"; TWRP re-initialises it on
++		 *                boot, so booting the recovery you need in order to
++		 *                read the log is what destroys it.
++		 *   0x4bd00000 - vendor "mdump"; the vendor kernel puts its
++		 *                crash-dump handler *code* at the head, and the
++		 *                tail comes back zeroed.
++		 *   0xb4bc0000 - framebuffer carve-out; outside the vendor kernel's
++		 *                memory map, so /dev/mem cannot read it back.
++		 *
++		 * This is ordinary RAM rather than a vendor-reserved window, so
++		 * reserving it here keeps our kernel off it; the bet is that an
++		 * initramfs-only reader never allocates that high.
++		 */
++		ramoops@90000000 {
++			compatible = "ramoops";
++			reg = <0 0x90000000 0 0x80000>;
++			console-size = <0x40000>;
++			record-size = <0x8000>;
++		};
++
++	};
++};
++
++&uart0 {
++	status = "okay";
++};
++
++&pwrap {
++	pmic: pmic {
++		compatible = "mediatek,mt6397";
++		interrupts-extended = <&pio 11 IRQ_TYPE_LEVEL_HIGH>;
++		interrupt-controller;
++		#interrupt-cells = <2>;
++
++		regulators {
++			compatible = "mediatek,mt6397-regulator";
++
++			mt6397_vpca15_reg: buck_vpca15 {
++				regulator-name = "vpca15";
++				regulator-min-microvolt = < 700000>;
++				regulator-max-microvolt = <1350000>;
++				regulator-ramp-delay = <12500>;
++				regulator-always-on;
++			};
++
++			mt6397_vpca7_reg: buck_vpca7 {
++				regulator-name = "vpca7";
++				regulator-min-microvolt = < 700000>;
++				regulator-max-microvolt = <1350000>;
++				regulator-ramp-delay = <12500>;
++				regulator-enable-ramp-delay = <115>;
++			};
++
++			mt6397_vsramca15_reg: buck_vsramca15 {
++				regulator-name = "vsramca15";
++				regulator-min-microvolt = < 700000>;
++				regulator-max-microvolt = <1350000>;
++				regulator-ramp-delay = <12500>;
++				regulator-always-on;
++			};
++
++			mt6397_vsramca7_reg: buck_vsramca7 {
++				regulator-name = "vsramca7";
++				regulator-min-microvolt = < 700000>;
++				regulator-max-microvolt = <1350000>;
++				regulator-ramp-delay = <12500>;
++				regulator-always-on;
++			};
++
++			mt6397_vcore_reg: buck_vcore {
++				regulator-name = "vcore";
++				regulator-min-microvolt = < 700000>;
++				regulator-max-microvolt = <1350000>;
++				regulator-ramp-delay = <12500>;
++				regulator-always-on;
++			};
++
++			mt6397_vgpu_reg: buck_vgpu {
++				regulator-name = "vgpu";
++				regulator-min-microvolt = < 700000>;
++				regulator-max-microvolt = <1350000>;
++				regulator-ramp-delay = <12500>;
++				regulator-enable-ramp-delay = <115>;
++			};
++
++			mt6397_vdrm_reg: buck_vdrm {
++				regulator-name = "vdrm";
++				regulator-min-microvolt = <1200000>;
++				regulator-max-microvolt = <1400000>;
++				regulator-ramp-delay = <12500>;
++				regulator-always-on;
++			};
++
++			mt6397_vio18_reg: buck_vio18 {
++				regulator-name = "vio18";
++				regulator-min-microvolt = <1620000>;
++				regulator-max-microvolt = <1980000>;
++				regulator-ramp-delay = <12500>;
++				regulator-always-on;
++			};
++
++			mt6397_vtcxo_reg: ldo_vtcxo {
++				regulator-name = "vtcxo";
++				regulator-always-on;
++			};
++
++			mt6397_va28_reg: ldo_va28 {
++				regulator-name = "va28";
++				regulator-always-on;
++			};
++
++			mt6397_vcama_reg: ldo_vcama {
++				regulator-name = "vcama";
++				regulator-min-microvolt = <1500000>;
++				regulator-max-microvolt = <2800000>;
++				regulator-enable-ramp-delay = <218>;
++			};
++
++			mt6397_vio28_reg: ldo_vio28 {
++				regulator-name = "vio28";
++				regulator-always-on;
++			};
++
++			mt6397_vusb_reg: ldo_vusb {
++				regulator-name = "vusb";
++			};
++
++			mt6397_vmc_reg: ldo_vmc {
++				regulator-name = "vmc";
++				regulator-min-microvolt = <1800000>;
++				regulator-max-microvolt = <3300000>;
++				regulator-enable-ramp-delay = <218>;
++			};
++
++			mt6397_vmch_reg: ldo_vmch {
++				regulator-name = "vmch";
++				regulator-min-microvolt = <3000000>;
++				regulator-max-microvolt = <3300000>;
++				regulator-enable-ramp-delay = <218>;
++			};
++
++			mt6397_vemc_3v3_reg: ldo_vemc3v3 {
++				regulator-name = "vemc_3v3";
++				regulator-min-microvolt = <3000000>;
++				regulator-max-microvolt = <3300000>;
++				regulator-enable-ramp-delay = <218>;
++			};
++
++			mt6397_vgp1_reg: ldo_vgp1 {
++				regulator-name = "vcamd";
++				regulator-min-microvolt = <1220000>;
++				regulator-max-microvolt = <3300000>;
++				regulator-enable-ramp-delay = <240>;
++			};
++
++			mt6397_vgp2_reg: ldo_vgp2 {
++				regulator-name = "vcamio";
++				regulator-min-microvolt = <1000000>;
++				regulator-max-microvolt = <3300000>;
++				regulator-enable-ramp-delay = <218>;
++			};
++
++			mt6397_vgp3_reg: ldo_vgp3 {
++				regulator-name = "vcamaf";
++				regulator-min-microvolt = <1200000>;
++				regulator-max-microvolt = <3300000>;
++				regulator-enable-ramp-delay = <218>;
++			};
++
++			mt6397_vgp4_reg: ldo_vgp4 {
++				regulator-name = "vgp4";
++				regulator-min-microvolt = <1200000>;
++				regulator-max-microvolt = <3300000>;
++				regulator-enable-ramp-delay = <218>;
++			};
++
++			mt6397_vgp5_reg: ldo_vgp5 {
++				regulator-name = "vgp5";
++				regulator-min-microvolt = <1200000>;
++				regulator-max-microvolt = <3000000>;
++				regulator-enable-ramp-delay = <218>;
++			};
++
++			mt6397_vgp6_reg: ldo_vgp6 {
++				regulator-name = "vgp6";
++				regulator-min-microvolt = <1200000>;
++				regulator-max-microvolt = <3300000>;
++				regulator-enable-ramp-delay = <218>;
++			};
++
++			mt6397_vibr_reg: ldo_vibr {
++				regulator-name = "vibr";
++				regulator-min-microvolt = <1300000>;
++				regulator-max-microvolt = <3300000>;
++				regulator-enable-ramp-delay = <218>;
++			};
++		};
++	};
++};
++
++/*
++ * Delete the GPU power domain outright rather than supplying it.
++ *
++ * mtk-power-controller refuses to probe if power-domain@7 (mfg_async) has no
++ * supply, and without the power controller nothing gets power domains at all -
++ * 11271000.usb sits in "deferred probe pending" forever, so there is no USB
++ * gadget and no SSH. But giving it the MT6397 vgpu buck (as the vendor DTB
++ * does) makes the probe hang instead: the log stops immediately after
++ *
++ *   device: 'regulator:regulator.6--platform:...power-controller': device_add
++ *
++ * i.e. right after that supply link is created, and the SoC wedges until the
++ * watchdog fires.
++ *
++ * Nothing in mt8173.dtsi references mfg_async - there is no GPU node - so
++ * removing it costs us nothing we currently use, lets the power controller
++ * register the remaining domains (including USB), and sidesteps the hang.
++ * Revisit if/when the Mali GPU is wired up.
++ */
++/delete-node/ &mfg_async;
++
++&mmc0 {
++	status = "okay";
++	pinctrl-names = "default", "state_uhs";
++	pinctrl-0 = <&mmc0_pins_default>;
++	pinctrl-1 = <&mmc0_pins_uhs>;
++	bus-width = <8>;
++	max-frequency = <200000000>;
++	cap-mmc-highspeed;
++	mmc-hs200-1_8v;
++	cap-mmc-hw-reset;
++	mediatek,hs200-cmd-int-delay = <30>;
++	vmmc-supply = <&mt6397_vemc_3v3_reg>;
++	vqmmc-supply = <&mt6397_vio18_reg>;
++	/*
++	 * Reparent the MSDC50_0 mux to MSDCPLL_D2. Both the vendor DTB for
++	 * this board and upstream mt8173-elm do this; without it the
++	 * controller runs from the mux's power-on parent and the card fails
++	 * to initialise with -EILSEQ (-84) during HS200 tuning.
++	 */
++	assigned-clocks = <&topckgen CLK_TOP_MSDC50_0_SEL>;
++	assigned-clock-parents = <&topckgen CLK_TOP_MSDCPLL_D2>;
++	non-removable;
++};
++
++&pio {
++	mmc0_pins_default: mmc0-default-pins {
++		pins-cmd-dat {
++			pinmux = <MT8173_PIN_57_MSDC0_DAT0__FUNC_MSDC0_DAT0>,
++				 <MT8173_PIN_58_MSDC0_DAT1__FUNC_MSDC0_DAT1>,
++				 <MT8173_PIN_59_MSDC0_DAT2__FUNC_MSDC0_DAT2>,
++				 <MT8173_PIN_60_MSDC0_DAT3__FUNC_MSDC0_DAT3>,
++				 <MT8173_PIN_61_MSDC0_DAT4__FUNC_MSDC0_DAT4>,
++				 <MT8173_PIN_62_MSDC0_DAT5__FUNC_MSDC0_DAT5>,
++				 <MT8173_PIN_63_MSDC0_DAT6__FUNC_MSDC0_DAT6>,
++				 <MT8173_PIN_64_MSDC0_DAT7__FUNC_MSDC0_DAT7>,
++				 <MT8173_PIN_66_MSDC0_CMD__FUNC_MSDC0_CMD>;
++			input-enable;
++			bias-pull-up;
++		};
++
++		pins-clk {
++			pinmux = <MT8173_PIN_65_MSDC0_CLK__FUNC_MSDC0_CLK>;
++			bias-pull-down;
++		};
++
++		pins-rst {
++			pinmux = <MT8173_PIN_68_MSDC0_RST___FUNC_MSDC0_RSTB>;
++			bias-pull-up;
++		};
++	};
++
++	mmc0_pins_uhs: mmc0-uhs-pins {
++		pins-cmd-dat {
++			pinmux = <MT8173_PIN_57_MSDC0_DAT0__FUNC_MSDC0_DAT0>,
++				 <MT8173_PIN_58_MSDC0_DAT1__FUNC_MSDC0_DAT1>,
++				 <MT8173_PIN_59_MSDC0_DAT2__FUNC_MSDC0_DAT2>,
++				 <MT8173_PIN_60_MSDC0_DAT3__FUNC_MSDC0_DAT3>,
++				 <MT8173_PIN_61_MSDC0_DAT4__FUNC_MSDC0_DAT4>,
++				 <MT8173_PIN_62_MSDC0_DAT5__FUNC_MSDC0_DAT5>,
++				 <MT8173_PIN_63_MSDC0_DAT6__FUNC_MSDC0_DAT6>,
++				 <MT8173_PIN_64_MSDC0_DAT7__FUNC_MSDC0_DAT7>,
++				 <MT8173_PIN_66_MSDC0_CMD__FUNC_MSDC0_CMD>;
++			input-enable;
++			drive-strength = <6>;
++			bias-pull-up = <MTK_PUPD_SET_R1R0_01>;
++		};
++
++		pins-clk {
++			pinmux = <MT8173_PIN_65_MSDC0_CLK__FUNC_MSDC0_CLK>;
++			drive-strength = <6>;
++			bias-pull-down = <MTK_PUPD_SET_R1R0_10>;
++		};
++
++		pins-ds {
++			pinmux = <MT8173_PIN_67_MSDC0_DSL__FUNC_MSDC0_DSL>;
++			drive-strength = <8>;
++			bias-pull-down = <MTK_PUPD_SET_R1R0_10>;
++		};
++
++		pins-rst {
++			pinmux = <MT8173_PIN_68_MSDC0_RST___FUNC_MSDC0_RSTB>;
++			bias-pull-up;
++		};
++	};
++};
++
++&ssusb {
++	vusb33-supply = <&mt6397_vusb_reg>;
++	dr_mode = "peripheral";
++	maximum-speed = "high-speed";
++	status = "okay";
++};
