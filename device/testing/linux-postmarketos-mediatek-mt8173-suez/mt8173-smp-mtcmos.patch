@@ -1,0 +1,252 @@
+diff -urN dorig/arch/arm64/kernel/cpu_ops.c dw8/arch/arm64/kernel/cpu_ops.c
+--- dorig/arch/arm64/kernel/cpu_ops.c	2026-08-28 16:51:36.843112046 -0500
++++ dw8/arch/arm64/kernel/cpu_ops.c	2026-08-28 16:51:51.406360933 -0500
+@@ -19,11 +19,17 @@
+ extern const struct cpu_operations acpi_parking_protocol_ops;
+ #endif
+ extern const struct cpu_operations cpu_psci_ops;
++#ifdef CONFIG_ARCH_MEDIATEK
++extern const struct cpu_operations mtk_cpu_ops;
++#endif
+ 
+ static const struct cpu_operations *cpu_ops[NR_CPUS] __ro_after_init;
+ 
+ static const struct cpu_operations *const dt_supported_cpu_ops[] __initconst = {
+ 	&smp_spin_table_ops,
++#ifdef CONFIG_ARCH_MEDIATEK
++	&mtk_cpu_ops,
++#endif
+ 	&cpu_psci_ops,
+ 	NULL,
+ };
+diff -urN dorig/arch/arm64/kernel/Makefile dw8/arch/arm64/kernel/Makefile
+--- dorig/arch/arm64/kernel/Makefile	2026-08-28 16:51:36.841112029 -0500
++++ dw8/arch/arm64/kernel/Makefile	2026-08-28 16:51:51.406073007 -0500
+@@ -36,6 +36,7 @@
+ 			   syscall.o proton-pack.o idle.o patching.o pi/	\
+ 			   rsi.o jump_label.o
+ 
++obj-$(CONFIG_ARCH_MEDIATEK)		+= smp_mtk.o
+ obj-$(CONFIG_COMPAT)			+= sys32.o signal32.o			\
+ 					   sys_compat.o
+ obj-$(CONFIG_COMPAT)			+= sigreturn32.o
+diff -urN dorig/arch/arm64/kernel/smp_mtk.c dw8/arch/arm64/kernel/smp_mtk.c
+--- dorig/arch/arm64/kernel/smp_mtk.c	1969-12-31 18:00:00.000000000 -0600
++++ dw8/arch/arm64/kernel/smp_mtk.c	2026-08-28 16:52:44.448126688 -0500
+@@ -0,0 +1,216 @@
++// SPDX-License-Identifier: GPL-2.0-only
++/*
++ * MediaTek MT8173 secondary CPU bring-up.
++ *
++ * On this SoC, PSCI CPU_ON alone is not enough to start a secondary core: the
++ * firmware sets the core's entry point but leaves its MTCMOS power domain off,
++ * so the core never runs and the kernel reports
++ *
++ *   CPU1: failed to come online
++ *   CPU1: failed in unknown state : 0x0
++ *
++ * Boards that ship ARM Trusted Firmware (e.g. mt8173-elm) do not need this,
++ * because BL31 powers the domain itself. Amazon's firmware does not, and the
++ * vendor 3.18 kernel compensates in
++ * drivers/misc/mediatek/base/power/mt8173/mt_psci.c, whose "mt-boot" method is
++ * simply PSCI CPU_ON followed by spm_mtcmos_ctrl_cpu(cpu, STA_POWER_ON, 1).
++ * The register sequence below is that call, from .../mt8173/mtcmos.c.
++ *
++ * Only the A53 ("CA7") cluster is implemented. The A72 ("CA15") cluster uses a
++ * different sequence -- a shared SPM_CA15_L1_PWR_CON with per-core bits, and a
++ * different ordering -- and its cores also still lack a proc-supply, so
++ * bringing them up is deliberately refused rather than guessed at.
++ */
++
++#include <linux/bits.h>
++#include <linux/delay.h>
++#include <linux/io.h>
++#include <linux/of.h>
++#include <linux/of_address.h>
++#include <linux/printk.h>
++#include <linux/spinlock.h>
++
++#include <asm/cpu_ops.h>
++#include <asm/cputype.h>
++#include <asm/smp_plat.h>
++
++/*
++ * Declared locally in cpu_ops.c rather than in a header, so redeclare it here.
++ * Everything below delegates to it; this is a wrapper around PSCI, not a
++ * replacement for it.
++ */
++extern const struct cpu_operations cpu_psci_ops;
++
++/* SPM register offsets from the scpsys block at 0x10006000. */
++#define SPM_POWERON_CONFIG_SET	0x000
++#define SPM_PWR_STATUS		0x60c
++#define SPM_PWR_STATUS_2ND	0x610
++
++#define SPM_PROJECT_CODE	0xb16
++#define SPM_REGWR_EN		BIT(0)
++
++/* bits in a per-core SPM_CA7_CPUn_PWR_CON */
++#define PWR_RST_B		BIT(0)
++#define PWR_ISO			BIT(1)
++#define PWR_ON			BIT(2)
++#define PWR_ON_2ND		BIT(3)
++#define PWR_CLK_DIS		BIT(4)
++#define SRAM_CKISO		BIT(5)
++#define SRAM_ISOINT_B		BIT(6)
++
++/* bits in a per-core SPM_CA7_CPUn_L1_PDN */
++#define L1_PDN			BIT(0)
++#define L1_PDN_ACK		BIT(8)
++
++/* The vendor spins forever on these; bound it instead. */
++#define SPM_POLL_US		10000
++
++struct mtk_cpu_pwr {
++	u16 pwr_con;
++	u16 l1_pdn;
++	u32 status;
++};
++
++/*
++ * Indexed by the SPM's physical core id, which the vendor computes as
++ * aff0 + (aff1 << 2). The PWR_CON offsets are not contiguous, hence the table.
++ */
++static const struct mtk_cpu_pwr mt8173_ca7_pwr[] = {
++	{ .pwr_con = 0x200, .l1_pdn = 0x25c, .status = BIT(9)  },
++	{ .pwr_con = 0x218, .l1_pdn = 0x264, .status = BIT(10) },
++	{ .pwr_con = 0x21c, .l1_pdn = 0x26c, .status = BIT(11) },
++	{ .pwr_con = 0x220, .l1_pdn = 0x274, .status = BIT(12) },
++};
++
++static void __iomem *spm_base __ro_after_init;
++static DEFINE_SPINLOCK(spm_cpu_lock);
++
++static void spm_rmw(u32 off, u32 clear, u32 set)
++{
++	writel_relaxed((readl_relaxed(spm_base + off) & ~clear) | set,
++		       spm_base + off);
++}
++
++static int spm_wait(u32 off, u32 mask, u32 want)
++{
++	unsigned int us = 0;
++
++	while ((readl_relaxed(spm_base + off) & mask) != want) {
++		if (++us > SPM_POLL_US)
++			return -ETIMEDOUT;
++		udelay(1);
++	}
++
++	return 0;
++}
++
++static int mtk_cpu_power_on(unsigned int cpu)
++{
++	const struct mtk_cpu_pwr *p;
++	u64 mpidr = cpu_logical_map(cpu);
++	unsigned int aff0 = MPIDR_AFFINITY_LEVEL(mpidr, 0);
++	unsigned int aff1 = MPIDR_AFFINITY_LEVEL(mpidr, 1);
++	unsigned long flags;
++	int ret;
++
++	if (aff1 != 0 || aff0 >= ARRAY_SIZE(mt8173_ca7_pwr)) {
++		pr_err("CPU%u: MTCMOS power-up only implemented for the A53 cluster (mpidr %llx)\n",
++		       cpu, mpidr);
++		return -EOPNOTSUPP;
++	}
++
++	if (!spm_base)
++		return -ENODEV;
++
++	p = &mt8173_ca7_pwr[aff0];
++
++	/* unlock SPM register writes */
++	writel_relaxed((SPM_PROJECT_CODE << 16) | SPM_REGWR_EN,
++		       spm_base + SPM_POWERON_CONFIG_SET);
++
++	spin_lock_irqsave(&spm_cpu_lock, flags);
++
++	spm_rmw(p->pwr_con, 0, PWR_ON);
++	udelay(1);
++	spm_rmw(p->pwr_con, 0, PWR_ON_2ND);
++
++	ret = spm_wait(SPM_PWR_STATUS, p->status, p->status);
++	if (!ret)
++		ret = spm_wait(SPM_PWR_STATUS_2ND, p->status, p->status);
++	if (ret)
++		goto out;
++
++	spm_rmw(p->pwr_con, PWR_ISO, 0);
++	spm_rmw(p->l1_pdn, L1_PDN, 0);
++
++	ret = spm_wait(p->l1_pdn, L1_PDN_ACK, 0);
++	if (ret)
++		goto out;
++
++	udelay(1);
++	spm_rmw(p->pwr_con, 0, SRAM_ISOINT_B);
++	spm_rmw(p->pwr_con, SRAM_CKISO, 0);
++	spm_rmw(p->pwr_con, PWR_CLK_DIS, 0);
++	spm_rmw(p->pwr_con, 0, PWR_RST_B);
++
++out:
++	spin_unlock_irqrestore(&spm_cpu_lock, flags);
++
++	if (ret)
++		pr_err("CPU%u: timed out powering up the MTCMOS domain\n", cpu);
++
++	return ret;
++}
++
++static int __init mtk_cpu_init(unsigned int cpu)
++{
++	return cpu_psci_ops.cpu_init(cpu);
++}
++
++static int __init mtk_cpu_prepare(unsigned int cpu)
++{
++	struct device_node *np;
++
++	if (!spm_base) {
++		np = of_find_compatible_node(NULL, NULL,
++					     "mediatek,mt8173-scpsys");
++		if (!np) {
++			pr_err("no mediatek,mt8173-scpsys node; cannot power up secondaries\n");
++			return -ENODEV;
++		}
++
++		spm_base = of_iomap(np, 0);
++		of_node_put(np);
++
++		if (!spm_base) {
++			pr_err("failed to map the SPM registers\n");
++			return -ENOMEM;
++		}
++	}
++
++	return cpu_psci_ops.cpu_prepare(cpu);
++}
++
++static int mtk_cpu_boot(unsigned int cpu)
++{
++	int ret;
++
++	/*
++	 * Order matters and matches the vendor: PSCI CPU_ON first, so the
++	 * firmware has set the core's entry point, and only then power the
++	 * domain -- the final PWR_RST_B below is what actually releases the
++	 * core. Powering up first would release it towards an undefined entry.
++	 */
++	ret = cpu_psci_ops.cpu_boot(cpu);
++	if (ret)
++		return ret;
++
++	return mtk_cpu_power_on(cpu);
++}
++
++const struct cpu_operations mtk_cpu_ops = {
++	.name		= "mediatek,mt8173-smp",
++	.cpu_init	= mtk_cpu_init,
++	.cpu_prepare	= mtk_cpu_prepare,
++	.cpu_boot	= mtk_cpu_boot,
++};

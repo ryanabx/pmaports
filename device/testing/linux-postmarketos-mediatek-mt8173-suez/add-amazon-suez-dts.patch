@@ -1,6 +1,6 @@
 diff -urN dorig/arch/arm64/boot/dts/mediatek/Makefile dw8/arch/arm64/boot/dts/mediatek/Makefile
---- dorig/arch/arm64/boot/dts/mediatek/Makefile	2026-08-28 16:24:05.724647961 -0500
-+++ dw8/arch/arm64/boot/dts/mediatek/Makefile	2026-08-28 16:24:05.729875683 -0500
+--- dorig/arch/arm64/boot/dts/mediatek/Makefile	2026-08-28 16:53:37.276140889 -0500
++++ dw8/arch/arm64/boot/dts/mediatek/Makefile	2026-08-28 16:53:37.280424602 -0500
 @@ -93,6 +93,7 @@
  	mt7988a-bananapi-bpi-r4-pro-cn18.dtbo
  dtb-$(CONFIG_ARCH_MEDIATEK) += mt7988a-bananapi-bpi-r4-pro-8x-sd-cn18.dtb
@@ -11,8 +11,8 @@ diff -urN dorig/arch/arm64/boot/dts/mediatek/Makefile dw8/arch/arm64/boot/dts/me
  dtb-$(CONFIG_ARCH_MEDIATEK) += mt8173-elm-hana-rev7.dtb
 diff -urN dorig/arch/arm64/boot/dts/mediatek/mt8173-amazon-suez.dts dw8/arch/arm64/boot/dts/mediatek/mt8173-amazon-suez.dts
 --- dorig/arch/arm64/boot/dts/mediatek/mt8173-amazon-suez.dts	1969-12-31 18:00:00.000000000 -0600
-+++ dw8/arch/arm64/boot/dts/mediatek/mt8173-amazon-suez.dts	2026-08-28 16:24:05.750032072 -0500
-@@ -0,0 +1,511 @@
++++ dw8/arch/arm64/boot/dts/mediatek/mt8173-amazon-suez.dts	2026-08-28 16:53:37.298981798 -0500
+@@ -0,0 +1,531 @@
 +// SPDX-License-Identifier: (GPL-2.0 OR MIT)
 +/*
 + * Copyright (c) 2026 Ryan Brue <ryanbrue.dev@gmail.com>
@@ -523,4 +523,24 @@ diff -urN dorig/arch/arm64/boot/dts/mediatek/mt8173-amazon-suez.dts dw8/arch/arm
 +
 +&cpu1 {
 +	proc-supply = <&mt6397_vpca15_reg>;
++
++	/*
++	 * PSCI CPU_ON alone does not start this core. The firmware sets the
++	 * entry point but leaves the core's MTCMOS power domain off, so it
++	 * never runs:
++	 *   CPU1: failed to come online
++	 *   CPU1: failed in unknown state : 0x0
++	 * (plain "spin-table" at the vendor's cpu-release-addr fails the same
++	 * way, because the core is powered down rather than parked.)
++	 *
++	 * The vendor kernel's "mt-boot" is just PSCI CPU_ON followed by
++	 * spm_mtcmos_ctrl_cpu(cpu, STA_POWER_ON, 1); mt8173-smp-mtcmos.patch
++	 * adds that as a mainline enable-method. Boards with real ARM Trusted
++	 * Firmware (mt8173-elm) do not need it because BL31 powers the domain.
++	 *
++	 * The A72s are deliberately left on psci: their MTCMOS sequence
++	 * differs (shared SPM_CA15_L1_PWR_CON) and they still have no
++	 * proc-supply -- it would be the MT6311 on i2c1 @ 0x6B.
++	 */
++	enable-method = "mediatek,mt8173-smp";
 +};
