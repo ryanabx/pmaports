@@ -1,6 +1,6 @@
 diff -urN dorig/arch/arm64/boot/dts/mediatek/Makefile dw8/arch/arm64/boot/dts/mediatek/Makefile
 --- dorig/arch/arm64/boot/dts/mediatek/Makefile	2026-08-09 13:26:58.000000000 -0500
-+++ dw8/arch/arm64/boot/dts/mediatek/Makefile	2026-08-27 16:37:28.117653432 -0500
++++ dw8/arch/arm64/boot/dts/mediatek/Makefile	2026-08-27 23:56:47.832484463 -0500
 @@ -93,6 +93,7 @@
  	mt7988a-bananapi-bpi-r4-pro-cn18.dtbo
  dtb-$(CONFIG_ARCH_MEDIATEK) += mt7988a-bananapi-bpi-r4-pro-8x-sd-cn18.dtb
@@ -11,8 +11,8 @@ diff -urN dorig/arch/arm64/boot/dts/mediatek/Makefile dw8/arch/arm64/boot/dts/me
  dtb-$(CONFIG_ARCH_MEDIATEK) += mt8173-elm-hana-rev7.dtb
 diff -urN dorig/arch/arm64/boot/dts/mediatek/mt8173-amazon-suez.dts dw8/arch/arm64/boot/dts/mediatek/mt8173-amazon-suez.dts
 --- dorig/arch/arm64/boot/dts/mediatek/mt8173-amazon-suez.dts	1969-12-31 18:00:00.000000000 -0600
-+++ dw8/arch/arm64/boot/dts/mediatek/mt8173-amazon-suez.dts	2026-08-27 16:37:28.137587419 -0500
-@@ -0,0 +1,404 @@
++++ dw8/arch/arm64/boot/dts/mediatek/mt8173-amazon-suez.dts	2026-08-27 23:57:02.459843519 -0500
+@@ -0,0 +1,419 @@
 +// SPDX-License-Identifier: (GPL-2.0 OR MIT)
 +/*
 + * Copyright (c) 2026 Ryan Brue <ryanbrue.dev@gmail.com>
@@ -122,6 +122,21 @@ diff -urN dorig/arch/arm64/boot/dts/mediatek/mt8173-amazon-suez.dts dw8/arch/arm
 +			reg = <0 0x90000000 0 0x80000>;
 +			console-size = <0x40000>;
 +			record-size = <0x8000>;
++			/*
++			 * The freezes on this board are completely silent: the
++			 * kernel stops with no oops and no warning, and the
++			 * softlockup detector never fires, so interrupts are
++			 * not being serviced either. pstore-ftrace records
++			 * function entries into this persistent region, so
++			 * after the reset the tail of the trace shows what the
++			 * CPU was executing when it died. Needs
++			 * CONFIG_PSTORE_FTRACE and CONFIG_FUNCTION_TRACER, and
++			 * must be enabled at runtime via
++			 * /sys/kernel/debug/pstore/record_ftrace.
++			 * Region budget: 0x80000 = console 0x40000 +
++			 * ftrace 0x20000 + dmesg records 0x8000 each.
++			 */
++			ftrace-size = <0x20000>;
 +		};
 +
 +	};
