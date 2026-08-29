@@ -1,6 +1,6 @@
 diff -urN porig/drivers/gpu/drm/panel/Kconfig pnew/drivers/gpu/drm/panel/Kconfig
---- porig/drivers/gpu/drm/panel/Kconfig	2026-08-28 23:59:37.731913814 -0500
-+++ pnew/drivers/gpu/drm/panel/Kconfig	2026-08-28 23:59:37.733482848 -0500
+--- porig/drivers/gpu/drm/panel/Kconfig	2026-08-09 13:26:58.000000000 -0500
++++ pnew/drivers/gpu/drm/panel/Kconfig	2026-08-29 12:21:49.975233791 -0500
 @@ -635,6 +635,17 @@
  	  Say Y here if you want to enable support for the panels built
  	  around the Novatek NT39016 display controller.
@@ -20,8 +20,8 @@ diff -urN porig/drivers/gpu/drm/panel/Kconfig pnew/drivers/gpu/drm/panel/Kconfig
  	tristate "Olimex LCD-OLinuXino panel"
  	depends on OF
 diff -urN porig/drivers/gpu/drm/panel/Makefile pnew/drivers/gpu/drm/panel/Makefile
---- porig/drivers/gpu/drm/panel/Makefile	2026-08-28 23:59:37.733249941 -0500
-+++ pnew/drivers/gpu/drm/panel/Makefile	2026-08-28 23:59:37.733482848 -0500
+--- porig/drivers/gpu/drm/panel/Makefile	2026-08-09 13:26:58.000000000 -0500
++++ pnew/drivers/gpu/drm/panel/Makefile	2026-08-29 12:21:49.975233791 -0500
 @@ -62,6 +62,7 @@
  obj-$(CONFIG_DRM_PANEL_NOVATEK_NT37700F) += panel-novatek-nt37700f.o
  obj-$(CONFIG_DRM_PANEL_NOVATEK_NT37801) += panel-novatek-nt37801.o
@@ -32,8 +32,8 @@ diff -urN porig/drivers/gpu/drm/panel/Makefile pnew/drivers/gpu/drm/panel/Makefi
  obj-$(CONFIG_DRM_PANEL_ORISETECH_OTA5601A) += panel-orisetech-ota5601a.o
 diff -urN porig/drivers/gpu/drm/panel/panel-novatek-nt51021.c pnew/drivers/gpu/drm/panel/panel-novatek-nt51021.c
 --- porig/drivers/gpu/drm/panel/panel-novatek-nt51021.c	1969-12-31 18:00:00.000000000 -0600
-+++ pnew/drivers/gpu/drm/panel/panel-novatek-nt51021.c	2026-08-28 23:59:37.733482848 -0500
-@@ -0,0 +1,406 @@
++++ pnew/drivers/gpu/drm/panel/panel-novatek-nt51021.c	2026-08-29 12:21:49.976233799 -0500
+@@ -0,0 +1,424 @@
 +// SPDX-License-Identifier: GPL-2.0-only
 +/*
 + * Novatek NT51021 1200x1920 DSI video-mode panel
@@ -281,9 +281,27 @@ diff -urN porig/drivers/gpu/drm/panel/panel-novatek-nt51021.c pnew/drivers/gpu/d
 +static const struct drm_display_mode nt51021_mode = {
 +	.clock = 157462,
 +	.hdisplay = 1200,
++	/*
++	 * The vendor's hsync width is 1, and mtk_dsi cannot express that:
++	 *
++	 *   horizontal_sync_active_byte = vm->hsync_len * bpp - 10
++	 *
++	 * is -7 for hsync_len 1 at 24bpp, and the u32 it is stored in wraps to
++	 * 0xfffffff9. The DSI then waits out a four-billion-byte sync period,
++	 * never finishes a line, and so never raises start-of-frame -- which
++	 * also stalls the display mutex, since that is armed from DSI0's SOF.
++	 * The whole pipeline sits configured and idle and the panel stays black.
++	 *
++	 * Widen hsync to 8 and take those 7 pixels back out of the back porch,
++	 * so htotal, the pixel clock and the refresh rate are all unchanged.
++	 * The back porch register is unaffected too: it is computed from
++	 * (hback_porch + hsync_len), and that sum is still 33. In sync-event
++	 * mode -- which this panel uses -- the sync width is not transmitted as
++	 * a pulse anyway, so only the line total really matters here.
++	 */
 +	.hsync_start = 1200 + 110,
-+	.hsync_end = 1200 + 110 + 1,
-+	.htotal = 1200 + 110 + 1 + 32,
++	.hsync_end = 1200 + 110 + 8,
++	.htotal = 1200 + 110 + 8 + 25,
 +	.vdisplay = 1920,
 +	.vsync_start = 1920 + 11,
 +	.vsync_end = 1920 + 11 + 1,
