@@ -11,8 +11,8 @@ diff -urN dorig/arch/arm64/boot/dts/mediatek/Makefile dw8/arch/arm64/boot/dts/me
  dtb-$(CONFIG_ARCH_MEDIATEK) += mt8173-elm-hana-rev7.dtb
 diff -urN dorig/arch/arm64/boot/dts/mediatek/mt8173-amazon-suez.dts dw8/arch/arm64/boot/dts/mediatek/mt8173-amazon-suez.dts
 --- dorig/arch/arm64/boot/dts/mediatek/mt8173-amazon-suez.dts	1969-12-31 18:00:00.000000000 -0600
-+++ dw8/arch/arm64/boot/dts/mediatek/mt8173-amazon-suez.dts	2026-08-28 17:43:58.183188881 -0500
-@@ -0,0 +1,622 @@
++++ dw8/arch/arm64/boot/dts/mediatek/mt8173-amazon-suez.dts	2026-08-28 22:20:09.258016463 -0500
+@@ -0,0 +1,618 @@
 +// SPDX-License-Identifier: (GPL-2.0 OR MIT)
 +/*
 + * Copyright (c) 2026 Ryan Brue <ryanbrue.dev@gmail.com>
@@ -439,23 +439,19 @@ diff -urN dorig/arch/arm64/boot/dts/mediatek/mt8173-amazon-suez.dts dw8/arch/arm
 +
 +		regulators {
 +			/*
-+			 * Pinned at 1125000, the voltage the highest A72 OPP
-+			 * (2106 MHz) asks for, and always-on. Two reasons:
++			 * The A72 cluster supply. The vendor calls it
++			 * reg-ext-vpca57-supply; mainline mt8173-evb feeds the
++			 * same rail from a da9211, which this board does not
++			 * have.
 +			 *
-+			 * The rail comes up disabled, and this is an i2c
-+			 * regulator whose driver probes ~1.5 s in -- long after
-+			 * smp_init() -- so the A72s cannot be started at boot
-+			 * at all. They are onlined from userspace instead (see
-+			 * maxcpus in kernel-cmdline.conf), by which time
-+			 * always-on has energised the rail.
-+			 *
-+			 * Fixing the voltage rather than allowing the full
-+			 * range means a core is never undervolted for whatever
-+			 * frequency the bootloader left the CA72 clock at. The
-+			 * cost is that cluster1 gets no DVFS, since
-+			 * mediatek-cpufreq cannot set the per-OPP voltages.
-+			 * Relax to 828000-1393750 once the A72s are proven
-+			 * stable.
++			 * Give it the part's true range and let cpufreq do the
++			 * work. mediatek-cpufreq couples this against the A72's
++			 * Vsram (vsramca7) and must keep
++			 * 100mV < Vsram - Vproc < 200mV; constraining Vproc to a
++			 * single voltage defeats mtk_cpufreq_voltage_tracking()
++			 * and makes the machine hang under sustained four-core
++			 * load within a minute. With the real range it runs at
++			 * 2106000 indefinitely.
 +			 *
 +			 * Note 1400000 -- from both the vendor DTS and the
 +			 * mainline binding example -- is NOT reachable: the
@@ -463,8 +459,8 @@ diff -urN dorig/arch/arm64/boot/dts/mediatek/mt8173-amazon-suez.dts dw8/arch/arm
 +			 */
 +			mt6311_vcpu_reg: VDVFS {
 +				regulator-name = "VDVFS";
-+				regulator-min-microvolt = <1125000>;
-+				regulator-max-microvolt = <1125000>;
++				regulator-min-microvolt = <600000>;
++				regulator-max-microvolt = <1393750>;
 +				regulator-ramp-delay = <10000>;
 +				regulator-always-on;
 +			};
