@@ -1,6 +1,6 @@
 diff -urN dorig/arch/arm64/boot/dts/mediatek/Makefile dw8/arch/arm64/boot/dts/mediatek/Makefile
 --- dorig/arch/arm64/boot/dts/mediatek/Makefile	2026-08-09 13:26:58.000000000 -0500
-+++ dw8/arch/arm64/boot/dts/mediatek/Makefile	2026-08-29 02:57:09.645023899 -0500
++++ dw8/arch/arm64/boot/dts/mediatek/Makefile	2026-08-29 03:24:50.704450142 -0500
 @@ -93,6 +93,7 @@
  	mt7988a-bananapi-bpi-r4-pro-cn18.dtbo
  dtb-$(CONFIG_ARCH_MEDIATEK) += mt7988a-bananapi-bpi-r4-pro-8x-sd-cn18.dtb
@@ -11,8 +11,8 @@ diff -urN dorig/arch/arm64/boot/dts/mediatek/Makefile dw8/arch/arm64/boot/dts/me
  dtb-$(CONFIG_ARCH_MEDIATEK) += mt8173-elm-hana-rev7.dtb
 diff -urN dorig/arch/arm64/boot/dts/mediatek/mt8173-amazon-suez.dts dw8/arch/arm64/boot/dts/mediatek/mt8173-amazon-suez.dts
 --- dorig/arch/arm64/boot/dts/mediatek/mt8173-amazon-suez.dts	1969-12-31 18:00:00.000000000 -0600
-+++ dw8/arch/arm64/boot/dts/mediatek/mt8173-amazon-suez.dts	2026-08-29 02:57:09.646023907 -0500
-@@ -0,0 +1,852 @@
++++ dw8/arch/arm64/boot/dts/mediatek/mt8173-amazon-suez.dts	2026-08-29 03:24:50.705450151 -0500
+@@ -0,0 +1,868 @@
 +// SPDX-License-Identifier: (GPL-2.0 OR MIT)
 +/*
 + * Copyright (c) 2026 Ryan Brue <ryanbrue.dev@gmail.com>
@@ -489,8 +489,24 @@ diff -urN dorig/arch/arm64/boot/dts/mediatek/mt8173-amazon-suez.dts dw8/arch/arm
 +	max-frequency = <200000000>;
 +	cap-mmc-highspeed;
 +	mmc-hs200-1_8v;
++	/*
++	 * HS400. The vendor DTS for this board enables it with exactly the
++	 * delay values below, and upstream mt8173-elm uses the identical set --
++	 * two independent trees agreeing makes these SoC-level rather than
++	 * board-level numbers. The vendor spells them hs400_cmd_int_delay and
++	 * cmd_resp_sel = <0> (0 meaning rising); mainline's names are used here.
++	 *
++	 * NOT YET TESTED ON HARDWARE. If HS400 tuning fails the controller may
++	 * not initialise the eMMC at all, which means no rootfs, so this was
++	 * deliberately not flashed unattended. Recovery if it does fail is
++	 * TWRP, whose 3.18 vendor kernel drives this part in HS400 happily.
++	 */
++	mmc-hs400-1_8v;
++	hs400-ds-delay = <0x14015>;
 +	cap-mmc-hw-reset;
 +	mediatek,hs200-cmd-int-delay = <30>;
++	mediatek,hs400-cmd-int-delay = <14>;
++	mediatek,hs400-cmd-resp-sel-rising;
 +	vmmc-supply = <&mt6397_vemc_3v3_reg>;
 +	vqmmc-supply = <&mt6397_vio18_reg>;
 +	/*
