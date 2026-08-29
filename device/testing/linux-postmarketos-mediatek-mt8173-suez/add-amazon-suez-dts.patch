@@ -1,6 +1,6 @@
 diff -urN dorig/arch/arm64/boot/dts/mediatek/Makefile dw8/arch/arm64/boot/dts/mediatek/Makefile
 --- dorig/arch/arm64/boot/dts/mediatek/Makefile	2026-08-09 13:26:58.000000000 -0500
-+++ dw8/arch/arm64/boot/dts/mediatek/Makefile	2026-08-28 23:59:29.593410133 -0500
++++ dw8/arch/arm64/boot/dts/mediatek/Makefile	2026-08-29 00:51:22.561211056 -0500
 @@ -93,6 +93,7 @@
  	mt7988a-bananapi-bpi-r4-pro-cn18.dtbo
  dtb-$(CONFIG_ARCH_MEDIATEK) += mt7988a-bananapi-bpi-r4-pro-8x-sd-cn18.dtb
@@ -11,8 +11,8 @@ diff -urN dorig/arch/arm64/boot/dts/mediatek/Makefile dw8/arch/arm64/boot/dts/me
  dtb-$(CONFIG_ARCH_MEDIATEK) += mt8173-elm-hana-rev7.dtb
 diff -urN dorig/arch/arm64/boot/dts/mediatek/mt8173-amazon-suez.dts dw8/arch/arm64/boot/dts/mediatek/mt8173-amazon-suez.dts
 --- dorig/arch/arm64/boot/dts/mediatek/mt8173-amazon-suez.dts	1969-12-31 18:00:00.000000000 -0600
-+++ dw8/arch/arm64/boot/dts/mediatek/mt8173-amazon-suez.dts	2026-08-28 23:59:29.595410151 -0500
-@@ -0,0 +1,751 @@
++++ dw8/arch/arm64/boot/dts/mediatek/mt8173-amazon-suez.dts	2026-08-29 00:51:22.562211065 -0500
+@@ -0,0 +1,792 @@
 +// SPDX-License-Identifier: (GPL-2.0 OR MIT)
 +/*
 + * Copyright (c) 2026 Ryan Brue <ryanbrue.dev@gmail.com>
@@ -715,6 +715,47 @@ diff -urN dorig/arch/arm64/boot/dts/mediatek/mt8173-amazon-suez.dts dw8/arch/arm
 +			rom-val = /bits/ 8 <0xe0>;
 +		};
 +	};
++};
++
++/*
++ * The DSI D-PHY. mt8173.dtsi ships it disabled, and it is also the "hs" clock
++ * provider for dsi0:
++ *
++ *   clocks = <&mmsys CLK_MM_DSI0_ENGINE>, <&mmsys CLK_MM_DSI0_DIGITAL>,
++ *            <&mipi_tx0>;
++ *   clock-names = "engine", "digital", "hs";
++ *
++ * so leaving it disabled costs the clock, not just the PHY, and mtk-dsi fails
++ * its probe outright:
++ *
++ *   mtk-dsi 1401b000.dsi: error -ENOENT: Failed to get hs clock
++ *   mtk-dsi 1401b000.dsi: probe with driver mtk-dsi failed with error -2
++ *
++ * mt8173-elm enables it the same way, with nothing but a status.
++ */
++&mipi_tx0 {
++	status = "okay";
++};
++
++/*
++ * The display PWM. Nothing on this board uses it -- the LP8557 backlight is
++ * driven over I2C in register mode, and the vendor left its PWM-based variant
++ * commented out -- but mediatek-drm still needs the node to exist.
++ *
++ * mt8173's main display path is
++ *   OVL0 -> COLOR0 -> AAL0 -> OD0 -> RDMA0 -> UFOE -> DSI0 -> PWM0
++ * and mtk_ddp_path_available() requires a device node for *every* component in
++ * it. With pwm0 disabled the whole path is unavailable, so the DSI is not in
++ * any path mediatek-drm knows about and its bind fails:
++ *
++ *   [drm] Failed to find comp in ddp table, ret = -22
++ *   mediatek-drm: failed to bind 1401b000.dsi: -22
++ *
++ * OD0 and UFOE need no driver, so they never show up in the component match
++ * list; only their nodes matter, and mt8173.dtsi already enables those.
++ */
++&pwm0 {
++	status = "okay";
 +};
 +
 +&dsi0 {
