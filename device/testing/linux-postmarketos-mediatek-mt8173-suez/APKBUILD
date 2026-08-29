@@ -11,7 +11,7 @@
 maintainer="Ryan Brue <ryanbrue.dev@gmail.com>"
 pkgname=linux-postmarketos-mediatek-mt8173-suez
 pkgver=7.1.8
-pkgrel=41
+pkgrel=42
 pkgdesc="Mainline kernel fork for the Amazon Fire HD 10 (2017)"
 arch="aarch64"
 _carch="arm64"
@@ -75,6 +75,7 @@ source="
 	$_config
 	0001-resolve_btfids-preserve-parameter-names-when-process.patch
 	0003-display-blank.patch
+	mtk-dsi-force-cmd-mode.patch
 	add-amazon-suez-dts.patch
 	mt8173-smp-mtcmos.patch
 	panel-novatek-nt51021.patch
@@ -115,4 +116,5 @@ aedbf42178f26a0b38b0deee02cbf24a7d3cfaf90cdcf30da12ff1cc334be1e14eada0d924b00828
 5b731130743f759b8b83b32cf7145fe67b75b3ec707e6ef775a755ac2e6fa449b42fa784da71034070cb702a0b7b9a7728f81fb73a86b1ebf12d2fc696560533  add-amazon-suez-dts.patch
 dc890603f2404e5fabebaaff221a5344cb0cb72e3e0bcf0878c05c6a468271d38407c1e869356d816a58d03c78c16dac8b5bde473c40bd832fa473f697cc39a4  mt8173-smp-mtcmos.patch
 db0bf69188574d14a05db182cce30103cf0efb638aae7166d681a01622a8c58c062a5110222b5e4df8c6066c6fe230a6c8503f5771d3e92c3a5bf5e41cba19d4  panel-novatek-nt51021.patch
+4fabdfc09fd7ee57b94f5fa643ab1460ca372f1ce7f741744cc3a2dce5bbfca5700a6f969bb0a24dcc3eccfd0d3567479f169e0b01f139799510730a1e9de703  mtk-dsi-force-cmd-mode.patch
 "

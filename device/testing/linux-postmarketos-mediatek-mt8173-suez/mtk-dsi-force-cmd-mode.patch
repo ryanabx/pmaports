@@ -1,0 +1,33 @@
+diff -urN a/drivers/gpu/drm/mediatek/mtk_dsi.c b/drivers/gpu/drm/mediatek/mtk_dsi.c
+--- a/drivers/gpu/drm/mediatek/mtk_dsi.c	2026-08-29 01:34:43.524241517 -0500
++++ b/drivers/gpu/drm/mediatek/mtk_dsi.c	2026-08-29 01:34:43.524241517 -0500
+@@ -734,6 +734,29 @@
+ 		       dsi->regs + dsi->driver_data->reg_shadow_dbg_off);
+ 
+ 	mtk_dsi_reset_engine(dsi);
++
++	/*
++	 * Force command mode before anything can try to send a DCS command.
++	 *
++	 * mtk_dsi_reset_engine() does not touch DSI_MODE_CTRL, so whatever the
++	 * bootloader left there survives. On boards where the bootloader lights
++	 * the panel for a boot logo and hands it over still running -- the
++	 * Amazon Fire HD 10 does exactly this -- that leftover value is a video
++	 * mode, and the first mtk_dsi_host_transfer() takes the "already
++	 * streaming" path: it stops the stream and waits for VM_DONE, which
++	 * never arrives because nothing is actually being scanned out. The
++	 * panel's very first command then fails and it is never initialised:
++	 *
++	 *   [drm] Wait DSI IRQ(0x00000008) Timeout
++	 *   *ERROR* failed to switch cmd mode
++	 *   sending dcs data 8f a5 failed: -62
++	 *
++	 * Command mode is the right state to power on into regardless; video
++	 * mode is programmed by mtk_dsi_start() when the stream actually
++	 * starts.
++	 */
++	writel(CMD_MODE, dsi->regs + DSI_MODE_CTRL);
++
+ 	mtk_dsi_phy_timconfig(dsi);
+ 
+ 	mtk_dsi_ps_control(dsi, true);
