@@ -11,7 +11,7 @@
 maintainer="Ryan Brue <ryanbrue.dev@gmail.com>"
 pkgname=linux-postmarketos-mediatek-mt8173-suez
 pkgver=7.1.8
-pkgrel=47
+pkgrel=48
 pkgdesc="Mainline kernel fork for the Amazon Fire HD 10 (2017)"
 arch="aarch64"
 _carch="arm64"
@@ -80,6 +80,7 @@ source="
 	mt8173-smp-mtcmos.patch
 	panel-novatek-nt51021.patch
 	mtk-ovl-reset-bootloader-handover.patch
+	mt8173-disp-handover.patch
 "
 builddir="$srcdir/linux-${_kernver//_/-}"
 
@@ -119,4 +120,5 @@ aedbf42178f26a0b38b0deee02cbf24a7d3cfaf90cdcf30da12ff1cc334be1e14eada0d924b00828
 dc890603f2404e5fabebaaff221a5344cb0cb72e3e0bcf0878c05c6a468271d38407c1e869356d816a58d03c78c16dac8b5bde473c40bd832fa473f697cc39a4  mt8173-smp-mtcmos.patch
 a3bc9233f794a9c65f7614f10a2fe46e496e3634fb96a1f898d7dcdbd523ba018b05338588d84c0420d5dd7977399a3bb7fcc5f8fee10d2e0bb6e39bcbf97214  panel-novatek-nt51021.patch
 bd23dd05bdeae7c81ceae6f678d66af26703c93b6d3cc7b74fb36bccc8d365c90c575641afa93867ad6a5f459de17c0547c2945d0f1ec7bc443d147150f9e51f  mtk-ovl-reset-bootloader-handover.patch
+3a17e662cc8661c6372d38f1aebf10aab672c8c16a60dc3ae7149917584cacdf0ed31d62d37d436e1ea43af7eb8dbe21d75d2ebf33a620be10d952fbbef16a22  mt8173-disp-handover.patch
 "
