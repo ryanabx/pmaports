@@ -11,8 +11,8 @@ diff -urN dorig/arch/arm64/boot/dts/mediatek/Makefile dw8/arch/arm64/boot/dts/me
  dtb-$(CONFIG_ARCH_MEDIATEK) += mt8173-elm-hana-rev7.dtb
 diff -urN dorig/arch/arm64/boot/dts/mediatek/mt8173-amazon-suez.dts dw8/arch/arm64/boot/dts/mediatek/mt8173-amazon-suez.dts
 --- dorig/arch/arm64/boot/dts/mediatek/mt8173-amazon-suez.dts	1969-12-31 18:00:00.000000000 -0600
-+++ dw8/arch/arm64/boot/dts/mediatek/mt8173-amazon-suez.dts	2026-08-29 20:25:00.000000000 -0500
-@@ -0,0 +1,924 @@
++++ dw8/arch/arm64/boot/dts/mediatek/mt8173-amazon-suez.dts	2026-08-29 20:33:00.000000000 -0500
+@@ -0,0 +1,972 @@
 +// SPDX-License-Identifier: (GPL-2.0 OR MIT)
 +/*
 + * Copyright (c) 2026 Ryan Brue <ryanbrue.dev@gmail.com>
@@ -87,6 +87,46 @@ diff -urN dorig/arch/arm64/boot/dts/mediatek/mt8173-amazon-suez.dts dw8/arch/arm
 +	memory@40000000 {
 +		device_type = "memory";
 +		reg = <0 0x40000000 0 0x80000000>;
++	};
++
++	/*
++	 * Hall effect sensor, for the magnetic folio cover.
++	 *
++	 * The vendor describes it as a bare "hall,hall-sensor" node on pio 124
++	 * with IRQ_TYPE_LEVEL_LOW, which has no mainline driver; gpio-keys
++	 * reporting SW_LID is the mainline idiom, and mt8173-elm.dtsi does
++	 * exactly this for its own lid.
++	 *
++	 * Confirmed present on this unit before being described, because the
++	 * vendor DTS also lists parts that are not fitted (the STK3x1x and the
++	 * camera both fail to answer). Sampling the pin's input level through
++	 * the pinctrl register file while the folio was closed and reopened
++	 * gave 1 -> 0 on close and 0 -> 1 on open, so the sensor is real and
++	 * active low as the vendor says.
++	 *
++	 * Note pio 124 is KPCOL2, the keypad's third column. This board reuses
++	 * it for the hall sensor and only fits two keys, which is why the
++	 * keypad node above sees nothing on column 2.
++	 *
++	 * Deliberately NOT a wakeup-source, unlike elm: suspend has never been
++	 * exercised on this board and the reboot path already hangs, so arming
++	 * a wakeup here would be untested at best. systemd-logind would also
++	 * suspend on SW_LID by default, which is why
++	 * device-amazon-suez-mainline ships a HandleLidSwitch=ignore drop-in.
++	 * Revisit both together if suspend is ever made to work.
++	 */
++	lid-switch {
++		compatible = "gpio-keys";
++		pinctrl-names = "default";
++		pinctrl-0 = <&hall_pins>;
++
++		switch-lid {
++			label = "Hall Effect Sensor";
++			gpios = <&pio 124 GPIO_ACTIVE_LOW>;
++			linux,input-type = <EV_SW>;
++			linux,code = <SW_LID>;
++			debounce-interval = <20>;
++		};
 +	};
 +
 +	reserved-memory {
@@ -542,6 +582,14 @@ diff -urN dorig/arch/arm64/boot/dts/mediatek/mt8173-amazon-suez.dts dw8/arch/arm
 +
 +		pins-rst {
 +			pinmux = <MT8173_PIN_68_MSDC0_RST___FUNC_MSDC0_RSTB>;
++			bias-pull-up;
++		};
++	};
++
++	hall_pins: hall-pins {
++		pins-hall {
++			pinmux = <MT8173_PIN_124_KPCOL2__FUNC_GPIO124>;
++			input-enable;
 +			bias-pull-up;
 +		};
 +	};
