@@ -1,5 +1,6 @@
---- a/arch/arm64/boot/dts/mediatek/Makefile
-+++ b/arch/arm64/boot/dts/mediatek/Makefile
+diff -urN a/arch/arm64/boot/dts/mediatek/Makefile b/arch/arm64/boot/dts/mediatek/Makefile
+--- a/arch/arm64/boot/dts/mediatek/Makefile	2026-08-30 04:14:42.930544342 -0500
++++ b/arch/arm64/boot/dts/mediatek/Makefile	2026-08-30 04:14:42.931667166 -0500
 @@ -93,6 +93,7 @@
  	mt7988a-bananapi-bpi-r4-pro-cn18.dtbo
  dtb-$(CONFIG_ARCH_MEDIATEK) += mt7988a-bananapi-bpi-r4-pro-8x-sd-cn18.dtb
@@ -8,9 +9,10 @@
  dtb-$(CONFIG_ARCH_MEDIATEK) += mt8173-elm.dtb
  dtb-$(CONFIG_ARCH_MEDIATEK) += mt8173-elm-hana.dtb
  dtb-$(CONFIG_ARCH_MEDIATEK) += mt8173-elm-hana-rev7.dtb
---- a/arch/arm64/boot/dts/mediatek/mt8173-amazon-suez.dts
-+++ b/arch/arm64/boot/dts/mediatek/mt8173-amazon-suez.dts
-@@ -0,0 +1,1214 @@
+diff -urN a/arch/arm64/boot/dts/mediatek/mt8173-amazon-suez.dts b/arch/arm64/boot/dts/mediatek/mt8173-amazon-suez.dts
+--- a/arch/arm64/boot/dts/mediatek/mt8173-amazon-suez.dts	1969-12-31 18:00:00.000000000 -0600
++++ b/arch/arm64/boot/dts/mediatek/mt8173-amazon-suez.dts	2026-08-30 04:14:42.932752661 -0500
+@@ -0,0 +1,1305 @@
 +// SPDX-License-Identifier: (GPL-2.0 OR MIT)
 +/*
 + * Copyright (c) 2026 Ryan Brue <ryanbrue.dev@gmail.com>
@@ -54,6 +56,7 @@
 +		 */
 +		mmc0 = &mmc0;
 +		mmc1 = &mmc1;
++		mmc2 = &mmc3;
 +
 +		serial0 = &uart0;
 +	};
@@ -182,6 +185,24 @@
 +		compatible = "mediatek,mt8173-mt6391";
 +		mediatek,audio-codec = <&mt6397codec>;
 +		mediatek,platform = <&afe>;
++	};
++
++	/*
++	 * The always-on rail feeding the MT6630's SDIO interface. Not a real
++	 * switchable supply -- the chip's power control is its PMU_EN GPIO
++	 * (pio 8), not a regulator -- but the MMC core refuses to initialise
++	 * a card on a host whose ocr_avail is empty ("no support for card's
++	 * volts", seen on hardware), and ocr_avail comes from vmmc. A fixed
++	 * always-on 3.3 V regulator is the honest description of the rail and
++	 * gives the core a voltage window to accept the chip's OCR with.
++	 * mt8173-elm models its SDIO WiFi power the same way (sdio_fixed_3v3).
++	 */
++	wifi_fixed_3v3: regulator-wifi {
++		compatible = "regulator-fixed";
++		regulator-name = "wifi_fixed_3v3";
++		regulator-min-microvolt = <3300000>;
++		regulator-max-microvolt = <3300000>;
++		regulator-always-on;
 +	};
 +
 +	lid-switch {
@@ -712,8 +733,7 @@
 + *
 + * Note the vendor's &mmc3, also enabled downstream, is NOT this slot: it is
 + * non-removable with no card detect and hosts the MT6630 WiFi/BT combo over
-+ * SDIO. It stays disabled because that chip has no mainline driver at all;
-+ * see NEXT-GPU-AND-WIFI.md.
++ * SDIO; see the &mmc3 node below.
 + */
 +&mmc1 {
 +	status = "okay";
@@ -741,6 +761,41 @@
 +	cd-gpios = <&pio 1 GPIO_ACTIVE_HIGH>;
 +	vmmc-supply = <&mt6397_vmch_reg>;
 +	vqmmc-supply = <&mt6397_vmc_reg>;
++};
++
++/*
++ * The MT6630 WiFi/BT/GPS/FM combo chip, on SDIO. The vendor tree drives it
++ * with the 426k-line WMT/STP stack under drivers/misc/mediatek/connectivity;
++ * mainline has no driver for it (SDIO ID 0x037a:0x6630 appears in no upstream
++ * table). Enabling the host is still useful on its own: the chip enumerates
++ * once its PMU_EN (pio 8) and RST (pio 38) lines are driven high, which a
++ * future mt6630-wmt driver -- or a userspace power-up for bring-up -- can do.
++ *
++ * Properties follow the vendor &mmc3 node (suez_hvt.dts): 4-bit,
++ * non-removable, no card detect, no vmmc/vqmmc (the vendor node has none
++ * either; the pads are on an always-on rail and the chip's power is the
++ * PMU_EN GPIO, not a slot regulator). The vendor also claims SDR50/SDR104,
++ * but a 1.8 V signalling switch needs a vqmmc regulator we do not have, so
++ * UHS is left off and the slot runs at high-speed (50 MHz) -- plenty for
++ * bring-up.
++ *
++ * Pin lists are the vendor's (22-25 data, 27 cmd, 26 clk), structured like
++ * mt8173-elm's mmc3 groups. One vendor anomaly deliberately not copied: its
++ * mmc3_pins_default clk entry names pin 77 MSDC1_CLK -- the microSD slot's
++ * clock, which mmc1 owns here (pinctrl would reject the double claim). The
++ * vendor's UHS group has the real clk pin 26, whose config we use in both
++ * states.
++ */
++&mmc3 {
++	status = "okay";
++	pinctrl-names = "default", "state_uhs";
++	pinctrl-0 = <&mmc3_pins_default>;
++	pinctrl-1 = <&mmc3_pins_uhs>;
++	bus-width = <4>;
++	max-frequency = <200000000>;
++	cap-sd-highspeed;
++	non-removable;
++	vmmc-supply = <&wifi_fixed_3v3>;
 +};
 +
 +&pio {
@@ -783,6 +838,44 @@
 +		pins-clk {
 +			pinmux = <MT8173_PIN_77_MSDC1_CLK__FUNC_MSDC1_CLK>;
 +			drive-strength = <8>;
++			bias-pull-down = <MTK_PUPD_SET_R1R0_10>;
++		};
++	};
++
++	mmc3_pins_default: mmc3-default-pins {
++		pins-cmd-dat {
++			pinmux = <MT8173_PIN_22_MSDC3_DAT0__FUNC_MSDC3_DAT0>,
++				 <MT8173_PIN_23_MSDC3_DAT1__FUNC_MSDC3_DAT1>,
++				 <MT8173_PIN_24_MSDC3_DAT2__FUNC_MSDC3_DAT2>,
++				 <MT8173_PIN_25_MSDC3_DAT3__FUNC_MSDC3_DAT3>,
++				 <MT8173_PIN_27_MSDC3_CMD__FUNC_MSDC3_CMD>;
++			input-enable;
++			drive-strength = <4>;
++			bias-pull-up = <MTK_PUPD_SET_R1R0_10>;
++		};
++
++		pins-clk {
++			pinmux = <MT8173_PIN_26_MSDC3_CLK__FUNC_MSDC3_CLK>;
++			drive-strength = <4>;
++			bias-pull-down = <MTK_PUPD_SET_R1R0_10>;
++		};
++	};
++
++	mmc3_pins_uhs: mmc3-uhs-pins {
++		pins-cmd-dat {
++			pinmux = <MT8173_PIN_22_MSDC3_DAT0__FUNC_MSDC3_DAT0>,
++				 <MT8173_PIN_23_MSDC3_DAT1__FUNC_MSDC3_DAT1>,
++				 <MT8173_PIN_24_MSDC3_DAT2__FUNC_MSDC3_DAT2>,
++				 <MT8173_PIN_25_MSDC3_DAT3__FUNC_MSDC3_DAT3>,
++				 <MT8173_PIN_27_MSDC3_CMD__FUNC_MSDC3_CMD>;
++			input-enable;
++			drive-strength = <4>;
++			bias-pull-up = <MTK_PUPD_SET_R1R0_10>;
++		};
++
++		pins-clk {
++			pinmux = <MT8173_PIN_26_MSDC3_CLK__FUNC_MSDC3_CLK>;
++			drive-strength = <4>;
 +			bias-pull-down = <MTK_PUPD_SET_R1R0_10>;
 +		};
 +	};
