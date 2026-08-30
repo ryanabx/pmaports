@@ -2358,6 +2358,7 @@ CONFIG_UACCE=m
 # CONFIG_KEBA_CP500 is not set
 # CONFIG_AMD_SBRMI_I2C is not set
 # CONFIG_MISC_RP1 is not set
+CONFIG_MT6630_WMT=m
 # end of Misc devices
 
 #

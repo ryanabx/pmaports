@@ -11,7 +11,7 @@
 maintainer="Ryan Brue <ryanbrue.dev@gmail.com>"
 pkgname=linux-postmarketos-mediatek-mt8173-suez
 pkgver=7.1.8
-pkgrel=59
+pkgrel=60
 pkgdesc="Mainline kernel fork for the Amazon Fire HD 10 (2017)"
 arch="aarch64"
 _carch="arm64"
@@ -91,6 +91,7 @@ source="
 	powervr-mt8173-03-rogue-binding.patch
 	powervr-mt8173-04-dtsi-mfg-async-clock.patch
 	powervr-mt8173-05-dtsi-gpu-nodes.patch
+	mt6630-wmt.patch
 "
 builddir="$srcdir/linux-${_kernver//_/-}"
 
@@ -122,7 +123,7 @@ package() {
 
 sha512sums="
 e17057478fd498fd4d83c4b6d3712fdfc3c6ae1d077114ea74ee41186cbd75add292f5e5f810fdf41242fd506a476d34447392b1c8194b5e8a6af1a59ac48a74  linux-7.1.8.tar.xz
-0a955e296da37fbc9c146346ef226959a02bacab4c780e95e8ba9c3294a13d5e684b1035192fdb229c1514814b39f3445bde666497e82aecd45709d3da188bed  config-postmarketos-mediatek-mt8173-suez.aarch64
+fe5eaa3ba389477ee4ad37ddc1ed69cdf38735e2cbf65086e6a9264f05b95bf18824d525975f77141e3cd88f6f67eca5f8585be9debe6f251fcedbca5879bfa4  config-postmarketos-mediatek-mt8173-suez.aarch64
 901780c4c468ebf8b6af7c27530fafb0439dfae889208c35f22aa7447902078d147db69a1c8e2115cd13f51c641eef878d9335b7527dc7fa2240cd617e045aab  0001-resolve_btfids-preserve-parameter-names-when-process.patch
 aedbf42178f26a0b38b0deee02cbf24a7d3cfaf90cdcf30da12ff1cc334be1e14eada0d924b0082830812d16eebd432230a1476542d23238acd9da527973facf  0003-display-blank.patch
 4fabdfc09fd7ee57b94f5fa643ab1460ca372f1ce7f741744cc3a2dce5bbfca5700a6f969bb0a24dcc3eccfd0d3567479f169e0b01f139799510730a1e9de703  mtk-dsi-force-cmd-mode.patch
@@ -141,4 +142,5 @@ ef02c23489800e6857e66e6fe14f7b1fd3fbfbad3e5811467271e480d04d538fb09fd07b462cd2be
 22fdb6729897daab1f7e8583709a0322b784123189be010c0d97b97f6b17466c823cecb5277b867b0edb9c63f09f5d7f1e91a2f248ad9fcaff033a9822032a0f  powervr-mt8173-03-rogue-binding.patch
 9af906215604cbfaf6111beaefa0224a90b08f4fee34c90060ba524c6c2347ea9a663e774756aa50a2071c47e1760de2f82ff061e5453813e20ccc2d6dd0e16e  powervr-mt8173-04-dtsi-mfg-async-clock.patch
 14e806d0816fadd09cc65dac537470b36583ba25e240d851667aa89eb35ae88bf62bef4fb9f2e125d1d8eb257f4989239968e74d64e945842c0b5aa5395b8aad  powervr-mt8173-05-dtsi-gpu-nodes.patch
+8184eb2ca313ffab025440a0313dfcc39ceb6324c60bbb7f12ff4545d8022a64fa8e8add604753e911014990beffdb7340b4ac8b46abb43f095f6e0e5932b205  mt6630-wmt.patch
 "

@@ -1,0 +1,322 @@
+diff -urN a/drivers/misc/Kconfig b/drivers/misc/Kconfig
+--- a/drivers/misc/Kconfig	2026-08-30 04:27:04.177602556 -0500
++++ b/drivers/misc/Kconfig	2026-08-30 04:27:04.181209947 -0500
+@@ -661,4 +661,13 @@
+ source "drivers/misc/keba/Kconfig"
+ source "drivers/misc/amd-sbi/Kconfig"
+ source "drivers/misc/rp1/Kconfig"
++config MT6630_WMT
++	tristate "MediaTek MT6630 WMT SDIO bring-up transport"
++	depends on MMC
++	help
++	  Minimal bring-up skeleton for the MediaTek MT6630 combo chip on
++	  SDIO. Claims function 2 and reads the chip id/version registers
++	  over WMT. Not a functional Wi-Fi/BT driver. Say M here only for
++	  amazon-suez mainline bring-up.
++
+ endmenu
+diff -urN a/drivers/misc/Makefile b/drivers/misc/Makefile
+--- a/drivers/misc/Makefile	2026-08-30 04:27:04.179656671 -0500
++++ b/drivers/misc/Makefile	2026-08-30 04:27:04.182605061 -0500
+@@ -75,3 +75,4 @@
+ obj-y				+= keba/
+ obj-y				+= amd-sbi/
+ obj-$(CONFIG_MISC_RP1)		+= rp1/
++obj-$(CONFIG_MT6630_WMT)		+= mt6630-wmt.o
+diff -urN a/drivers/misc/mt6630-wmt.c b/drivers/misc/mt6630-wmt.c
+--- a/drivers/misc/mt6630-wmt.c	1969-12-31 18:00:00.000000000 -0600
++++ b/drivers/misc/mt6630-wmt.c	2026-08-30 04:27:04.183688255 -0500
+@@ -0,0 +1,293 @@
++// SPDX-License-Identifier: GPL-2.0
++/*
++ * Minimal WMT transport for the MediaTek MT6630 combo chip on SDIO.
++ *
++ * This is a bring-up skeleton, NOT a functional connectivity driver. It
++ * claims SDIO function 2 (the BGF/WMT control function), performs the
++ * driver-own handshake, and issues WMT register-read commands to read the
++ * chip's hardware-code and version registers -- i.e. it implements exactly
++ * the "chip answers WMT version query" milestone from MT6630-DESIGN.md
++ * section 9.2, and nothing beyond it. No patch download, no STP demux, no
++ * BT/Wi-Fi datapath.
++ *
++ * The protocol is documented in ~/suez-work/MT6630-DESIGN.md with vendor
++ * source citations; every magic number below has a section reference there.
++ *
++ * UNVERIFIED: written from the vendor sources and the design doc while the
++ * target device was wedged. It compiles as a module; it has never been
++ * loaded. Load only with the watchdog net armed.
++ */
++
++#include <linux/delay.h>
++#include <linux/kernel.h>
++#include <linux/unaligned.h>
++#include <linux/module.h>
++#include <linux/mmc/host.h>
++#include <linux/mmc/sdio_func.h>
++#include <linux/mmc/sdio_ids.h>
++
++#define MT6630_SDIO_DEVICE_ID	0x6630
++#define MT6630_WMT_FUNC		2	/* BGF/WMT control function (design doc 1.1) */
++#define MT6630_SDIO_BLK_SIZE	512	/* design doc 1.2 */
++
++/* STP-SDIO register map, function-2 I/O space (design doc 2.1) */
++#define CHLPCR	0x0004	/* ownership + host interrupt enable */
++#define CHISR	0x0010	/* host interrupt status */
++#define CHIER	0x0014	/* host interrupt enable mask */
++#define CTDR	0x0018	/* chip TX data register (host -> chip) */
++#define CRDR	0x001c	/* chip RX data register (chip -> host) */
++
++/* CHLPCR bits (design doc 2.2). Writes to CHLPCR use CMD52 byte writes to
++ * CHLPCR+1 carrying the high byte, per the COHEC_00006052 erratum (2.3). */
++#define C_FW_OWN_REQ_CLR	0x0200	/* write: request driver-own (wake) */
++#define C_FW_OWN_REQ_SET	0x0100	/* write: give ownership back to FW */
++#define C_FW_INT_EN_SET		0x0001	/* write: enable COM interrupt output */
++#define C_FW_COM_DRV_OWN	0x0100	/* read: 1 = driver owns the chip */
++
++/* CHISR/CHIER bits (design doc 2.2) */
++#define CHISR_RX_DONE		0x00000002
++#define CHISR_RX_PKT_LEN_MASK	0xffff0000
++#define CHISR_RX_PKT_LEN_SHIFT	16
++#define CHIER_INIT_VALUE	0xfffe	/* all ints except FW_OWN_BACK (design doc 2.2) */
++
++/* STP task IDs (design doc 4.1) */
++#define STP_TASK_WMT		4
++
++/* WMT packet (design doc 5.1) */
++#define WMT_PKT_TYPE_CMD	0x01
++#define WMT_PKT_TYPE_EVENT	0x02
++#define WMT_OPCODE_INT		0x08	/* register read/write */
++
++/* Chip-id / version registers, read via OPCODE_INT (design doc 5.2) */
++#define GEN_HVR			0x80000000	/* hardware version; E3 = 0x8A11 */
++#define GEN_FVR			0x80000004	/* firmware/ROM version */
++#define GEN_HCR			0x80000008	/* hardware code = chip id 0x6630 */
++#define GEN_REG_MASK		0x0000ffff
++
++/* own-clear poll: design doc 3.1 uses retry=1200 * 500us = 600ms */
++#define OWN_POLL_RETRIES	1200
++#define OWN_POLL_DELAY_US	500
++/* RX poll after a command: generous, this is bring-up only */
++#define RX_POLL_RETRIES		1000
++#define RX_POLL_DELAY_US	1000
++
++struct mt6630_wmt {
++	struct sdio_func *func;
++};
++
++/* CHLPCR write: CMD52 byte write of the high byte to CHLPCR+1 (design doc 2.3). */
++static int chlpcr_writeb(struct sdio_func *func, u16 val)
++{
++	int ret = 0;
++
++	sdio_writeb(func, (u8)(val >> 8), CHLPCR + 1, &ret);
++	return ret;
++}
++
++/* Claim ownership of the chip: own-clear, then poll CHLPCR bit8 (design doc 3.1). */
++static int mt6630_own_clear(struct sdio_func *func)
++{
++	int ret, i;
++	u32 lpcr;
++
++	ret = chlpcr_writeb(func, C_FW_OWN_REQ_CLR);
++	if (ret)
++		return ret;
++
++	for (i = 0; i < OWN_POLL_RETRIES; i++) {
++		lpcr = sdio_readl(func, CHLPCR, &ret);
++		if (ret)
++			return ret;
++		if (lpcr & C_FW_COM_DRV_OWN)
++			return 0;
++		udelay(OWN_POLL_DELAY_US);
++	}
++	return -ETIMEDOUT;
++}
++
++/*
++ * Build one WMT register-read command, wrapped in STP-SDIO framing
++ * (design doc 4.2 + 5.2), write it to CTDR, then read the event back from
++ * CRDR and extract the 32-bit value.
++ *
++ * Frame on the wire:
++ *   SDIO hdr(4) | STP hdr(4) | WMT-hdr(4) + WMT-SDU(16) | CRC=0x0000(2)
++ * WMT reg-read SDU: op=2(read) type=1(reg) rsvd count=1 addr(4) val(4) mask(4)
++ */
++static int mt6630_wmt_reg_read(struct mt6630_wmt *w, u32 addr, u32 mask, u32 *out)
++{
++	struct sdio_func *func = w->func;
++	/* WMT payload: 4-byte WMT header + 16-byte reg-rw SDU = 20 bytes */
++	const u16 wmt_len = 20;
++	/* STP payload length = the WMT bytes */
++	const u16 stp_payload = wmt_len;
++	/* total = SDIO(4) + STP(4) + wmt(20) + CRC(2) = 30, pad to 4 -> 32 */
++	u8 tx[32] = {0};
++	u8 rx[64] = {0};
++	u32 chisr, rx_len, val;
++	int ret, i;
++
++	/* SDIO header (design doc 4.2a): total length incl. this header. */
++	u16 sdio_total = 4 + 4 + wmt_len + 2;
++
++	tx[0] = sdio_total & 0xff;
++	tx[1] = (sdio_total >> 8) & 0xff;
++	/* tx[2], tx[3] reserved = 0 */
++
++	/* STP header (design doc 4.2b): 0x80, (type<<4)|len_hi, len_lo, 0 */
++	tx[4] = 0x80;
++	tx[5] = (STP_TASK_WMT << 4) | ((stp_payload >> 8) & 0x0f);
++	tx[6] = stp_payload & 0xff;
++	tx[7] = 0x00;
++
++	/* WMT header (design doc 5.1) */
++	tx[8]  = WMT_PKT_TYPE_CMD;
++	tx[9]  = WMT_OPCODE_INT;
++	tx[10] = (wmt_len - 4) & 0xff;	/* SDU length = 16 */
++	tx[11] = ((wmt_len - 4) >> 8) & 0xff;
++
++	/* WMT reg-rw SDU (design doc 5.2) */
++	tx[12] = 0x02;	/* op: read */
++	tx[13] = 0x01;	/* type: register */
++	tx[14] = 0x00;	/* reserved */
++	tx[15] = 0x01;	/* count = 1 */
++	put_unaligned_le32(addr, &tx[16]);
++	put_unaligned_le32(0,    &tx[20]);	/* value (ignored on read) */
++	put_unaligned_le32(mask, &tx[24]);
++
++	/* CRC placeholder = 0x0000 in SDIO mode (design doc 4.2b); tx[28..29] */
++	/* tx[30..31] = 4-byte alignment pad */
++
++	ret = sdio_writesb(func, CTDR, tx, sizeof(tx));
++	if (ret)
++		return ret;
++
++	/* Poll CHISR for RX_DONE (design doc 9.2 step 6). */
++	for (i = 0; i < RX_POLL_RETRIES; i++) {
++		chisr = sdio_readl(func, CHISR, &ret);
++		if (ret)
++			return ret;
++		if (chisr & CHISR_RX_DONE)
++			break;
++		udelay(RX_POLL_DELAY_US);
++	}
++	if (!(chisr & CHISR_RX_DONE))
++		return -ETIMEDOUT;
++
++	rx_len = (chisr & CHISR_RX_PKT_LEN_MASK) >> CHISR_RX_PKT_LEN_SHIFT;
++	if (rx_len < 4 + 4 + 16 || rx_len > sizeof(rx))
++		return -EPROTO;
++
++	ret = sdio_readsb(func, rx, CRDR, rx_len);
++	if (ret)
++		return ret;
++
++	/*
++	 * rx = SDIO hdr(4) | STP hdr(4) | WMT event.
++	 * WMT_SET_REG_RD_EVT (design doc 5.2): 02 08 04 00 00 00 00 01 addr(4) val(4)
++	 * so the value is at offset 8 (SDIO) + ... -> the WMT event starts at
++	 * rx[8]; value is the last 4 bytes of the 16-byte event = rx[8+12].
++	 */
++	if (rx[8] != WMT_PKT_TYPE_EVENT || rx[9] != WMT_OPCODE_INT)
++		return -EPROTO;
++
++	val = get_unaligned_le32(&rx[8 + 12]);
++	*out = val;
++	return 0;
++}
++
++static int mt6630_wmt_probe(struct sdio_func *func,
++			    const struct sdio_device_id *id)
++{
++	struct mt6630_wmt *w;
++	u32 hcr = 0, hvr = 0, fvr = 0;
++	int ret;
++
++	/* Only the WMT/BGF function; function 1 is Wi-Fi (design doc 1.1). */
++	if (func->num != MT6630_WMT_FUNC)
++		return -ENODEV;
++
++	w = devm_kzalloc(&func->dev, sizeof(*w), GFP_KERNEL);
++	if (!w)
++		return -ENOMEM;
++	w->func = func;
++	sdio_set_drvdata(func, w);
++
++	sdio_claim_host(func);
++
++	ret = sdio_enable_func(func);
++	if (ret)
++		goto out;
++
++	ret = sdio_set_block_size(func, MT6630_SDIO_BLK_SIZE);
++	if (ret)
++		goto out_disable;
++
++	ret = mt6630_own_clear(func);
++	if (ret) {
++		dev_err(&func->dev, "driver-own handshake failed: %d\n", ret);
++		goto out_disable;
++	}
++
++	/* Enable interrupts (design doc 6.3 steps 4-5). We poll rather than
++	 * use the IRQ, but the FW expects the COM interrupt enabled. */
++	sdio_writel(func, CHIER_INIT_VALUE, CHIER, &ret);
++	if (ret)
++		goto out_disable;
++	ret = chlpcr_writeb(func, C_FW_INT_EN_SET);
++	if (ret)
++		goto out_disable;
++
++	/* The milestone: read chip id and versions (design doc 9.2). */
++	ret = mt6630_wmt_reg_read(w, GEN_HCR, GEN_REG_MASK, &hcr);
++	if (ret) {
++		dev_err(&func->dev, "GEN_HCR read failed: %d\n", ret);
++		goto out_disable;
++	}
++	ret = mt6630_wmt_reg_read(w, GEN_HVR, GEN_REG_MASK, &hvr);
++	if (ret)
++		dev_warn(&func->dev, "GEN_HVR read failed: %d\n", ret);
++	ret = mt6630_wmt_reg_read(w, GEN_FVR, GEN_REG_MASK, &fvr);
++	if (ret)
++		dev_warn(&func->dev, "GEN_FVR read failed: %d\n", ret);
++
++	dev_info(&func->dev,
++		 "MT6630 WMT alive: chip id 0x%04x, hw ver 0x%04x, fw ver 0x%04x\n",
++		 hcr & 0xffff, hvr & 0xffff, fvr & 0xffff);
++	if ((hcr & 0xffff) != MT6630_SDIO_DEVICE_ID)
++		dev_warn(&func->dev, "unexpected chip id (wanted 0x6630)\n");
++
++	sdio_release_host(func);
++	return 0;
++
++out_disable:
++	sdio_disable_func(func);
++out:
++	sdio_release_host(func);
++	return ret;
++}
++
++static void mt6630_wmt_remove(struct sdio_func *func)
++{
++	sdio_claim_host(func);
++	sdio_disable_func(func);
++	sdio_release_host(func);
++}
++
++static const struct sdio_device_id mt6630_wmt_ids[] = {
++	{ SDIO_DEVICE(SDIO_VENDOR_ID_MEDIATEK, MT6630_SDIO_DEVICE_ID) },
++	{ /* end */ },
++};
++MODULE_DEVICE_TABLE(sdio, mt6630_wmt_ids);
++
++static struct sdio_driver mt6630_wmt_driver = {
++	.name		= "mt6630-wmt",
++	.id_table	= mt6630_wmt_ids,
++	.probe		= mt6630_wmt_probe,
++	.remove		= mt6630_wmt_remove,
++};
++module_sdio_driver(mt6630_wmt_driver);
++
++MODULE_AUTHOR("amazon-suez mainline bringup");
++MODULE_DESCRIPTION("Minimal WMT version-query transport for MT6630 on SDIO");
++MODULE_LICENSE("GPL");
