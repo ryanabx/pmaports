@@ -3,7 +3,7 @@ maintainer="Ryan Brue <ryanbrue.dev@gmail.com>"
 pkgname=device-amazon-suez-mainline
 pkgdesc="Amazon Fire HD 10 (2017) (mainline)"
 pkgver=1
-pkgrel=25
+pkgrel=26
 url="https://postmarketos.org"
 license="MIT"
 arch="aarch64"
@@ -92,7 +92,7 @@ package() {
 }
 
 sha512sums="
-eb92e49ec4b8b2ec34f7fcdeb0bb68eecec2c904ebd21c7a7d78712bd2426708757fce6a1ca86a4c46d5cc2e5c71737f22a8627ab8f1a5806a44b4b599cb5e45  61-powervr-mutter-ignore.rules
+24175a01baf284dfbb2393745f88ec8610c0e0fc828d65b50194cbed7e0013005d6584d6412dfbcc043d3882e6a8c5dec20449e0464b1fd8ec5f532ddb25a099  61-powervr-mutter-ignore.rules
 acbd142eb5a789d740ecfffed67f65e827fadc29f47e04bf4084e97152381ffc897f6f12b62fafc28ba8e4d12cacecdcc8b4c0b421fde9ce1261cf5c4889f043  amazon-suez-gpu.service
 a1c7602bfd1eb0b431c1e96d592dfaf5da7e5498c3adfad756b6d73fe37b7889ea6c6d0fb681727796a3c95cbd247040d764ba6f477354a43cf8836887ecbedd  deviceinfo
 3ee14222402ea8f7aa42712559a76fa87baafbe0b74052ee56ade4257775cf0efd9c841ed3cd7bfefbf3ddb7ee915fc6e0621ab9a6a36b6c5fd3cc844cd7de85  kernel-cmdline.conf

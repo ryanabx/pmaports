@@ -8,4 +8,8 @@
 # seconds after the powervr driver bound. Vulkan clients open the render
 # node (/dev/dri/renderD128) directly; hiding the card node from mutter
 # costs nothing.
-SUBSYSTEM=="drm", KERNEL=="card*", DRIVERS=="powervr", ENV{MUTTER_DEVICE_IGNORE}="1"
+# mutter-mobile checks the udev TAG "mutter-device-ignore" (its hotplug path
+# never reads the MUTTER_DEVICE_IGNORE property -- learned the hard way: a
+# mutter already running when the GPU binds would try to adopt card0, fail,
+# corrupt its EGL context, and die at the next screen fade). Set both forms.
+SUBSYSTEM=="drm", KERNEL=="card*", DRIVERS=="powervr", TAG+="mutter-device-ignore", ENV{MUTTER_DEVICE_IGNORE}="1"
