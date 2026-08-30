@@ -11,8 +11,8 @@ diff -urN dorig/arch/arm64/boot/dts/mediatek/Makefile dw8/arch/arm64/boot/dts/me
  dtb-$(CONFIG_ARCH_MEDIATEK) += mt8173-elm-hana-rev7.dtb
 diff -urN dorig/arch/arm64/boot/dts/mediatek/mt8173-amazon-suez.dts dw8/arch/arm64/boot/dts/mediatek/mt8173-amazon-suez.dts
 --- dorig/arch/arm64/boot/dts/mediatek/mt8173-amazon-suez.dts	1969-12-31 18:00:00.000000000 -0600
-+++ dw8/arch/arm64/boot/dts/mediatek/mt8173-amazon-suez.dts	2026-08-29 20:33:00.000000000 -0500
-@@ -0,0 +1,972 @@
++++ dw8/arch/arm64/boot/dts/mediatek/mt8173-amazon-suez.dts	2026-08-29 21:20:00.000000000 -0500
+@@ -0,0 +1,981 @@
 +// SPDX-License-Identifier: (GPL-2.0 OR MIT)
 +/*
 + * Copyright (c) 2026 Ryan Brue <ryanbrue.dev@gmail.com>
@@ -412,7 +412,16 @@ diff -urN dorig/arch/arm64/boot/dts/mediatek/mt8173-amazon-suez.dts dw8/arch/arm
 + * Nothing in mt8173.dtsi references mfg_async - there is no GPU node - so
 + * removing it costs us nothing we currently use, lets the power controller
 + * register the remaining domains (including USB), and sidesteps the hang.
-+ * Revisit if/when the Mali GPU is wired up.
++ *
++ * This is very unlikely ever to be revisited. mt8173's GPU is not a Mali --
++ * an earlier note here said so and was wrong. It is an Imagination PowerVR
++ * GX6250, Rogue Series6XT: the vendor tree carries the PowerVR DDK at
++ * drivers/misc/mediatek/gpu/mt8173/1.5_ED3830101 and selects the core header
++ * rgxcore_km_4.40.2.51.h, i.e. BVNC 4.40.2.51. So panfrost does not apply at
++ * all (its MediaTek list is mt8183/8186/8188/8192/8370, none of them this
++ * SoC), and mainline's own PowerVR driver only accepts BVNC 33.15.11.3 and
++ * 36.53.104.796, with 36.52.104.182 experimental. 4.40.2.51 is none of those.
++ * Treat the GPU as out of reach, like the MT6630 wifi and the MT6397 codec.
 + */
 +/delete-node/ &mfg_async;
 +
