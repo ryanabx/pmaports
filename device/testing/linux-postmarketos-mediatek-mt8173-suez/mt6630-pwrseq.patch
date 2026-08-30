@@ -1,0 +1,34 @@
+--- a/drivers/mmc/core/pwrseq_sd8787.c
++++ b/drivers/mmc/core/pwrseq_sd8787.c
+@@ -78,9 +78,31 @@
+ 	.power_off = mmc_pwrseq_wilc1000_power_off,
+ };
+ 
++static void mmc_pwrseq_mt6630_pre_power_on(struct mmc_host *host)
++{
++	struct mmc_pwrseq_sd8787 *pwrseq = to_pwrseq_sd8787(host->pwrseq);
++
++	/* The pwrdn_gpio is PMU_EN, reset_gpio is RST. Vendor sequence:
++	 * both low (off stable), PMU_EN up (reset stable), RST up (on
++	 * stable). */
++	gpiod_set_value_cansleep(pwrseq->pwrdn_gpio, 0);
++	gpiod_set_value_cansleep(pwrseq->reset_gpio, 0);
++	msleep(20);
++	gpiod_set_value_cansleep(pwrseq->pwrdn_gpio, 1);
++	msleep(50);
++	gpiod_set_value_cansleep(pwrseq->reset_gpio, 1);
++	msleep(50);
++}
++
++static const struct mmc_pwrseq_ops mmc_pwrseq_mt6630_ops = {
++	.pre_power_on = mmc_pwrseq_mt6630_pre_power_on,
++	.power_off = mmc_pwrseq_wilc1000_power_off,
++};
++
+ static const struct of_device_id mmc_pwrseq_sd8787_of_match[] = {
+ 	{ .compatible = "mmc-pwrseq-sd8787", .data = &mmc_pwrseq_sd8787_ops },
+ 	{ .compatible = "mmc-pwrseq-wilc1000", .data = &mmc_pwrseq_wilc1000_ops },
++	{ .compatible = "mmc-pwrseq-mt6630", .data = &mmc_pwrseq_mt6630_ops },
+ 	{/* sentinel */},
+ };
+ MODULE_DEVICE_TABLE(of, mmc_pwrseq_sd8787_of_match);

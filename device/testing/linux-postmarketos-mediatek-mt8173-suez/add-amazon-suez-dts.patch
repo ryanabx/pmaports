@@ -11,7 +11,7 @@ diff -urN a/arch/arm64/boot/dts/mediatek/Makefile b/arch/arm64/boot/dts/mediatek
  dtb-$(CONFIG_ARCH_MEDIATEK) += mt8173-elm-hana-rev7.dtb
 --- a/arch/arm64/boot/dts/mediatek/mt8173-amazon-suez.dts
 +++ b/arch/arm64/boot/dts/mediatek/mt8173-amazon-suez.dts
-@@ -0,0 +1,1303 @@
+@@ -0,0 +1,1317 @@
 +// SPDX-License-Identifier: (GPL-2.0 OR MIT)
 +/*
 + * Copyright (c) 2026 Ryan Brue <ryanbrue.dev@gmail.com>
@@ -202,6 +202,19 @@ diff -urN a/arch/arm64/boot/dts/mediatek/Makefile b/arch/arm64/boot/dts/mediatek
 +		regulator-min-microvolt = <3300000>;
 +		regulator-max-microvolt = <3300000>;
 +		regulator-always-on;
++	};
++
++	/*
++	 * MT6630 power-up, in-kernel (vendor mtk_wcn_cmb_hw_pwr_on): PMU_EN
++	 * (pio 8) and RST (pio 38) low 20 ms, PMU_EN high 50 ms, RST high
++	 * 50 ms. Same proven timing as the userspace bring-up ritual. With
++	 * this the chip answers the boot-time SDIO scan and BT exists from
++	 * boot; the powerdown/reset naming is the pwrseq-sd8787 binding's.
++	 */
++	wifi_pwrseq: wifi-pwrseq {
++		compatible = "mmc-pwrseq-mt6630";
++		powerdown-gpios = <&pio 8 GPIO_ACTIVE_HIGH>;
++		reset-gpios = <&pio 38 GPIO_ACTIVE_HIGH>;
 +	};
 +
 +	lid-switch {
@@ -793,6 +806,7 @@ diff -urN a/arch/arm64/boot/dts/mediatek/Makefile b/arch/arm64/boot/dts/mediatek
 +	cap-sdio-irq;
 +	non-removable;
 +	vmmc-supply = <&wifi_fixed_3v3>;
++	mmc-pwrseq = <&wifi_pwrseq>;
 +};
 +
 +&pio {
