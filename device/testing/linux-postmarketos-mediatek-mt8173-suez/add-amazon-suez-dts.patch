@@ -9,10 +9,9 @@ diff -urN a/arch/arm64/boot/dts/mediatek/Makefile b/arch/arm64/boot/dts/mediatek
  dtb-$(CONFIG_ARCH_MEDIATEK) += mt8173-elm.dtb
  dtb-$(CONFIG_ARCH_MEDIATEK) += mt8173-elm-hana.dtb
  dtb-$(CONFIG_ARCH_MEDIATEK) += mt8173-elm-hana-rev7.dtb
-diff -urN a/arch/arm64/boot/dts/mediatek/mt8173-amazon-suez.dts b/arch/arm64/boot/dts/mediatek/mt8173-amazon-suez.dts
---- a/arch/arm64/boot/dts/mediatek/mt8173-amazon-suez.dts	1969-12-31 18:00:00.000000000 -0600
-+++ b/arch/arm64/boot/dts/mediatek/mt8173-amazon-suez.dts	2026-08-30 11:48:06.613526720 -0500
-@@ -0,0 +1,1299 @@
+--- a/arch/arm64/boot/dts/mediatek/mt8173-amazon-suez.dts
++++ b/arch/arm64/boot/dts/mediatek/mt8173-amazon-suez.dts
+@@ -0,0 +1,1303 @@
 +// SPDX-License-Identifier: (GPL-2.0 OR MIT)
 +/*
 + * Copyright (c) 2026 Ryan Brue <ryanbrue.dev@gmail.com>
@@ -788,6 +787,10 @@ diff -urN a/arch/arm64/boot/dts/mediatek/mt8173-amazon-suez.dts b/arch/arm64/boo
 +	bus-width = <4>;
 +	max-frequency = <200000000>;
 +	cap-sd-highspeed;
++	/* the MT6630 signals RX via the SDIO in-band interrupt (the vendor
++	 * stack registers no EINT for MT6630-on-SDIO); without this cap the
++	 * mmc core's CCCR-INTx poll fallback never fired the handler */
++	cap-sdio-irq;
 +	non-removable;
 +	vmmc-supply = <&wifi_fixed_3v3>;
 +};
