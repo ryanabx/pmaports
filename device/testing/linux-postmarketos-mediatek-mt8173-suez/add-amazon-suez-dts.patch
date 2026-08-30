@@ -10,7 +10,7 @@
  dtb-$(CONFIG_ARCH_MEDIATEK) += mt8173-elm-hana-rev7.dtb
 --- a/arch/arm64/boot/dts/mediatek/mt8173-amazon-suez.dts
 +++ b/arch/arm64/boot/dts/mediatek/mt8173-amazon-suez.dts
-@@ -0,0 +1,1201 @@
+@@ -0,0 +1,1214 @@
 +// SPDX-License-Identifier: (GPL-2.0 OR MIT)
 +/*
 + * Copyright (c) 2026 Ryan Brue <ryanbrue.dev@gmail.com>
@@ -1042,6 +1042,19 @@
 +	accelerometer@18 {
 +		compatible = "bosch,bma253";
 +		reg = <0x18>;
++		/*
++		 * Derived empirically (guided rotation test, 2026-08-30): the
++		 * chip is mounted rotated 180 degrees about the (1,-1,0) axis
++		 * relative to the panel. Raw readings were +X = g when the
++		 * tablet is upright and -Z = g face-up; with this matrix
++		 * iio-sensor-proxy reports normal/left-up correctly. Consistent
++		 * with the vendor's hwmsen "direction = <5>" (swap X/Y,
++		 * invert Z) once the Android landscape frame is rotated into
++		 * this panel's portrait frame.
++		 */
++		mount-matrix = "0", "-1", "0",
++			       "-1", "0", "0",
++			       "0", "0", "-1";
 +	};
 +};
 +
