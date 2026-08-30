@@ -1,0 +1,241 @@
+diff -urN dorig/drivers/iio/adc/Kconfig dw8/drivers/iio/adc/Kconfig
+--- dorig/drivers/iio/adc/Kconfig	2026-08-29 23:40:23.234548983 -0500
++++ dw8/drivers/iio/adc/Kconfig	2026-08-29 23:40:23.235656987 -0500
+@@ -1183,6 +1183,18 @@
+ 	  This driver can also be built as a module. If so, the module
+ 	  will be called "mt6370-adc".
+ 
++config MEDIATEK_MT6397_AUXADC
++	tristate "MediaTek MT6397 PMIC AUXADC driver"
++	depends on MFD_MT6397
++	help
++	  Say yes here to enable support for the auxiliary ADC inside the
++	  MediaTek MT6397 PMIC. On boards using this PMIC it is the only way
++	  to read the battery voltage, since the SoC AUXADC is wired to board
++	  thermistors instead.
++
++	  This driver can also be built as a module. If so, the module will be
++	  called mt6397-auxadc.
++
+ config MEDIATEK_MT6577_AUXADC
+ 	tristate "MediaTek AUXADC driver"
+ 	depends on ARCH_MEDIATEK || COMPILE_TEST
+diff -urN dorig/drivers/iio/adc/Makefile dw8/drivers/iio/adc/Makefile
+--- dorig/drivers/iio/adc/Makefile	2026-08-29 23:40:23.239626432 -0500
++++ dw8/drivers/iio/adc/Makefile	2026-08-29 23:40:23.240887601 -0500
+@@ -102,6 +102,7 @@
+ obj-$(CONFIG_MEDIATEK_MT6359_AUXADC) += mt6359-auxadc.o
+ obj-$(CONFIG_MEDIATEK_MT6360_ADC) += mt6360-adc.o
+ obj-$(CONFIG_MEDIATEK_MT6370_ADC) += mt6370-adc.o
++obj-$(CONFIG_MEDIATEK_MT6397_AUXADC) += mt6397-auxadc.o
+ obj-$(CONFIG_MEDIATEK_MT6577_AUXADC) += mt6577_auxadc.o
+ obj-$(CONFIG_MEN_Z188_ADC) += men_z188_adc.o
+ obj-$(CONFIG_MESON_SARADC) += meson_saradc.o
+diff -urN dorig/drivers/iio/adc/mt6397-auxadc.c dw8/drivers/iio/adc/mt6397-auxadc.c
+--- dorig/drivers/iio/adc/mt6397-auxadc.c	1969-12-31 18:00:00.000000000 -0600
++++ dw8/drivers/iio/adc/mt6397-auxadc.c	2026-08-29 23:40:23.252841829 -0500
+@@ -0,0 +1,191 @@
++// SPDX-License-Identifier: GPL-2.0-only
++/*
++ * MediaTek MT6397 PMIC AUXADC driver
++ *
++ * The MT6397 has a 10-bit auxiliary ADC behind the SoC's PMIC wrapper. It is
++ * the only way to read the battery voltage on boards built around this PMIC:
++ * the SoC's own auxadc (mt6577-auxadc) is wired to board thermistors, and
++ * charger ICs such as the BQ24297 do not measure the pack at all.
++ *
++ * A conversion is a three-step sequence: select the channel, pulse START, then
++ * poll the per-channel result register for its ready bit. The hardware needs a
++ * short settling delay after START before the ready bit is meaningful.
++ */
++
++#include <linux/bitfield.h>
++#include <linux/delay.h>
++#include <linux/iio/iio.h>
++#include <linux/mfd/mt6397/core.h>
++#include <linux/mod_devicetable.h>
++#include <linux/module.h>
++#include <linux/mutex.h>
++#include <linux/platform_device.h>
++#include <linux/regmap.h>
++
++#define MT6397_AUXADC_ADC0		0x0514
++#define MT6397_AUXADC_ADC0_RDY		BIT(15)
++#define MT6397_AUXADC_ADC0_VAL		GENMASK(9, 0)
++
++#define MT6397_AUXADC_CON1		0x0544
++#define MT6397_AUXADC_CON1_CHSEL	GENMASK(10, 7)
++#define MT6397_AUXADC_CON1_START	BIT(0)
++
++/*
++ * Datasheet-mandated settling time between raising START and the ready bit
++ * being meaningful; the vendor driver uses the same 30 us.
++ */
++#define MT6397_AUXADC_START_US		30
++#define MT6397_AUXADC_TIMEOUT_US	100000
++
++/* 10-bit conversion over a 1.2 V reference. */
++#define MT6397_AUXADC_FULL_SCALE_MV	1200
++#define MT6397_AUXADC_PRECISION		1024
++
++/*
++ * The battery sits behind a divider, so the raw count has to be multiplied
++ * back up. The vendor calls this R_BAT_SENSE and uses 4 on this PMIC.
++ */
++#define MT6397_AUXADC_VBAT_DIVIDER	4
++
++struct mt6397_auxadc {
++	struct regmap *regmap;
++	struct mutex lock;	/* serialises the select/start/poll sequence */
++};
++
++#define MT6397_AUXADC_CHANNEL(_idx, _hwchan)				\
++	{								\
++		.type = IIO_VOLTAGE,					\
++		.indexed = 1,						\
++		.channel = (_idx),					\
++		.address = (_hwchan),					\
++		.info_mask_separate = BIT(IIO_CHAN_INFO_RAW) |		\
++				      BIT(IIO_CHAN_INFO_SCALE),		\
++		.datasheet_name = "VBAT",				\
++	}
++
++/*
++ * Only the battery channel is described. The hardware also exposes current
++ * sense, charger voltage and two thermal channels, but each needs its own
++ * divider and, for the thermal ones, a buffer enable sequence -- none of which
++ * can be verified on a board that does not use them.
++ */
++static const struct iio_chan_spec mt6397_auxadc_channels[] = {
++	MT6397_AUXADC_CHANNEL(0, 0),
++};
++
++static int mt6397_auxadc_read_channel(struct mt6397_auxadc *adc,
++				      unsigned int hwchan, int *val)
++{
++	unsigned int reg;
++	int ret;
++
++	guard(mutex)(&adc->lock);
++
++	ret = regmap_update_bits(adc->regmap, MT6397_AUXADC_CON1,
++				 MT6397_AUXADC_CON1_CHSEL,
++				 FIELD_PREP(MT6397_AUXADC_CON1_CHSEL, hwchan));
++	if (ret)
++		return ret;
++
++	/* START is edge triggered: it has to be lowered before being raised. */
++	ret = regmap_update_bits(adc->regmap, MT6397_AUXADC_CON1,
++				 MT6397_AUXADC_CON1_START, 0);
++	if (ret)
++		return ret;
++
++	ret = regmap_update_bits(adc->regmap, MT6397_AUXADC_CON1,
++				 MT6397_AUXADC_CON1_START,
++				 MT6397_AUXADC_CON1_START);
++	if (ret)
++		return ret;
++
++	udelay(MT6397_AUXADC_START_US);
++
++	ret = regmap_read_poll_timeout(adc->regmap, MT6397_AUXADC_ADC0, reg,
++				       reg & MT6397_AUXADC_ADC0_RDY,
++				       100, MT6397_AUXADC_TIMEOUT_US);
++	if (ret)
++		return ret;
++
++	*val = FIELD_GET(MT6397_AUXADC_ADC0_VAL, reg);
++
++	return 0;
++}
++
++static int mt6397_auxadc_read_raw(struct iio_dev *indio_dev,
++				  const struct iio_chan_spec *chan,
++				  int *val, int *val2, long mask)
++{
++	struct mt6397_auxadc *adc = iio_priv(indio_dev);
++	int ret;
++
++	switch (mask) {
++	case IIO_CHAN_INFO_RAW:
++		ret = mt6397_auxadc_read_channel(adc, chan->address, val);
++		if (ret)
++			return ret;
++
++		return IIO_VAL_INT;
++
++	case IIO_CHAN_INFO_SCALE:
++		/* millivolts per LSB, as a fraction to avoid rounding here */
++		*val = MT6397_AUXADC_FULL_SCALE_MV * MT6397_AUXADC_VBAT_DIVIDER;
++		*val2 = MT6397_AUXADC_PRECISION;
++
++		return IIO_VAL_FRACTIONAL;
++
++	default:
++		return -EINVAL;
++	}
++}
++
++static const struct iio_info mt6397_auxadc_info = {
++	.read_raw = mt6397_auxadc_read_raw,
++};
++
++static int mt6397_auxadc_probe(struct platform_device *pdev)
++{
++	struct device *dev = &pdev->dev;
++	struct mt6397_chip *chip = dev_get_drvdata(dev->parent);
++	struct mt6397_auxadc *adc;
++	struct iio_dev *indio_dev;
++	int ret;
++
++	indio_dev = devm_iio_device_alloc(dev, sizeof(*adc));
++	if (!indio_dev)
++		return -ENOMEM;
++
++	adc = iio_priv(indio_dev);
++	adc->regmap = chip->regmap;
++
++	ret = devm_mutex_init(dev, &adc->lock);
++	if (ret)
++		return ret;
++
++	indio_dev->name = "mt6397-auxadc";
++	indio_dev->info = &mt6397_auxadc_info;
++	indio_dev->modes = INDIO_DIRECT_MODE;
++	indio_dev->channels = mt6397_auxadc_channels;
++	indio_dev->num_channels = ARRAY_SIZE(mt6397_auxadc_channels);
++
++	return devm_iio_device_register(dev, indio_dev);
++}
++
++static const struct of_device_id mt6397_auxadc_of_match[] = {
++	{ .compatible = "mediatek,mt6397-auxadc" },
++	{ /* sentinel */ }
++};
++MODULE_DEVICE_TABLE(of, mt6397_auxadc_of_match);
++
++static struct platform_driver mt6397_auxadc_driver = {
++	.driver = {
++		.name = "mt6397-auxadc",
++		.of_match_table = mt6397_auxadc_of_match,
++	},
++	.probe = mt6397_auxadc_probe,
++};
++module_platform_driver(mt6397_auxadc_driver);
++
++MODULE_AUTHOR("Ryan Brue <ryanbrue.dev@gmail.com>");
++MODULE_DESCRIPTION("MediaTek MT6397 PMIC AUXADC driver");
++MODULE_LICENSE("GPL");
+diff -urN dorig/drivers/mfd/mt6397-core.c dw8/drivers/mfd/mt6397-core.c
+--- dorig/drivers/mfd/mt6397-core.c	2026-08-29 23:40:23.246712868 -0500
++++ dw8/drivers/mfd/mt6397-core.c	2026-08-29 23:40:23.249083754 -0500
+@@ -255,6 +255,9 @@
+ 
+ static const struct mfd_cell mt6397_devs[] = {
+ 	{
++		.name = "mt6397-auxadc",
++		.of_compatible = "mediatek,mt6397-auxadc",
++	}, {
+ 		.name = "mt6397-rtc",
+ 		.num_resources = ARRAY_SIZE(mt6397_rtc_resources),
+ 		.resources = mt6397_rtc_resources,

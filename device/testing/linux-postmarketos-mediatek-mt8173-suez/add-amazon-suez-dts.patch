@@ -11,8 +11,8 @@ diff -urN dorig/arch/arm64/boot/dts/mediatek/Makefile dw8/arch/arm64/boot/dts/me
  dtb-$(CONFIG_ARCH_MEDIATEK) += mt8173-elm-hana-rev7.dtb
 diff -urN dorig/arch/arm64/boot/dts/mediatek/mt8173-amazon-suez.dts dw8/arch/arm64/boot/dts/mediatek/mt8173-amazon-suez.dts
 --- dorig/arch/arm64/boot/dts/mediatek/mt8173-amazon-suez.dts	1969-12-31 18:00:00.000000000 -0600
-+++ dw8/arch/arm64/boot/dts/mediatek/mt8173-amazon-suez.dts	2026-08-29 22:56:00.000000000 -0500
-@@ -0,0 +1,1007 @@
++++ dw8/arch/arm64/boot/dts/mediatek/mt8173-amazon-suez.dts	2026-08-29 23:41:00.000000000 -0500
+@@ -0,0 +1,1034 @@
 +// SPDX-License-Identifier: (GPL-2.0 OR MIT)
 +/*
 + * Copyright (c) 2026 Ryan Brue <ryanbrue.dev@gmail.com>
@@ -210,6 +210,33 @@ diff -urN dorig/arch/arm64/boot/dts/mediatek/mt8173-amazon-suez.dts dw8/arch/arm
 +		mt6397clk: mt6397clock {
 +			compatible = "mediatek,mt6397-clk";
 +			#clock-cells = <1>;
++		};
++
++		/*
++		 * The PMIC's auxiliary ADC. It is the only way to read the
++		 * battery voltage on this board: the SoC AUXADC channels are
++		 * board thermistors (the vendor's cust_adc.dtsi describes only
++		 * temperature0/1 plus an RF channel), and the BQ24297 is a
++		 * charger with no ADC, which is why bq24190-battery reports
++		 * neither voltage_now nor capacity and upower logs "nan".
++		 *
++		 * Register layout taken from the vendor kernel
++		 * (drivers/misc/mediatek/power/mt8173/pmic_auxadc.c plus the
++		 * generated accessors in upmu_sw.h/upmu_hw.h): CON1 at 0x0544
++		 * carries CHSEL in bits 10:7 and START in bit 0, and channel
++		 * 0's 10-bit result plus its ready bit live in ADC0 at 0x0514.
++		 * Channel 0 is V_BAT, scaled by R_BAT_SENSE = 4 over a 1.2 V,
++		 * 1024-step conversion.
++		 *
++		 * Sanity check before any of this was written: the bootloader
++		 * leaves a stale channel-0 result of 0x34a in ADC0, readable
++		 * through the pwrap regmap in debugfs, and 842 * 4 * 1200 /
++		 * 1024 = 3947 mV -- a plausible pack voltage. It never changes,
++		 * which is what shows nothing in mainline was driving the ADC.
++		 */
++		pmic_auxadc: adc {
++			compatible = "mediatek,mt6397-auxadc";
++			#io-channel-cells = <1>;
 +		};
 +
 +		mt6397pin: pinctrl {
