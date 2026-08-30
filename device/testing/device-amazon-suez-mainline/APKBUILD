@@ -3,7 +3,7 @@ maintainer="Ryan Brue <ryanbrue.dev@gmail.com>"
 pkgname=device-amazon-suez-mainline
 pkgdesc="Amazon Fire HD 10 (2017) (mainline)"
 pkgver=1
-pkgrel=22
+pkgrel=23
 url="https://postmarketos.org"
 license="MIT"
 arch="aarch64"
@@ -18,6 +18,7 @@ depends="
 "
 makedepends="devicepkg-dev"
 source="
+	amazon-suez-gpu.service
 	deviceinfo
 	kernel-cmdline.conf
 	modules-initfs
@@ -58,6 +59,14 @@ package() {
 	ln -s ../suez-bcb-disarm.service \
 		"$pkgdir"/usr/lib/systemd/system/multi-user.target.wants/suez-bcb-disarm.service
 
+	# Bind the GPU once boot has settled -- the unit's comments explain why
+	# the late timing is load-bearing (early binding wedges the SoC).
+	install -Dm644 "$srcdir"/amazon-suez-gpu.service \
+		"$pkgdir"/usr/lib/systemd/system/amazon-suez-gpu.service
+	install -d "$pkgdir"/usr/lib/systemd/system/graphical.target.wants
+	ln -s ../amazon-suez-gpu.service \
+		"$pkgdir"/usr/lib/systemd/system/graphical.target.wants/amazon-suez-gpu.service
+
 	# Keep systemd-logind from suspending when the folio cover closes; see
 	# the comments in the file.
 	install -Dm644 "$srcdir"/suez-lid.conf \
@@ -65,6 +74,7 @@ package() {
 }
 
 sha512sums="
+acbd142eb5a789d740ecfffed67f65e827fadc29f47e04bf4084e97152381ffc897f6f12b62fafc28ba8e4d12cacecdcc8b4c0b421fde9ce1261cf5c4889f043  amazon-suez-gpu.service
 a1c7602bfd1eb0b431c1e96d592dfaf5da7e5498c3adfad756b6d73fe37b7889ea6c6d0fb681727796a3c95cbd247040d764ba6f477354a43cf8836887ecbedd  deviceinfo
 3ee14222402ea8f7aa42712559a76fa87baafbe0b74052ee56ade4257775cf0efd9c841ed3cd7bfefbf3ddb7ee915fc6e0621ab9a6a36b6c5fd3cc844cd7de85  kernel-cmdline.conf
 d89fa6205d2ec177514a6e47877f27c7c69745d30994e36597ac6940c114a71868940d7050ba67dc5a260dc338ca5d789c521e35c37d7f2d3645762ab02101a9  modules-initfs
