@@ -1,0 +1,87 @@
+diff -urN dorig/drivers/power/supply/generic-adc-battery.c dw8/drivers/power/supply/generic-adc-battery.c
+--- dorig/drivers/power/supply/generic-adc-battery.c	2026-08-30 00:18:31.770603952 -0500
++++ dw8/drivers/power/supply/generic-adc-battery.c	2026-08-30 00:18:31.772554031 -0500
+@@ -48,6 +48,7 @@
+ 	struct delayed_work bat_work;
+ 	int status;
+ 	struct gpio_desc *charge_finished;
++	struct power_supply_battery_info *info;
+ };
+ 
+ static struct gab *to_generic_bat(struct power_supply *psy)
+@@ -115,6 +116,35 @@
+ 		return gab_read_channel(adc_bat, GAB_POWER, &val->intval);
+ 	case POWER_SUPPLY_PROP_TEMP:
+ 		return gab_read_channel(adc_bat, GAB_TEMP, &val->intval);
++	case POWER_SUPPLY_PROP_CAPACITY: {
++		int uv, temp, ret;
++
++		ret = gab_read_channel(adc_bat, GAB_VOLTAGE, &uv);
++		if (ret < 0)
++			return ret;
++
++		/*
++		 * The OCV tables are indexed by temperature in degrees
++		 * Celsius. Use the measured one where the board has a
++		 * temperature channel, otherwise assume room temperature --
++		 * power_supply_batinfo_ocv2cap() picks the nearest table.
++		 */
++		if (adc_bat->channel[GAB_TEMP]) {
++			ret = gab_read_channel(adc_bat, GAB_TEMP, &temp);
++			if (ret < 0)
++				return ret;
++			temp /= 1000;
++		} else {
++			temp = 25;
++		}
++
++		ret = power_supply_batinfo_ocv2cap(adc_bat->info, uv, temp);
++		if (ret < 0)
++			return ret;
++
++		val->intval = ret;
++		return 0;
++	}
+ 	default:
+ 		return -EINVAL;
+ 	}
+@@ -161,6 +191,7 @@
+ 	int chan;
+ 	int index = ARRAY_SIZE(gab_props);
+ 	bool any = false;
++	bool has_battery;
+ 
+ 	adc_bat = devm_kzalloc(&pdev->dev, sizeof(*adc_bat), GFP_KERNEL);
+ 	if (!adc_bat)
+@@ -221,6 +252,17 @@
+ 		return dev_err_probe(&pdev->dev, -ENODEV, "Failed to get any ADC channel\n");
+ 
+ 	/*
++	 * With a monitored-battery carrying an open-circuit-voltage table, the
++	 * measured voltage can be turned into a state of charge. This has to
++	 * be decided before the supply is registered, because the property
++	 * list is fixed at that point, but the battery info itself can only be
++	 * looked up afterwards -- hence the two-step.
++	 */
++	has_battery = device_property_present(&pdev->dev, "monitored-battery");
++	if (has_battery && adc_bat->channel[GAB_VOLTAGE])
++		properties[index++] = POWER_SUPPLY_PROP_CAPACITY;
++
++	/*
+ 	 * Total number of properties is equal to static properties
+ 	 * plus the dynamic properties.Some properties may not be set
+ 	 * as come channels may be not be supported by the device.So
+@@ -233,6 +275,13 @@
+ 	if (IS_ERR(adc_bat->psy))
+ 		return dev_err_probe(&pdev->dev, PTR_ERR(adc_bat->psy), "Failed to register power-supply device\n");
+ 
++	if (has_battery) {
++		ret = power_supply_get_battery_info(adc_bat->psy, &adc_bat->info);
++		if (ret)
++			return dev_err_probe(&pdev->dev, ret,
++					     "Failed to get battery info\n");
++	}
++
+ 	ret = devm_delayed_work_autocancel(&pdev->dev, &adc_bat->bat_work, gab_work);
+ 	if (ret)
+ 		return dev_err_probe(&pdev->dev, ret, "Failed to register delayed work\n");
