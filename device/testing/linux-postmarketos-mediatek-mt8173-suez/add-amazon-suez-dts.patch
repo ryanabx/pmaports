@@ -11,8 +11,8 @@ diff -urN dorig/arch/arm64/boot/dts/mediatek/Makefile dw8/arch/arm64/boot/dts/me
  dtb-$(CONFIG_ARCH_MEDIATEK) += mt8173-elm-hana-rev7.dtb
 diff -urN dorig/arch/arm64/boot/dts/mediatek/mt8173-amazon-suez.dts dw8/arch/arm64/boot/dts/mediatek/mt8173-amazon-suez.dts
 --- dorig/arch/arm64/boot/dts/mediatek/mt8173-amazon-suez.dts	1969-12-31 18:00:00.000000000 -0600
-+++ dw8/arch/arm64/boot/dts/mediatek/mt8173-amazon-suez.dts	2026-08-29 21:20:00.000000000 -0500
-@@ -0,0 +1,981 @@
++++ dw8/arch/arm64/boot/dts/mediatek/mt8173-amazon-suez.dts	2026-08-29 22:56:00.000000000 -0500
+@@ -0,0 +1,1007 @@
 +// SPDX-License-Identifier: (GPL-2.0 OR MIT)
 +/*
 + * Copyright (c) 2026 Ryan Brue <ryanbrue.dev@gmail.com>
@@ -471,6 +471,32 @@ diff -urN dorig/arch/arm64/boot/dts/mediatek/mt8173-amazon-suez.dts dw8/arch/arm
 +		reset-gpios = <&mt6397pin 12 GPIO_ACTIVE_LOW>;
 +		vcc-supply = <&mt6397_vgp3_reg>;
 +		iovcc-supply = <&mt6397_vgp4_reg>;
++
++		/*
++		 * These are not optional on an Evervision part. edt-ft5x06
++		 * sizes its axes as num_x * 64 - 1, and for EV_FT it sets
++		 * reg_num_x/reg_num_y to NO_REGISTER -- there is no register
++		 * it can read the sensor counts from -- so num_x and num_y
++		 * keep EDT_DEFAULT_NUM_X/Y, which are 1024. That reports
++		 * ABS_MT_POSITION_X/Y as 0..65535 on a 1200x1920 panel, and
++		 * every touch lands in the top-left corner: a press at the
++		 * middle of the screen reports ~600, which against a declared
++		 * 65535 is under 1% across.
++		 *
++		 * The chip itself reports native panel coordinates. Measured
++		 * by tapping the four corners and logging the raw events:
++		 * top-left (33..75, 38..107), top-right (1149..1163, 33..80),
++		 * bottom-left (33..85, 1856..1895), bottom-right
++		 * (1178..1184, 1876..1896). So X spans 0..1200 and Y spans
++		 * 0..1920 exactly as the panel does, with no swap and no
++		 * inversion -- only the declared maximum was wrong.
++		 *
++		 * touchscreen_parse_properties() sets max = size - 1, giving
++		 * 1199 and 1919. It runs before input_mt_init_slots(), so the
++		 * single-touch ABS_X/ABS_Y axes inherit the corrected values.
++		 */
++		touchscreen-size-x = <1200>;
++		touchscreen-size-y = <1920>;
 +	};
 +};
 +
