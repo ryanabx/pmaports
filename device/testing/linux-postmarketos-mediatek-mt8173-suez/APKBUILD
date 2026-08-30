@@ -11,7 +11,7 @@
 maintainer="Ryan Brue <ryanbrue.dev@gmail.com>"
 pkgname=linux-postmarketos-mediatek-mt8173-suez
 pkgver=7.1.8
-pkgrel=58
+pkgrel=59
 pkgdesc="Mainline kernel fork for the Amazon Fire HD 10 (2017)"
 arch="aarch64"
 _carch="arm64"
@@ -86,6 +86,11 @@ source="
 	mt6391-codec.patch
 	mt8173-afe-adda.patch
 	mt8173-mt6391-machine.patch
+	powervr-mt8173-01-mfgtop-clk-binding.patch
+	powervr-mt8173-02-mfgtop-clk-driver.patch
+	powervr-mt8173-03-rogue-binding.patch
+	powervr-mt8173-04-dtsi-mfg-async-clock.patch
+	powervr-mt8173-05-dtsi-gpu-nodes.patch
 "
 builddir="$srcdir/linux-${_kernver//_/-}"
 
@@ -117,7 +122,7 @@ package() {
 
 sha512sums="
 e17057478fd498fd4d83c4b6d3712fdfc3c6ae1d077114ea74ee41186cbd75add292f5e5f810fdf41242fd506a476d34447392b1c8194b5e8a6af1a59ac48a74  linux-7.1.8.tar.xz
-57ee8d08f755770caa34185c2a43aa4bf4cccd3e8fdd9cf925f495edb613d3d4cbea9e07efbbd78b7c454f434be817085533b090f9d6fb90a9b754bd1f3ef94e  config-postmarketos-mediatek-mt8173-suez.aarch64
+0a955e296da37fbc9c146346ef226959a02bacab4c780e95e8ba9c3294a13d5e684b1035192fdb229c1514814b39f3445bde666497e82aecd45709d3da188bed  config-postmarketos-mediatek-mt8173-suez.aarch64
 901780c4c468ebf8b6af7c27530fafb0439dfae889208c35f22aa7447902078d147db69a1c8e2115cd13f51c641eef878d9335b7527dc7fa2240cd617e045aab  0001-resolve_btfids-preserve-parameter-names-when-process.patch
 aedbf42178f26a0b38b0deee02cbf24a7d3cfaf90cdcf30da12ff1cc334be1e14eada0d924b0082830812d16eebd432230a1476542d23238acd9da527973facf  0003-display-blank.patch
 4fabdfc09fd7ee57b94f5fa643ab1460ca372f1ce7f741744cc3a2dce5bbfca5700a6f969bb0a24dcc3eccfd0d3567479f169e0b01f139799510730a1e9de703  mtk-dsi-force-cmd-mode.patch
@@ -131,4 +136,9 @@ bd23dd05bdeae7c81ceae6f678d66af26703c93b6d3cc7b74fb36bccc8d365c90c575641afa93867
 639c3b9ff4e0dab1f51e4cc7e68d0e4933a14fb5560c6e95db1f2f18095005d9115390727e47d77c3f29a4a805d7b15f26fa1b6735b9e0fa8b5951e3765fe7cd  mt6391-codec.patch
 7960bccbba290b1604e6e004fa23da5c3ce26eda0cb5d461fadd2b5b78f3d231cd10f83d307a5510a16c13ae7f9fd658c6d197f8de081bbeb124c8e2821492f5  mt8173-afe-adda.patch
 0ea0ebbf938f9f6b4920e4dc16cd76f1f9469ecd9c5b43c0ce586b98fd3bc8165cdb22656b56477c066b5ab7409a8afe188aa9c2da3555bed956c3e51ebc2e7e  mt8173-mt6391-machine.patch
+a595cb2fa9df7cf2d0f7007f6e18ccd8c80d1fba47350e0f5c25ca52a815fd631bfca101978ba26e43445fbfc9aa6e3d1752da15f4545ca4754d4f75743546d6  powervr-mt8173-01-mfgtop-clk-binding.patch
+ef02c23489800e6857e66e6fe14f7b1fd3fbfbad3e5811467271e480d04d538fb09fd07b462cd2be13cb6654b979ba011a6f55f1a2c00428088d3bb9798da03e  powervr-mt8173-02-mfgtop-clk-driver.patch
+22fdb6729897daab1f7e8583709a0322b784123189be010c0d97b97f6b17466c823cecb5277b867b0edb9c63f09f5d7f1e91a2f248ad9fcaff033a9822032a0f  powervr-mt8173-03-rogue-binding.patch
+9af906215604cbfaf6111beaefa0224a90b08f4fee34c90060ba524c6c2347ea9a663e774756aa50a2071c47e1760de2f82ff061e5453813e20ccc2d6dd0e16e  powervr-mt8173-04-dtsi-mfg-async-clock.patch
+14e806d0816fadd09cc65dac537470b36583ba25e240d851667aa89eb35ae88bf62bef4fb9f2e125d1d8eb257f4989239968e74d64e945842c0b5aa5395b8aad  powervr-mt8173-05-dtsi-gpu-nodes.patch
 "
