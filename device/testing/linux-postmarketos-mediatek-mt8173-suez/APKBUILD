@@ -11,7 +11,7 @@
 maintainer="Ryan Brue <ryanbrue.dev@gmail.com>"
 pkgname=linux-postmarketos-mediatek-mt8173-suez
 pkgver=7.1.8
-pkgrel=67
+pkgrel=68
 pkgdesc="Mainline kernel fork for the Amazon Fire HD 10 (2017)"
 arch="aarch64"
 _carch="arm64"
@@ -143,6 +143,6 @@ ef02c23489800e6857e66e6fe14f7b1fd3fbfbad3e5811467271e480d04d538fb09fd07b462cd2be
 22fdb6729897daab1f7e8583709a0322b784123189be010c0d97b97f6b17466c823cecb5277b867b0edb9c63f09f5d7f1e91a2f248ad9fcaff033a9822032a0f  powervr-mt8173-03-rogue-binding.patch
 9af906215604cbfaf6111beaefa0224a90b08f4fee34c90060ba524c6c2347ea9a663e774756aa50a2071c47e1760de2f82ff061e5453813e20ccc2d6dd0e16e  powervr-mt8173-04-dtsi-mfg-async-clock.patch
 14e806d0816fadd09cc65dac537470b36583ba25e240d851667aa89eb35ae88bf62bef4fb9f2e125d1d8eb257f4989239968e74d64e945842c0b5aa5395b8aad  powervr-mt8173-05-dtsi-gpu-nodes.patch
-ddb45da455fc835e71eb9f220575a18ddf9b4334f57a0246d8cea440ca2f2d068fe558ce936aaf0e71aca71e130f192d977cf3e0228a09f2af21b89595bbca50  mt6630-wmt.patch
+2b3c2cf7df0bfb29593ac46d18f40bf5d380f5ede07c9dc0cf1a101bc5aa92d0700c4b9226313ac776a3c7e9efacc109b8bd032714bc92dfaaafb31e063be729  mt6630-wmt.patch
 4a0e1b6edb64c80b7c2ed03fb6cd11d793b804d0ea7c37356edfa1ffa3363c258a3c60742e3811d62b7d09f49b92e6648702a90c349543989a290b994fb3b15c  mt6630-pwrseq.patch
 "

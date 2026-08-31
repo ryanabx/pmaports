@@ -1026,7 +1026,7 @@
 +MODULE_LICENSE("GPL");
 --- a/drivers/misc/mt6630-wlan.c
 +++ b/drivers/misc/mt6630-wlan.c
-@@ -0,0 +1,1887 @@
+@@ -0,0 +1,1928 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/*
 + * WLAN driver for the MediaTek MT6630 combo chip, SDIO function 1.
@@ -1293,16 +1293,29 @@
 +	u8 ch_token;			/* channel privilege request id */
 +	struct completion ch_grant;
 +
-+	/* interrupt-mode RX (runtime-toggleable; boot default is polled) */
++	/* interrupt-mode RX (runtime-toggleable) */
 +	bool irq_active;
 +	u8 *int_buf;			/* INT_STRUCT_LEN, handler only */
 +	struct completion tx_done;	/* signaled by the irq handler */
 +	struct work_struct irq_mode_work;
++	/* TX page credits (128-byte pages incl. TXD; fw pool mirror).
++	 * Only maintained in interrupt mode, where the enhanced read
++	 * returns released counts atomically. Gating submissions on this
++	 * is what prevents the fw TX engine from wedging at saturation
++	 * (TX_DONE only means the HIF consumed the write). */
++	atomic_t tx_pages;
 +};
 +
-+/* Runtime-toggleable: echo 1 > /sys/module/mt6630_wlan/parameters/irq_rx.
-+ * Defaults to polled so a bad interrupt path can never wedge a boot. */
-+static bool irq_rx;
++#define MT6630_TX_PAGE_SHIFT	7	/* 128-byte pages */
++#define MT6630_TX_POOL_PAGES	64	/* conservative vs fw's ~546 */
++#define INT_WTSR_FFA_OFF	(INT_WTSR_OFF + 2 * 14)	/* global count */
++
++/* Runtime-toggleable via /sys/module/mt6630_wlan/parameters/irq_rx;
++ * boot-time escape hatch: mt6630_wlan.irq_rx=0 on the kernel cmdline.
++ * Probe always brings the device up polled and flips afterwards, and the
++ * polled fallback stays intact, so recovery is one toggle (or reboot
++ * with the cmdline override). */
++static bool irq_rx = true;
 +static struct mt6630_wlan *mt6630_wlan_dev;	/* single device */
 +
 +/* ---- low-level ---- */
@@ -1344,19 +1357,33 @@
 +	memset(wl->tx_buf + total, 0, xfer - total);
 +
 +	if (READ_ONCE(wl->irq_active)) {
-+		/* the irq handler consumes WHISR: wait on its completion
-+		 * instead of racing it with a second read-clear reader */
-+		reinit_completion(&wl->tx_done);
++		int pages = DIV_ROUND_UP(total, 1 << MT6630_TX_PAGE_SHIFT);
++		int waits = 0;
++
++		/* gate on page credits: TX_DONE only means the HIF consumed
++		 * the write; submitting past the fw pool wedges its TX
++		 * engine permanently (needs a chip power cycle) */
++		while (atomic_read(&wl->tx_pages) < pages) {
++			reinit_completion(&wl->tx_done);
++			if (atomic_read(&wl->tx_pages) >= pages)
++				break;
++			if (!wait_for_completion_timeout(&wl->tx_done,
++						msecs_to_jiffies(100)) &&
++			    ++waits >= 3) {
++				/* anomaly: resync rather than deadlock */
++				dev_warn_ratelimited(&func->dev,
++						     "tx credit starvation, resetting pool\n");
++				atomic_set(&wl->tx_pages,
++					   MT6630_TX_POOL_PAGES);
++				break;
++			}
++		}
++		atomic_sub(pages, &wl->tx_pages);
++
 +		sdio_claim_host(func);
 +		ret = sdio_writesb(func, MCR_WTDR1, wl->tx_buf, xfer);
 +		sdio_release_host(func);
-+		if (ret)
-+			return ret;
-+		if (!wait_for_completion_timeout(&wl->tx_done,
-+						 msecs_to_jiffies(200)))
-+			dev_warn_ratelimited(&func->dev,
-+					     "tx_done completion timeout\n");
-+		return 0;
++		return ret;
 +	}
 +
 +	sdio_claim_host(func);
@@ -1368,14 +1395,14 @@
 +				break;
 +			udelay(EVT_POLL_DELAY_US);
 +		}
++		/* NB: never read WTQCR here -- consuming those read-clear
++		 * counters mid-flow suppresses the next TX_DONE and broke
++		 * the fw download outright. Polled mode touches WHISR only. */
 +		if (!ret && !(whisr & WHISR_TX_DONE)) {
 +			/* nothing consumed; WHISR bit31 = fw assert */
-+			u32 q0 = sdio_readl(func, 0x0130, &ret);
-+			u32 q1 = sdio_readl(func, 0x0134, &ret);
-+
 +			dev_warn_ratelimited(&func->dev,
-+					     "tx_done timeout, whisr %08x wtqcr %08x %08x\n",
-+					     whisr, q0, q1);
++					     "tx_done timeout, whisr %08x\n",
++					     whisr);
 +			ret = -ETIMEDOUT;
 +		}
 +	}
@@ -1764,7 +1791,7 @@
 +	int loops, port, i, ret;
 +
 +	for (loops = 0; loops < IRQ_RX_BUDGET; loops++) {
-+		u16 nvalid[2];
++		u16 nvalid[2], ffa;
 +		u32 whisr;
 +		bool tx_credit = false;
 +
@@ -1785,11 +1812,24 @@
 +				 "isr #%d.%d whisr 0x%08x rx %u/%u\n",
 +				 calls, loops, whisr, nvalid[0], nvalid[1]);
 +
-+		/* released TX pages (read-clear, consumed by this read);
-+		 * vendor fix-up: counts can be non-zero with bit0 clear */
-+		for (i = 0; i < 32; i += 4)
-+			if (get_unaligned_le32(&wl->int_buf[INT_WTSR_OFF + i]))
-+				tx_credit = true;
++		/* released TX pages (read-clear, consumed by this read).
++		 * Every release mirrors into the FFA counter (verified: a
++		 * cmd shows FFA=1 + CPU=1 for the same page), so FFA alone
++		 * is the global total; summing all 16 would double-count. */
++		ffa = get_unaligned_le16(&wl->int_buf[INT_WTSR_FFA_OFF]);
++		if (ffa) {
++			static atomic_t credit_logs = ATOMIC_INIT(0);
++
++			if (atomic_add_unless(&credit_logs, 1, 8))
++				dev_info(&func->dev,
++					 "tx credits +%u (wtsr %*ph)\n", ffa,
++					 32, &wl->int_buf[INT_WTSR_OFF]);
++			atomic_add(ffa, &wl->tx_pages);
++			if (atomic_read(&wl->tx_pages) > MT6630_TX_POOL_PAGES)
++				atomic_set(&wl->tx_pages,
++					   MT6630_TX_POOL_PAGES);
++			tx_credit = true;
++		}
 +		if ((whisr & WHISR_TX_DONE) || tx_credit)
 +			complete(&wl->tx_done);
 +
@@ -1851,6 +1891,7 @@
 +
 +		/* park the poller first: rx_buf must have a single owner */
 +		kthread_park(wl->rx_thread);
++		atomic_set(&wl->tx_pages, MT6630_TX_POOL_PAGES);
 +		WRITE_ONCE(wl->irq_active, true);
 +
 +		sdio_claim_host(func);
@@ -1909,7 +1950,7 @@
 +	.get = param_get_bool,
 +};
 +module_param_cb(irq_rx, &mt6630_wlan_irq_rx_ops, &irq_rx, 0644);
-+MODULE_PARM_DESC(irq_rx, "use interrupt-driven RX (default: polled)");
++MODULE_PARM_DESC(irq_rx, "interrupt-driven RX + TX credits (default on; 0 = polled fallback)");
 +
 +/* ---- runtime commands (rx thread delivers the response) ---- */
 +
