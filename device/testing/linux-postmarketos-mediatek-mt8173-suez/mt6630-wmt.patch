@@ -938,7 +938,7 @@
 +MODULE_LICENSE("GPL");
 --- a/drivers/misc/mt6630-wlan.c
 +++ b/drivers/misc/mt6630-wlan.c
-@@ -0,0 +1,885 @@
+@@ -0,0 +1,925 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/*
 + * WLAN driver for the MediaTek MT6630 combo chip, SDIO function 1.
@@ -958,9 +958,12 @@
 + */
 +
 +#include <linux/delay.h>
++#include <linux/etherdevice.h>
 +#include <linux/firmware.h>
++#include <linux/hex.h>
 +#include <linux/kernel.h>
 +#include <linux/kthread.h>
++#include <linux/of.h>
 +#include <linux/unaligned.h>
 +#include <linux/module.h>
 +#include <linux/mmc/host.h>
@@ -1482,6 +1485,33 @@
 +	return 0;
 +}
 +
++/*
++ * The bootloader injects the factory MAC as an ASCII-hex string into the
++ * device tree at /idme/mac_addr (the vendor driver reads the same node,
++ * gl_init.c: IDME_OF_MAC_ADDR). Prefer it over the fw's all-zero eeprom
++ * address. Returns 0 and fills wl->macaddr on success.
++ */
++static int mt6630_wlan_idme_mac(struct mt6630_wlan *wl)
++{
++	struct device_node *np;
++	const char *val;
++	u8 mac[ETH_ALEN];
++	int len, ret = -ENODEV;
++
++	np = of_find_node_by_path("/idme/mac_addr");
++	if (!np)
++		return -ENODEV;
++
++	val = of_get_property(np, "value", &len);
++	if (val && len >= 12 && hex2bin(mac, val, ETH_ALEN) == 0 &&
++	    is_valid_ether_addr(mac)) {
++		ether_addr_copy(wl->macaddr, mac);
++		ret = 0;
++	}
++	of_node_put(np);
++	return ret;
++}
++
 +/* ---- mac80211 ---- */
 +
 +static void mt6630_wlan_op_tx(struct ieee80211_hw *hw,
@@ -1757,6 +1787,16 @@
 +	if (ret) {
 +		dev_err(&func->dev, "capability query failed: %d\n", ret);
 +		goto err_stop_thread;
++	}
++
++	/* the fw eeprom MAC is all-zero on this board; the bootloader has
++	 * the factory address in the device tree */
++	if (!is_valid_ether_addr(wl->macaddr)) {
++		if (mt6630_wlan_idme_mac(wl) == 0)
++			dev_info(&func->dev, "MAC from idme: %pM\n",
++				 wl->macaddr);
++		else
++			eth_random_addr(wl->macaddr);
 +	}
 +
 +	/* mac80211 setup: scan-only for now */
