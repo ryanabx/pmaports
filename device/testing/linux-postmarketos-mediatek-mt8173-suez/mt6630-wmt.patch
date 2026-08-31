@@ -1,6 +1,6 @@
 --- a/drivers/misc/Kconfig
 +++ b/drivers/misc/Kconfig
-@@ -661,4 +661,14 @@
+@@ -661,4 +661,21 @@
  source "drivers/misc/keba/Kconfig"
  source "drivers/misc/amd-sbi/Kconfig"
  source "drivers/misc/rp1/Kconfig"
@@ -10,21 +10,47 @@
 +	help
 +	  WMT control-plane driver for the MediaTek MT6630 combo chip on
 +	  SDIO. Claims function 2, downloads the ROM patch firmware and
-+	  registers a Bluetooth HCI over the STP transport. Wi-Fi
-+	  (function 1) is not implemented. Say M here for amazon-suez
-+	  mainline bring-up.
++	  registers a Bluetooth HCI over the STP transport. Say M here
++	  for amazon-suez mainline bring-up.
++
++config MT6630_WLAN
++	tristate "MediaTek MT6630 WLAN firmware loader (function 1)"
++	depends on MT6630_WMT && MAC80211
++	help
++	  Bring-up WLAN firmware loader for the MediaTek MT6630: claims
++	  SDIO function 1, downloads WIFI_RAM_CODE and starts it. Not yet
++	  a wireless driver. Say M here for amazon-suez mainline bring-up.
 +
  endmenu
 --- a/drivers/misc/Makefile
 +++ b/drivers/misc/Makefile
-@@ -75,3 +75,4 @@
+@@ -75,3 +75,5 @@
  obj-y				+= keba/
  obj-y				+= amd-sbi/
  obj-$(CONFIG_MISC_RP1)		+= rp1/
 +obj-$(CONFIG_MT6630_WMT)		+= mt6630-wmt.o
++obj-$(CONFIG_MT6630_WLAN)		+= mt6630-wlan.o
+--- a/drivers/misc/mt6630-wmt.h
++++ b/drivers/misc/mt6630-wmt.h
+@@ -0,0 +1,15 @@
++/* SPDX-License-Identifier: GPL-2.0 */
++/*
++ * Interface between the MT6630 WMT control-plane driver (SDIO function 2)
++ * and the WLAN driver (function 1).
++ */
++#ifndef _MT6630_WMT_H
++#define _MT6630_WMT_H
++
++#include <linux/types.h>
++
++/* True once the ROM patches are downloaded and FUNC_CTRL WIFI ON has been
++ * acked: only then may the function-1 driver download the WLAN firmware. */
++bool mt6630_wmt_ready(void);
++
++#endif
 --- a/drivers/misc/mt6630-wmt.c
 +++ b/drivers/misc/mt6630-wmt.c
-@@ -0,0 +1,860 @@
+@@ -0,0 +1,885 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/*
 + * WMT control-plane driver for the MediaTek MT6630 combo chip on SDIO.
@@ -59,6 +85,8 @@
 +
 +#include <net/bluetooth/bluetooth.h>
 +#include <net/bluetooth/hci_core.h>
++
++#include "mt6630-wmt.h"
 +
 +#define MT6630_SDIO_DEVICE_ID	0x6630
 +#define MT6630_WMT_FUNC		2	/* BGF/WMT control function (design doc 1.1) */
@@ -167,10 +195,23 @@
 +/* coex ant mode 1, from WMT.cfg/mt6630_ant_m1.cfg (design doc 5.2, 7.3) */
 +static const u8 wmt_coex_cmd[] = { 0x01, 0x10, 0x02, 0x00, 0x01, 0x01 };
 +static const u8 wmt_coex_evt[] = { 0x02, 0x10, 0x01, 0x00, 0x00 };
-+/* FUNC_CTRL: 01 06 02 00 <drvType> <on> ; drvType BT=0 (design doc 5.2) */
++/* FUNC_CTRL: 01 06 02 00 <drvType> <on> ; drvType BT=0, WIFI=3 (design doc 5.2) */
 +static const u8 wmt_bt_on_cmd[]  = { 0x01, 0x06, 0x02, 0x00, 0x00, 0x01 };
 +static const u8 wmt_bt_off_cmd[] = { 0x01, 0x06, 0x02, 0x00, 0x00, 0x00 };
++static const u8 wmt_wifi_on_cmd[] = { 0x01, 0x06, 0x02, 0x00, 0x03, 0x01 };
 +static const u8 wmt_func_ctrl_evt[] = { 0x02, 0x06, 0x01, 0x00, 0x00 };
++
++/* True once the chip is patched and the WLAN function is powered; the
++ * func-1 driver (mt6630-wlan) gates its probe on this (its firmware
++ * download needs the ROM patches and FUNC_CTRL WIFI on, both of which
++ * happen here on function 2). */
++static bool mt6630_wmt_chip_ready;
++
++bool mt6630_wmt_ready(void)
++{
++	return READ_ONCE(mt6630_wmt_chip_ready);
++}
++EXPORT_SYMBOL_GPL(mt6630_wmt_ready);
 +
 +/* CHLPCR writes use CMD52 byte writes per the COHEC_00006052 erratum
 + * (design doc 2.3): the own-request bits (8/9) go to the high byte at
@@ -801,6 +842,14 @@
 +	if (ret)
 +		goto out_disable;
 +
++	/* WLAN function on, for the func-1 driver (non-fatal: BT is still
++	 * useful if this fails) */
++	ret = mt6630_wmt_cmd(w, wmt_wifi_on_cmd, sizeof(wmt_wifi_on_cmd),
++			     wmt_func_ctrl_evt, sizeof(wmt_func_ctrl_evt),
++			     "wifi func on");
++	if (!ret)
++		WRITE_ONCE(mt6630_wmt_chip_ready, true);
++
 +	/* switch RX to the in-band interrupt */
 +	ret = sdio_claim_irq(func, mt6630_sdio_irq);
 +	if (ret)
@@ -847,6 +896,8 @@
 +{
 +	struct mt6630_wmt *w = sdio_get_drvdata(func);
 +
++	WRITE_ONCE(mt6630_wmt_chip_ready, false);
++
 +	if (w->hdev) {
 +		hci_unregister_dev(w->hdev);
 +		hci_free_dev(w->hdev);
@@ -884,4 +935,892 @@
 +MODULE_FIRMWARE(MT6630_FW_PATCH_1);
 +MODULE_AUTHOR("amazon-suez mainline bringup");
 +MODULE_DESCRIPTION("WMT control-plane driver for MT6630 on SDIO");
++MODULE_LICENSE("GPL");
+--- a/drivers/misc/mt6630-wlan.c
++++ b/drivers/misc/mt6630-wlan.c
+@@ -0,0 +1,885 @@
++// SPDX-License-Identifier: GPL-2.0
++/*
++ * WLAN driver for the MediaTek MT6630 combo chip, SDIO function 1.
++ *
++ * Bring-up scope: firmware download + start, then a minimal mac80211
++ * device whose hw_scan is backed by the firmware's offloaded scan
++ * (CMD_ID_SCAN_REQ_V2); scan results (fw-forwarded beacon/probe-response
++ * frames, RXD type SW_FRAME) are parsed and fed to mac80211. TX and
++ * connection support are not implemented yet.
++ *
++ * Protocol per ~/suez-work/MT6630-WIFI-DESIGN.md (hardware-verified).
++ * RX runs a polling kthread for now; the SDIO in-band interrupt +
++ * enhanced mode are a later optimization.
++ *
++ * Depends on mt6630-wmt (function 2) having patched the chip and sent
++ * FUNC_CTRL WIFI ON; probe defers until then.
++ */
++
++#include <linux/delay.h>
++#include <linux/firmware.h>
++#include <linux/kernel.h>
++#include <linux/kthread.h>
++#include <linux/unaligned.h>
++#include <linux/module.h>
++#include <linux/mmc/host.h>
++#include <linux/mmc/sdio_func.h>
++#include <linux/mmc/sdio_ids.h>
++
++#include <net/mac80211.h>
++
++#include "mt6630-wmt.h"
++
++#define MT6630_SDIO_DEVICE_ID	0x6630
++#define MT6630_WLAN_FUNC	1
++#define MT6630_SDIO_BLK_SIZE	512
++
++#define MT6630_FW_RAM_CODE	"mediatek/mt6630/WIFI_RAM_CODE_MT6630"
++
++/* Function-1 registers (design doc 2; == vendor mt6630_reg.h and upstream
++ * mt76/sdio.h) */
++#define MCR_WCIR	0x0000
++#define MCR_WHLPCR	0x0004
++#define MCR_WHISR	0x0010
++#define MCR_WHIER	0x0014
++#define MCR_WTDR1	0x0034
++#define MCR_WRDR0	0x0050
++#define MCR_WRDR1	0x0054
++#define MCR_D2HRM0R	0x0078
++#define MCR_WRPLR	0x0090
++
++#define WCIR_CHIP_ID		GENMASK(15, 0)
++#define WCIR_REVISION		GENMASK(19, 16)
++#define WCIR_WLAN_READY		BIT(21)
++
++#define WHLPCR_FW_OWN_REQ_CLR	BIT(9)
++#define WHLPCR_IS_DRIVER_OWN	BIT(8)
++
++#define WHISR_TX_DONE		BIT(0)
++
++/* Command/event framing (design doc 4/5b) */
++#define PQ_ID_CMD		0x8000
++#define PQ_ID_PDA		0xc000
++#define PKT_TYPE_CMD		0xa0
++
++#define INIT_CMD_DOWNLOAD_CONFIG	1
++#define INIT_CMD_WIFI_START		2
++#define INIT_EVT_CMD_RESULT		1
++
++#define CMD_ID_SCAN_REQ_V2	0x03
++#define CMD_ID_SCAN_CANCEL	0x04
++#define CMD_ID_GET_NIC_CAPABILITY 0x80
++
++#define EVENT_ID_NIC_CAPABILITY	0x01
++#define EVENT_ID_SCAN_DONE	0x0d
++#define EVENT_ID_DEBUG_MSG	0x27
++
++#define DL_CONFIG_ENCRYPTION	BIT(0)
++#define DL_CONFIG_RESET		BIT(3)
++#define DL_CONFIG_ACK		BIT(31)
++
++#define MT6630_FW_CHUNK		2048
++#define MT6630_FW_START_ADDR	0x00091400
++
++#define MT6630_FW_HDR_SIZE	16
++#define MT6630_FW_SECT_SIZE	16
++#define MT6630_FW_SIGNATURE	0x574b544d	/* "MTKW" */
++
++/* RX descriptor (design doc 6; vendor HW_MAC_RX_DESC_T). The 16-byte base
++ * may be followed by status groups 4/1/2/3 in that order per the
++ * group-valid bits, then the 802.11 frame (+2 if the offset bit is set). */
++#define RXD_LEN_MASK		GENMASK(15, 0)
++#define RXD_GROUP_VLD(t)	(((t) >> 9) & 0xf)
++#define RXD_TYPE_SW_MASK	0xe00f
++#define RXD_TYPE_SW_EVENT	0xe000
++#define RXD_TYPE_SW_FRAME	0xe001
++#define RXD_GRP1		BIT(0)	/* 16 bytes: PN */
++#define RXD_GRP2		BIT(1)	/* 8 bytes: timestamp, CRC */
++#define RXD_GRP3		BIT(2)	/* 24 bytes: RX vector */
++#define RXD_GRP4		BIT(3)	/* 16 bytes: hdr translation */
++#define RXD_BASE_LEN		16
++#define RXD_HDR_OFFSET		BIT(6)	/* in ucHeaderLen byte */
++
++#define NIC_CAPABILITY_LEN	116
++
++/* CMD_SCAN_REQ_V2 (design doc 5b): 8 fixed bytes, 4 x {u32 len, 32-byte
++ * ssid}, 3 x u16, channel type, list num, 32 x {band, ch}, u16 ie len,
++ * 600-byte ie buf */
++#define SCAN_REQ_V2_LEN		(8 + 4 * 36 + 6 + 2 + 64 + 2 + 600)
++#define SCAN_MAX_SSIDS		4
++#define SCAN_MAX_CHANNELS	32
++#define SCAN_MAX_IE		600
++#define SCAN_TYPE_PASSIVE	0
++#define SCAN_TYPE_ACTIVE	1
++#define SCAN_SSID_WILDCARD	BIT(0)
++#define SCAN_SSID_SPECIFIED	BIT(2)
++#define SCAN_CHANNEL_SPECIFIED	4
++#define SCAN_BAND_2G4		1
++#define SCAN_BAND_5G		2
++
++#define OWN_POLL_RETRIES	1200
++#define OWN_POLL_DELAY_US	500
++#define EVT_POLL_RETRIES	40000
++#define EVT_POLL_DELAY_US	50
++#define READY_POLL_RETRIES	512
++#define CMD_RESP_TIMEOUT	(2 * HZ)
++
++#define MT6630_XFER_BUF_SIZE	2560
++
++struct mt6630_wlan {
++	struct sdio_func *func;
++	struct ieee80211_hw *hw;
++
++	u8 *tx_buf;			/* under tx_lock */
++	u8 *rx_buf;			/* rx thread (or probe phase) only */
++	struct mutex tx_lock;
++	u8 seq;
++
++	struct task_struct *rx_thread;
++
++	/* one command-with-response in flight (cmd_lock) */
++	struct mutex cmd_lock;
++	spinlock_t resp_lock;		/* guards the resp_* fields */
++	u8 resp_eid, resp_seq;		/* what we are waiting for */
++	u8 *resp_buf;
++	u16 resp_max;
++	int resp_len;
++	struct completion resp_done;
++
++	bool scanning;
++	u8 macaddr[ETH_ALEN];
++};
++
++/* ---- low-level ---- */
++
++static int mt6630_wlan_own_clear(struct sdio_func *func)
++{
++	int ret = 0, i;
++	u32 val;
++
++	sdio_writeb(func, WHLPCR_FW_OWN_REQ_CLR >> 8, MCR_WHLPCR + 1, &ret);
++	if (ret)
++		return ret;
++
++	for (i = 0; i < OWN_POLL_RETRIES; i++) {
++		val = sdio_readl(func, MCR_WHLPCR, &ret);
++		if (ret)
++			return ret;
++		if (val & WHLPCR_IS_DRIVER_OWN)
++			return 0;
++		udelay(OWN_POLL_DELAY_US);
++	}
++	return -ETIMEDOUT;
++}
++
++/* Send one frame to WTDR1 and wait for TX_DONE (one in flight). */
++static int mt6630_wlan_tx(struct mt6630_wlan *wl, u16 pq_id, u8 cid, u8 set,
++			  u8 seq, const void *payload, u16 len)
++{
++	struct sdio_func *func = wl->func;
++	u16 total = 8 + len;
++	u32 xfer = ALIGN(total + 4, 4);	/* + zero-dword terminator */
++	u8 *tx = wl->tx_buf;
++	u32 whisr;
++	int ret, i;
++
++	if (xfer > MT6630_SDIO_BLK_SIZE)
++		xfer = ALIGN(xfer, MT6630_SDIO_BLK_SIZE);
++	if (xfer > MT6630_XFER_BUF_SIZE)
++		return -EINVAL;
++
++	mutex_lock(&wl->tx_lock);
++	put_unaligned_le16(total, &tx[0]);
++	put_unaligned_le16(pq_id, &tx[2]);
++	tx[4] = cid;
++	tx[5] = PKT_TYPE_CMD;
++	tx[6] = set;
++	tx[7] = seq;
++	if (payload && len)
++		memcpy(&tx[8], payload, len);
++	else if (len)
++		memset(&tx[8], 0, len);
++	memset(&tx[8 + len], 0, xfer - 8 - len);
++
++	sdio_claim_host(func);
++	ret = sdio_writesb(func, MCR_WTDR1, tx, xfer);
++	if (!ret) {
++		for (i = 0; i < EVT_POLL_RETRIES; i++) {
++			whisr = sdio_readl(func, MCR_WHISR, &ret);
++			if (ret || (whisr & WHISR_TX_DONE))
++				break;
++			udelay(EVT_POLL_DELAY_US);
++		}
++	}
++	sdio_release_host(func);
++	mutex_unlock(&wl->tx_lock);
++
++	if (ret)
++		dev_err(&func->dev, "tx cid 0x%02x failed: %d\n", cid, ret);
++	return ret;
++}
++
++/* Read one pending RX packet into wl->rx_buf; 0 = nothing pending.
++ * Caller holds the host. */
++static int mt6630_wlan_rx_pkt(struct mt6630_wlan *wl, int port)
++{
++	struct sdio_func *func = wl->func;
++	u32 plr, pkt_len, xfer;
++	int ret;
++
++	plr = sdio_readl(func, MCR_WRPLR, &ret);
++	if (ret)
++		return ret;
++	pkt_len = port == 0 ? (plr & 0xffff) : (plr >> 16);
++	if (!pkt_len)
++		return 0;
++
++	xfer = ALIGN(pkt_len + 4, 4);	/* read-extra-4-bytes quirk */
++	if (xfer > MT6630_SDIO_BLK_SIZE)
++		xfer = ALIGN(xfer, MT6630_SDIO_BLK_SIZE);
++	if (xfer > MT6630_XFER_BUF_SIZE)
++		return -EPROTO;
++
++	ret = sdio_readsb(func, wl->rx_buf,
++			  port == 0 ? MCR_WRDR0 : MCR_WRDR1, xfer);
++	if (ret)
++		return ret;
++	return pkt_len;
++}
++
++/* ---- init phase (probe context, polled, rx thread not running) ---- */
++
++static int mt6630_wlan_init_evt_wait(struct mt6630_wlan *wl, u8 want_seq,
++				     const char *what)
++{
++	struct device *dev = &wl->func->dev;
++	int ret, i;
++
++	for (i = 0; i < EVT_POLL_RETRIES; i++) {
++		ret = mt6630_wlan_rx_pkt(wl, 0);
++		if (ret)
++			break;
++		udelay(EVT_POLL_DELAY_US);
++	}
++	if (ret < 0) {
++		dev_err(dev, "%s: rx failed: %d\n", what, ret);
++		return ret;
++	}
++	if (ret == 0) {
++		dev_err(dev, "%s: event timeout\n", what);
++		return -ETIMEDOUT;
++	}
++	/* {len, 0xE000, eid, seq, rsvd[2], status} */
++	if (get_unaligned_le16(&wl->rx_buf[2]) != RXD_TYPE_SW_EVENT ||
++	    wl->rx_buf[4] != INIT_EVT_CMD_RESULT || wl->rx_buf[5] != want_seq ||
++	    wl->rx_buf[8] != 0) {
++		dev_err(dev, "%s: bad result: %*ph\n", what,
++			min(ret, 12), wl->rx_buf);
++		return -EPROTO;
++	}
++	return 0;
++}
++
++static int mt6630_wlan_load_firmware(struct mt6630_wlan *wl)
++{
++	struct device *dev = &wl->func->dev;
++	const struct firmware *fw;
++	u32 n_sections, i;
++	u8 cmd[12], seq;
++	int ret;
++
++	ret = request_firmware(&fw, MT6630_FW_RAM_CODE, dev);
++	if (ret)
++		return ret;
++
++	if (fw->size < MT6630_FW_HDR_SIZE ||
++	    get_unaligned_le32(&fw->data[0]) != MT6630_FW_SIGNATURE) {
++		dev_err(dev, "bad WIFI_RAM_CODE signature\n");
++		ret = -EINVAL;
++		goto out;
++	}
++	n_sections = get_unaligned_le32(&fw->data[8]);
++	if (n_sections == 0 || n_sections > 8 ||
++	    MT6630_FW_HDR_SIZE + n_sections * MT6630_FW_SECT_SIZE > fw->size) {
++		ret = -EINVAL;
++		goto out;
++	}
++
++	sdio_claim_host(wl->func);
++	for (i = 0; i < n_sections; i++) {
++		const u8 *sect = fw->data + MT6630_FW_HDR_SIZE +
++				 i * MT6630_FW_SECT_SIZE;
++		u32 offset = get_unaligned_le32(&sect[0]);
++		u32 length = get_unaligned_le32(&sect[8]);
++		u32 dest   = get_unaligned_le32(&sect[12]);
++		u32 pos;
++
++		if (offset + length > fw->size) {
++			ret = -EINVAL;
++			break;
++		}
++		dev_dbg(dev, "fw section %u: %u bytes -> 0x%08x\n",
++			i, length, dest);
++
++		put_unaligned_le32(dest, &cmd[0]);
++		put_unaligned_le32(length, &cmd[4]);
++		put_unaligned_le32(DL_CONFIG_ENCRYPTION | DL_CONFIG_ACK |
++				   (i == 0 ? DL_CONFIG_RESET : 0), &cmd[8]);
++		seq = ++wl->seq;
++		ret = mt6630_wlan_tx(wl, PQ_ID_CMD, INIT_CMD_DOWNLOAD_CONFIG,
++				     0, seq, cmd, sizeof(cmd));
++		if (!ret)
++			ret = mt6630_wlan_init_evt_wait(wl, seq,
++							"download config");
++		if (ret)
++			break;
++
++		for (pos = 0; pos < length; pos += MT6630_FW_CHUNK) {
++			u32 n = min_t(u32, MT6630_FW_CHUNK, length - pos);
++
++			ret = mt6630_wlan_tx(wl, PQ_ID_PDA, 0, 0, 0,
++					     fw->data + offset + pos, n);
++			if (ret)
++				break;
++		}
++		if (ret)
++			break;
++	}
++
++	if (!ret) {
++		/* WIFI_START, no event follows (design doc 5b) */
++		put_unaligned_le32(1, &cmd[0]);
++		put_unaligned_le32(MT6630_FW_START_ADDR, &cmd[4]);
++		ret = mt6630_wlan_tx(wl, PQ_ID_CMD, INIT_CMD_WIFI_START, 0,
++				     ++wl->seq, cmd, 8);
++	}
++	sdio_release_host(wl->func);
++out:
++	release_firmware(fw);
++	return ret;
++}
++
++/* ---- RX path (kthread, polled) ---- */
++
++static void mt6630_wlan_rx_frame(struct mt6630_wlan *wl, u8 *pkt, u16 len)
++{
++	struct ieee80211_rx_status *status;
++	struct sk_buff *skb;
++	u16 pkt_type = get_unaligned_le16(&pkt[2]);
++	u8 groups = RXD_GROUP_VLD(pkt_type);
++	u8 channel = pkt[5];
++	u32 hdr_len = RXD_BASE_LEN;
++	u8 rcpi = 0;
++
++	/* status groups, in fill order 4, 1, 2, 3 (design doc 6) */
++	if (groups & RXD_GRP4)
++		hdr_len += 16;
++	if (groups & RXD_GRP1)
++		hdr_len += 16;
++	if (groups & RXD_GRP2)
++		hdr_len += 8;
++	if (groups & RXD_GRP3) {
++		rcpi = (get_unaligned_le32(&pkt[hdr_len + 8]) >> 8) & 0xff;
++		hdr_len += 24;
++	}
++	if (pkt[6] & RXD_HDR_OFFSET)
++		hdr_len += 2;
++
++	if (len <= hdr_len || len > MT6630_XFER_BUF_SIZE)
++		return;
++
++	skb = dev_alloc_skb(len - hdr_len);
++	if (!skb)
++		return;
++	skb_put_data(skb, pkt + hdr_len, len - hdr_len);
++
++	status = IEEE80211_SKB_RXCB(skb);
++	memset(status, 0, sizeof(*status));
++	if (channel > 14) {
++		status->band = NL80211_BAND_5GHZ;
++		status->freq = ieee80211_channel_to_frequency(channel,
++							NL80211_BAND_5GHZ);
++	} else {
++		status->band = NL80211_BAND_2GHZ;
++		status->freq = ieee80211_channel_to_frequency(channel,
++							NL80211_BAND_2GHZ);
++	}
++	status->signal = rcpi / 2 - 110;	/* RCPI -> dBm */
++
++	ieee80211_rx_irqsafe(wl->hw, skb);
++}
++
++static void mt6630_wlan_rx_event(struct mt6630_wlan *wl, u8 *pkt, u16 len)
++{
++	struct device *dev = &wl->func->dev;
++	u8 eid = pkt[4], seq = pkt[5];
++	unsigned long flags;
++
++	/* a command waiter? */
++	spin_lock_irqsave(&wl->resp_lock, flags);
++	if (wl->resp_buf && eid == wl->resp_eid && seq == wl->resp_seq) {
++		wl->resp_len = min_t(int, len - 8, wl->resp_max);
++		memcpy(wl->resp_buf, &pkt[8], wl->resp_len);
++		wl->resp_buf = NULL;
++		spin_unlock_irqrestore(&wl->resp_lock, flags);
++		complete(&wl->resp_done);
++		return;
++	}
++	spin_unlock_irqrestore(&wl->resp_lock, flags);
++
++	switch (eid) {
++	case EVENT_ID_SCAN_DONE:
++		if (wl->scanning) {
++			struct cfg80211_scan_info info = {};
++
++			wl->scanning = false;
++			ieee80211_scan_completed(wl->hw, &info);
++		}
++		break;
++	case EVENT_ID_DEBUG_MSG:
++		dev_dbg(dev, "fw: %.*s\n", len - 8, &pkt[8]);
++		break;
++	default:
++		dev_dbg(dev, "unsolicited event 0x%02x (%u)\n", eid, len);
++	}
++}
++
++static int mt6630_wlan_rx_thread(void *data)
++{
++	struct mt6630_wlan *wl = data;
++	struct sdio_func *func = wl->func;
++	int ret, port, got;
++
++	while (!kthread_should_stop()) {
++		got = 0;
++		for (port = 0; port < 2; port++) {
++			sdio_claim_host(func);
++			ret = mt6630_wlan_rx_pkt(wl, port);
++			sdio_release_host(func);
++			if (ret <= 0)
++				continue;
++			got++;
++
++			if ((get_unaligned_le16(&wl->rx_buf[2]) &
++			     RXD_TYPE_SW_MASK) == RXD_TYPE_SW_EVENT)
++				mt6630_wlan_rx_event(wl, wl->rx_buf, ret);
++			else
++				mt6630_wlan_rx_frame(wl, wl->rx_buf, ret);
++		}
++		if (!got)
++			usleep_range(1000, 2000);
++	}
++	return 0;
++}
++
++/* ---- runtime commands (rx thread delivers the response) ---- */
++
++static int mt6630_wlan_cmd(struct mt6630_wlan *wl, u8 cid, bool set,
++			   const void *payload, u16 len,
++			   u8 want_eid, u8 *resp, u16 resp_max)
++{
++	unsigned long flags;
++	u8 seq;
++	int ret;
++
++	mutex_lock(&wl->cmd_lock);
++	seq = ++wl->seq;
++
++	if (resp) {
++		spin_lock_irqsave(&wl->resp_lock, flags);
++		wl->resp_eid = want_eid;
++		wl->resp_seq = seq;
++		wl->resp_buf = resp;
++		wl->resp_max = resp_max;
++		wl->resp_len = 0;
++		reinit_completion(&wl->resp_done);
++		spin_unlock_irqrestore(&wl->resp_lock, flags);
++	}
++
++	ret = mt6630_wlan_tx(wl, PQ_ID_CMD, cid, set ? 1 : 0, seq,
++			     payload, len);
++	if (!ret && resp) {
++		if (!wait_for_completion_timeout(&wl->resp_done,
++						 CMD_RESP_TIMEOUT))
++			ret = -ETIMEDOUT;
++		else
++			ret = wl->resp_len;
++	}
++
++	if (ret < 0 && resp) {
++		spin_lock_irqsave(&wl->resp_lock, flags);
++		wl->resp_buf = NULL;
++		spin_unlock_irqrestore(&wl->resp_lock, flags);
++	}
++	mutex_unlock(&wl->cmd_lock);
++	return ret;
++}
++
++static int mt6630_wlan_query_caps(struct mt6630_wlan *wl)
++{
++	struct device *dev = &wl->func->dev;
++	u8 cap[NIC_CAPABILITY_LEN];
++	int ret, tries;
++
++	/* the first query's response has been seen to stall until the next
++	 * TX reaches the fw (design doc 5b quirk) -- retry a few times */
++	for (tries = 0; tries < 3; tries++) {
++		ret = mt6630_wlan_cmd(wl, CMD_ID_GET_NIC_CAPABILITY, false,
++				      NULL, NIC_CAPABILITY_LEN,
++				      EVENT_ID_NIC_CAPABILITY,
++				      cap, sizeof(cap));
++		if (ret >= 20)
++			break;
++	}
++	if (ret < 20)
++		return ret < 0 ? ret : -EPROTO;
++
++	memcpy(wl->macaddr, &cap[8], ETH_ALEN);
++	dev_info(dev, "fw: product 0x%04x ver 0x%04x, MAC %pM%s\n",
++		 get_unaligned_le16(&cap[0]), get_unaligned_le16(&cap[2]),
++		 wl->macaddr, cap[6] ? ", 2.4 GHz only" : "");
++	return 0;
++}
++
++/* ---- mac80211 ---- */
++
++static void mt6630_wlan_op_tx(struct ieee80211_hw *hw,
++			      struct ieee80211_tx_control *control,
++			      struct sk_buff *skb)
++{
++	/* TX not implemented yet (scan-only bring-up) */
++	ieee80211_free_txskb(hw, skb);
++}
++
++static int mt6630_wlan_op_start(struct ieee80211_hw *hw)
++{
++	return 0;
++}
++
++static void mt6630_wlan_op_stop(struct ieee80211_hw *hw, bool suspend)
++{
++}
++
++static int mt6630_wlan_op_add_interface(struct ieee80211_hw *hw,
++					struct ieee80211_vif *vif)
++{
++	return 0;
++}
++
++static void mt6630_wlan_op_remove_interface(struct ieee80211_hw *hw,
++					    struct ieee80211_vif *vif)
++{
++}
++
++static int mt6630_wlan_op_config(struct ieee80211_hw *hw, int radio_idx,
++				 u32 changed)
++{
++	return 0;
++}
++
++static void mt6630_wlan_op_configure_filter(struct ieee80211_hw *hw,
++					    unsigned int changed_flags,
++					    unsigned int *total_flags,
++					    u64 multicast)
++{
++	*total_flags &= FIF_ALLMULTI | FIF_BCN_PRBRESP_PROMISC;
++}
++
++static int mt6630_wlan_op_hw_scan(struct ieee80211_hw *hw,
++				  struct ieee80211_vif *vif,
++				  struct ieee80211_scan_request *hw_req)
++{
++	struct mt6630_wlan *wl = hw->priv;
++	struct cfg80211_scan_request *req = &hw_req->req;
++	u8 *cmd __free(kfree) = kzalloc(SCAN_REQ_V2_LEN, GFP_KERNEL);
++	u32 n_ch = min_t(u32, req->n_channels, SCAN_MAX_CHANNELS);
++	u32 n_ssid = min_t(u32, req->n_ssids, SCAN_MAX_SSIDS);
++	bool passive = !req->n_ssids;
++	u32 i;
++	int ret;
++
++	if (!cmd)
++		return -ENOMEM;
++
++	cmd[0] = 1;				/* fw-side scan seq */
++	cmd[1] = 0;				/* bss index */
++	cmd[2] = passive ? SCAN_TYPE_PASSIVE : SCAN_TYPE_ACTIVE;
++	cmd[3] = SCAN_SSID_WILDCARD;
++	cmd[4] = 0;
++	cmd[5] = 2;				/* probe reqs per SSID */
++	for (i = 0; i < n_ssid; i++) {
++		if (!req->ssids[i].ssid_len)
++			continue;
++		put_unaligned_le32(req->ssids[i].ssid_len,
++				   &cmd[8 + i * 36]);
++		memcpy(&cmd[8 + i * 36 + 4], req->ssids[i].ssid,
++		       req->ssids[i].ssid_len);
++		cmd[4]++;			/* ssid num */
++	}
++	if (cmd[4])
++		cmd[3] = SCAN_SSID_SPECIFIED | SCAN_SSID_WILDCARD;
++
++	/* u16 probe delay / dwell / timeout: 0 = fw defaults */
++	cmd[8 + 4 * 36 + 6] = SCAN_CHANNEL_SPECIFIED;
++	cmd[8 + 4 * 36 + 7] = n_ch;
++	for (i = 0; i < n_ch; i++) {
++		struct ieee80211_channel *ch = req->channels[i];
++
++		cmd[8 + 4 * 36 + 8 + i * 2] =
++			ch->band == NL80211_BAND_5GHZ ? SCAN_BAND_5G
++						      : SCAN_BAND_2G4;
++		cmd[8 + 4 * 36 + 8 + i * 2 + 1] = ch->hw_value;
++	}
++	if (req->ie_len && req->ie_len <= SCAN_MAX_IE) {
++		put_unaligned_le16(req->ie_len, &cmd[8 + 4 * 36 + 8 + 64]);
++		memcpy(&cmd[8 + 4 * 36 + 8 + 64 + 2], req->ie, req->ie_len);
++	}
++
++	wl->scanning = true;
++	ret = mt6630_wlan_cmd(wl, CMD_ID_SCAN_REQ_V2, true, cmd,
++			      SCAN_REQ_V2_LEN, 0, NULL, 0);
++	if (ret)
++		wl->scanning = false;
++	return ret;
++}
++
++static void mt6630_wlan_op_cancel_hw_scan(struct ieee80211_hw *hw,
++					  struct ieee80211_vif *vif)
++{
++	struct mt6630_wlan *wl = hw->priv;
++	u8 cmd[4] = { 1, 0, 0, 0 };	/* seq, not-ext-channel */
++
++	if (!wl->scanning)
++		return;
++	mt6630_wlan_cmd(wl, CMD_ID_SCAN_CANCEL, true, cmd, sizeof(cmd),
++			0, NULL, 0);
++	if (wl->scanning) {
++		struct cfg80211_scan_info info = { .aborted = true };
++
++		wl->scanning = false;
++		ieee80211_scan_completed(hw, &info);
++	}
++}
++
++static const struct ieee80211_ops mt6630_wlan_ops = {
++	.add_chanctx = ieee80211_emulate_add_chanctx,
++	.remove_chanctx = ieee80211_emulate_remove_chanctx,
++	.change_chanctx = ieee80211_emulate_change_chanctx,
++	.switch_vif_chanctx = ieee80211_emulate_switch_vif_chanctx,
++	.tx = mt6630_wlan_op_tx,
++	.wake_tx_queue = ieee80211_handle_wake_tx_queue,
++	.start = mt6630_wlan_op_start,
++	.stop = mt6630_wlan_op_stop,
++	.add_interface = mt6630_wlan_op_add_interface,
++	.remove_interface = mt6630_wlan_op_remove_interface,
++	.config = mt6630_wlan_op_config,
++	.configure_filter = mt6630_wlan_op_configure_filter,
++	.hw_scan = mt6630_wlan_op_hw_scan,
++	.cancel_hw_scan = mt6630_wlan_op_cancel_hw_scan,
++};
++
++#define CHAN2G(_ch) {						\
++	.band = NL80211_BAND_2GHZ,				\
++	.center_freq = 2407 + (_ch) * 5,			\
++	.hw_value = (_ch),					\
++}
++
++#define CHAN5G(_ch) {						\
++	.band = NL80211_BAND_5GHZ,				\
++	.center_freq = 5000 + (_ch) * 5,			\
++	.hw_value = (_ch),					\
++}
++
++static struct ieee80211_channel mt6630_channels_2ghz[] = {
++	CHAN2G(1), CHAN2G(2), CHAN2G(3), CHAN2G(4), CHAN2G(5),
++	CHAN2G(6), CHAN2G(7), CHAN2G(8), CHAN2G(9), CHAN2G(10),
++	CHAN2G(11), CHAN2G(12), CHAN2G(13),
++};
++
++static struct ieee80211_channel mt6630_channels_5ghz[] = {
++	CHAN5G(36), CHAN5G(40), CHAN5G(44), CHAN5G(48),
++	CHAN5G(52), CHAN5G(56), CHAN5G(60), CHAN5G(64),
++	CHAN5G(100), CHAN5G(104), CHAN5G(108), CHAN5G(112),
++	CHAN5G(116), CHAN5G(120), CHAN5G(124), CHAN5G(128),
++	CHAN5G(132), CHAN5G(136), CHAN5G(140),
++	CHAN5G(149), CHAN5G(153), CHAN5G(157), CHAN5G(161),
++	CHAN5G(165),
++};
++
++#define RATE(_rate, _hw_value) {			\
++	.bitrate = (_rate),				\
++	.hw_value = (_hw_value),			\
++}
++
++static struct ieee80211_rate mt6630_rates[] = {
++	RATE(10, 0), RATE(20, 1), RATE(55, 2), RATE(110, 3),
++	RATE(60, 4), RATE(90, 5), RATE(120, 6), RATE(180, 7),
++	RATE(240, 8), RATE(360, 9), RATE(480, 10), RATE(540, 11),
++};
++
++static struct ieee80211_supported_band mt6630_band_2ghz = {
++	.channels = mt6630_channels_2ghz,
++	.n_channels = ARRAY_SIZE(mt6630_channels_2ghz),
++	.bitrates = mt6630_rates,
++	.n_bitrates = ARRAY_SIZE(mt6630_rates),
++};
++
++static struct ieee80211_supported_band mt6630_band_5ghz = {
++	.channels = mt6630_channels_5ghz,
++	.n_channels = ARRAY_SIZE(mt6630_channels_5ghz),
++	.bitrates = mt6630_rates + 4,	/* no CCK on 5 GHz */
++	.n_bitrates = ARRAY_SIZE(mt6630_rates) - 4,
++};
++
++/* ---- probe / remove ---- */
++
++static int mt6630_wlan_probe(struct sdio_func *func,
++			     const struct sdio_device_id *id)
++{
++	struct ieee80211_hw *hw;
++	struct mt6630_wlan *wl;
++	u32 wcir = 0;
++	int ret, i;
++
++	if (func->num != MT6630_WLAN_FUNC)
++		return -ENODEV;
++	if (!mt6630_wmt_ready())
++		return -EPROBE_DEFER;
++
++	hw = ieee80211_alloc_hw(sizeof(*wl), &mt6630_wlan_ops);
++	if (!hw)
++		return -ENOMEM;
++	wl = hw->priv;
++	wl->hw = hw;
++	wl->func = func;
++	mutex_init(&wl->tx_lock);
++	mutex_init(&wl->cmd_lock);
++	spin_lock_init(&wl->resp_lock);
++	init_completion(&wl->resp_done);
++	sdio_set_drvdata(func, wl);
++
++	wl->tx_buf = devm_kmalloc(&func->dev, MT6630_XFER_BUF_SIZE,
++				  GFP_KERNEL);
++	wl->rx_buf = devm_kmalloc(&func->dev, MT6630_XFER_BUF_SIZE,
++				  GFP_KERNEL);
++	if (!wl->tx_buf || !wl->rx_buf) {
++		ret = -ENOMEM;
++		goto err_free_hw;
++	}
++
++	sdio_claim_host(func);
++	ret = sdio_enable_func(func);
++	if (ret)
++		goto err_release;
++	ret = sdio_set_block_size(func, MT6630_SDIO_BLK_SIZE);
++	if (ret)
++		goto err_disable;
++	ret = mt6630_wlan_own_clear(func);
++	if (ret)
++		goto err_disable;
++
++	wcir = sdio_readl(func, MCR_WCIR, &ret);
++	if (ret || (wcir & WCIR_CHIP_ID) != MT6630_SDIO_DEVICE_ID) {
++		dev_err(&func->dev, "bad chip id 0x%08x (%d)\n", wcir, ret);
++		ret = ret ? ret : -ENODEV;
++		goto err_disable;
++	}
++	sdio_release_host(func);
++
++	ret = mt6630_wlan_load_firmware(wl);
++	if (ret)
++		goto err_disable_unclaimed;
++
++	sdio_claim_host(func);
++	for (i = 0; i < READY_POLL_RETRIES; i++) {
++		wcir = sdio_readl(func, MCR_WCIR, &ret);
++		if (ret || (wcir & WCIR_WLAN_READY))
++			break;
++		msleep(10);
++	}
++	sdio_release_host(func);
++	if (!(wcir & WCIR_WLAN_READY)) {
++		dev_err(&func->dev, "fw ready timeout\n");
++		ret = -ETIMEDOUT;
++		goto err_disable_unclaimed;
++	}
++	dev_info(&func->dev, "MT6630 WLAN firmware running\n");
++
++	wl->rx_thread = kthread_run(mt6630_wlan_rx_thread, wl,
++				    "mt6630-wlan-rx");
++	if (IS_ERR(wl->rx_thread)) {
++		ret = PTR_ERR(wl->rx_thread);
++		goto err_disable_unclaimed;
++	}
++
++	ret = mt6630_wlan_query_caps(wl);
++	if (ret) {
++		dev_err(&func->dev, "capability query failed: %d\n", ret);
++		goto err_stop_thread;
++	}
++
++	/* mac80211 setup: scan-only for now */
++	hw->wiphy->bands[NL80211_BAND_2GHZ] = &mt6630_band_2ghz;
++	hw->wiphy->bands[NL80211_BAND_5GHZ] = &mt6630_band_5ghz;
++	hw->wiphy->interface_modes = BIT(NL80211_IFTYPE_STATION);
++	hw->wiphy->max_scan_ssids = SCAN_MAX_SSIDS;
++	hw->wiphy->max_scan_ie_len = SCAN_MAX_IE;
++	ieee80211_hw_set(hw, SIGNAL_DBM);
++	hw->queues = 4;
++	SET_IEEE80211_DEV(hw, &func->dev);
++	SET_IEEE80211_PERM_ADDR(hw, wl->macaddr);
++
++	ret = ieee80211_register_hw(hw);
++	if (ret)
++		goto err_stop_thread;
++
++	dev_info(&func->dev, "registered %s (%pM)\n",
++		 wiphy_name(hw->wiphy), wl->macaddr);
++	return 0;
++
++err_stop_thread:
++	kthread_stop(wl->rx_thread);
++err_disable_unclaimed:
++	sdio_claim_host(func);
++	sdio_disable_func(func);
++	sdio_release_host(func);
++	goto err_free_hw;
++err_disable:
++	sdio_disable_func(func);
++err_release:
++	sdio_release_host(func);
++err_free_hw:
++	ieee80211_free_hw(hw);
++	return ret;
++}
++
++static void mt6630_wlan_remove(struct sdio_func *func)
++{
++	struct mt6630_wlan *wl = sdio_get_drvdata(func);
++
++	ieee80211_unregister_hw(wl->hw);
++	kthread_stop(wl->rx_thread);
++	sdio_claim_host(func);
++	sdio_disable_func(func);
++	sdio_release_host(func);
++	ieee80211_free_hw(wl->hw);
++}
++
++static const struct sdio_device_id mt6630_wlan_ids[] = {
++	{ SDIO_DEVICE(SDIO_VENDOR_ID_MEDIATEK, MT6630_SDIO_DEVICE_ID) },
++	{ /* end */ },
++};
++MODULE_DEVICE_TABLE(sdio, mt6630_wlan_ids);
++
++static struct sdio_driver mt6630_wlan_driver = {
++	.name		= "mt6630-wlan",
++	.id_table	= mt6630_wlan_ids,
++	.probe		= mt6630_wlan_probe,
++	.remove		= mt6630_wlan_remove,
++};
++module_sdio_driver(mt6630_wlan_driver);
++
++MODULE_FIRMWARE(MT6630_FW_RAM_CODE);
++MODULE_AUTHOR("amazon-suez mainline bringup");
++MODULE_DESCRIPTION("mac80211 driver for MT6630 on SDIO (scan-only bring-up)");
 +MODULE_LICENSE("GPL");
