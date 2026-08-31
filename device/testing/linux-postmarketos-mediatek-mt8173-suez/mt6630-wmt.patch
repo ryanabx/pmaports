@@ -33,7 +33,7 @@
 +obj-$(CONFIG_MT6630_WLAN)		+= mt6630-wlan.o
 --- a/drivers/misc/mt6630-wmt.h
 +++ b/drivers/misc/mt6630-wmt.h
-@@ -0,0 +1,15 @@
+@@ -0,0 +1,23 @@
 +/* SPDX-License-Identifier: GPL-2.0 */
 +/*
 + * Interface between the MT6630 WMT control-plane driver (SDIO function 2)
@@ -48,10 +48,18 @@
 + * acked: only then may the function-1 driver download the WLAN firmware. */
 +bool mt6630_wmt_ready(void);
 +
++/* The chip has no CCCR INTx, so only ONE function may claim the SDIO irq
++ * (the mmc core's single-handler fast path). The WMT driver owns it and
++ * chains the WLAN driver's handler: fn runs from sdio_irq_thread context
++ * with the host claimed. Unregister does not synchronize -- the caller
++ * must claim the host afterwards to be sure no invocation is in flight. */
++void mt6630_wmt_register_wlan_isr(void (*fn)(void *ctx), void *ctx);
++void mt6630_wmt_unregister_wlan_isr(void);
++
 +#endif
 --- a/drivers/misc/mt6630-wmt.c
 +++ b/drivers/misc/mt6630-wmt.c
-@@ -0,0 +1,885 @@
+@@ -0,0 +1,964 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/*
 + * WMT control-plane driver for the MediaTek MT6630 combo chip on SDIO.
@@ -75,8 +83,11 @@
 + */
 +
 +#include <linux/delay.h>
++#include <linux/etherdevice.h>
 +#include <linux/firmware.h>
++#include <linux/hex.h>
 +#include <linux/kernel.h>
++#include <linux/of.h>
 +#include <linux/unaligned.h>
 +#include <linux/module.h>
 +#include <linux/mmc/host.h>
@@ -495,7 +506,26 @@
 + * at runtime (all WMT exchanges are polled during probe/remove); fw
 + * messages (types 5/6) are logged at debug level.
 + */
-+static void mt6630_sdio_irq(struct sdio_func *func)
++/* Chained function-1 (WLAN) handler; see mt6630-wmt.h. */
++static void (*mt6630_wlan_isr)(void *ctx);
++static void *mt6630_wlan_isr_ctx;
++
++void mt6630_wmt_register_wlan_isr(void (*fn)(void *ctx), void *ctx)
++{
++	WRITE_ONCE(mt6630_wlan_isr_ctx, ctx);
++	/* ctx must be visible before fn */
++	smp_wmb();
++	WRITE_ONCE(mt6630_wlan_isr, fn);
++}
++EXPORT_SYMBOL_GPL(mt6630_wmt_register_wlan_isr);
++
++void mt6630_wmt_unregister_wlan_isr(void)
++{
++	WRITE_ONCE(mt6630_wlan_isr, NULL);
++}
++EXPORT_SYMBOL_GPL(mt6630_wmt_unregister_wlan_isr);
++
++static void mt6630_wmt_stp_service(struct sdio_func *func)
 +{
 +	struct mt6630_wmt *w = sdio_get_drvdata(func);
 +	u8 *rx = w->rx_buf;
@@ -543,6 +573,21 @@
 +	}
 +}
 +
++static void mt6630_sdio_irq(struct sdio_func *func)
++{
++	void (*wlan_fn)(void *ctx);
++
++	/* one DAT1 line, no CCCR INTx: service func 2 (BT, latency
++	 * sensitive) first, then chain the func-1 WLAN handler */
++	mt6630_wmt_stp_service(func);
++
++	wlan_fn = READ_ONCE(mt6630_wlan_isr);
++	if (wlan_fn) {
++		smp_rmb();
++		wlan_fn(READ_ONCE(mt6630_wlan_isr_ctx));
++	}
++}
++
 +static int mt6630_bt_open(struct hci_dev *hdev)
 +{
 +	return 0;
@@ -555,6 +600,46 @@
 +
 +static int mt6630_bt_flush(struct hci_dev *hdev)
 +{
++	return 0;
++}
++
++/* MTK vendor command, same shape as upstream btmtk_set_bdaddr() */
++static int mt6630_bt_set_bdaddr(struct hci_dev *hdev, const bdaddr_t *bdaddr)
++{
++	struct sk_buff *skb;
++
++	skb = __hci_cmd_sync(hdev, 0xfc1a, 6, bdaddr, HCI_INIT_TIMEOUT);
++	if (IS_ERR(skb)) {
++		bt_dev_err(hdev, "setting bdaddr failed (%ld)", PTR_ERR(skb));
++		return PTR_ERR(skb);
++	}
++	kfree_skb(skb);
++	return 0;
++}
++
++/* The fw boots with a default address; the bootloader stores the factory
++ * one as ASCII hex in the DT at /idme/bt_mac_addr (like the wlan MAC).
++ * Failure is not fatal -- BT just keeps the default address. */
++static int mt6630_bt_setup(struct hci_dev *hdev)
++{
++	struct device_node *np;
++	const char *val;
++	bdaddr_t bdaddr;
++	u8 mac[6];
++	int len, i;
++
++	np = of_find_node_by_path("/idme/bt_mac_addr");
++	if (!np)
++		return 0;
++	val = of_get_property(np, "value", &len);
++	if (val && len >= 12 && hex2bin(mac, val, 6) == 0 &&
++	    is_valid_ether_addr(mac)) {
++		for (i = 0; i < 6; i++)	/* bdaddr_t is reversed */
++			bdaddr.b[i] = mac[5 - i];
++		if (!mt6630_bt_set_bdaddr(hdev, &bdaddr))
++			bt_dev_info(hdev, "bdaddr %pM from idme", mac);
++	}
++	of_node_put(np);
 +	return 0;
 +}
 +
@@ -871,6 +956,8 @@
 +	hdev->close = mt6630_bt_close;
 +	hdev->flush = mt6630_bt_flush;
 +	hdev->send  = mt6630_bt_send;
++	hdev->setup = mt6630_bt_setup;
++	hdev->set_bdaddr = mt6630_bt_set_bdaddr;
 +
 +	ret = hci_register_dev(hdev);
 +	if (ret) {
@@ -939,7 +1026,7 @@
 +MODULE_LICENSE("GPL");
 --- a/drivers/misc/mt6630-wlan.c
 +++ b/drivers/misc/mt6630-wlan.c
-@@ -0,0 +1,1630 @@
+@@ -0,0 +1,1887 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/*
 + * WLAN driver for the MediaTek MT6630 combo chip, SDIO function 1.
@@ -969,7 +1056,9 @@
 +#include <linux/of.h>
 +#include <linux/unaligned.h>
 +#include <linux/module.h>
++#include <linux/mmc/card.h>
 +#include <linux/mmc/host.h>
++#include <linux/mmc/sdio.h>
 +#include <linux/mmc/sdio_func.h>
 +#include <linux/mmc/sdio_ids.h>
 +
@@ -987,8 +1076,10 @@
 + * mt76/sdio.h) */
 +#define MCR_WCIR	0x0000
 +#define MCR_WHLPCR	0x0004
++#define MCR_WHCR	0x000c
 +#define MCR_WHISR	0x0010
 +#define MCR_WHIER	0x0014
++#define MCR_WASR	0x0020
 +#define MCR_WTDR1	0x0034
 +#define MCR_WRDR0	0x0050
 +#define MCR_WRDR1	0x0054
@@ -1001,8 +1092,39 @@
 +
 +#define WHLPCR_FW_OWN_REQ_CLR	BIT(9)
 +#define WHLPCR_IS_DRIVER_OWN	BIT(8)
++#define WHLPCR_INT_EN_CLR	BIT(1)	/* card-level DAT1 gate (byte 0) */
++#define WHLPCR_INT_EN_SET	BIT(0)
++
++#define WHCR_RX_ENHANCE_MODE_EN	BIT(16)
++#define WHCR_MAX_HIF_RX_LEN_NUM	GENMASK(13, 8)
++#define WHCR_RECV_MAILBOX_RD_CLR BIT(2)
++#define WHCR_W_INT_CLR_CTRL	BIT(1)	/* 0 = WHISR read-to-clear */
 +
 +#define WHISR_TX_DONE		BIT(0)
++#define WHISR_RX0_DONE		BIT(1)
++#define WHISR_RX1_DONE		BIT(2)
++#define WHISR_ABNORMAL		BIT(6)
++/* only bits we actually service; D2H SW bits stay off (lesson: they do
++ * not clear on a plain status read and storm the line). ABNORMAL is also
++ * off: block-mode reads > 512 B round up and legitimately over-read the
++ * rx ring (WASR 0x100 RX0_UNDER_FLOW), which is harmless but would
++ * interrupt on every large frame. */
++#define WHIER_IRQ_BITS		(WHISR_TX_DONE | WHISR_RX0_DONE | \
++				 WHISR_RX1_DONE)
++
++/* Enhanced interrupt status (vendor ENHANCE_MODE_DATA_STRUCT_T): one
++ * CMD53 at WHISR returns status + released TX counts + pending RX
++ * lengths atomically, and clears them all (everything is read-clear). */
++#define INT_STRUCT_LEN		112
++#define INT_WHISR_OFF		0
++#define INT_WTSR_OFF		4	/* 16 x u16 released page counts */
++#define INT_RX0_NUM_OFF		36
++#define INT_RX1_NUM_OFF		38
++#define INT_RX0_LEN_OFF		40	/* 16 x u16 */
++#define INT_RX1_LEN_OFF		72
++#define INT_MAX_RX_PKTS		16
++#define HIF_RX_HW_APPENDED	4	/* checksum DW after every packet */
++#define IRQ_RX_BUDGET		8	/* enhanced reads per invocation */
 +
 +/* Command/event framing (design doc 4/5b) */
 +#define PQ_ID_CMD		0x8000
@@ -1170,7 +1292,18 @@
 +
 +	u8 ch_token;			/* channel privilege request id */
 +	struct completion ch_grant;
++
++	/* interrupt-mode RX (runtime-toggleable; boot default is polled) */
++	bool irq_active;
++	u8 *int_buf;			/* INT_STRUCT_LEN, handler only */
++	struct completion tx_done;	/* signaled by the irq handler */
++	struct work_struct irq_mode_work;
 +};
++
++/* Runtime-toggleable: echo 1 > /sys/module/mt6630_wlan/parameters/irq_rx.
++ * Defaults to polled so a bad interrupt path can never wedge a boot. */
++static bool irq_rx;
++static struct mt6630_wlan *mt6630_wlan_dev;	/* single device */
 +
 +/* ---- low-level ---- */
 +
@@ -1209,6 +1342,22 @@
 +	if (xfer > MT6630_XFER_BUF_SIZE)
 +		return -EINVAL;
 +	memset(wl->tx_buf + total, 0, xfer - total);
++
++	if (READ_ONCE(wl->irq_active)) {
++		/* the irq handler consumes WHISR: wait on its completion
++		 * instead of racing it with a second read-clear reader */
++		reinit_completion(&wl->tx_done);
++		sdio_claim_host(func);
++		ret = sdio_writesb(func, MCR_WTDR1, wl->tx_buf, xfer);
++		sdio_release_host(func);
++		if (ret)
++			return ret;
++		if (!wait_for_completion_timeout(&wl->tx_done,
++						 msecs_to_jiffies(200)))
++			dev_warn_ratelimited(&func->dev,
++					     "tx_done completion timeout\n");
++		return 0;
++	}
 +
 +	sdio_claim_host(func);
 +	ret = sdio_writesb(func, MCR_WTDR1, wl->tx_buf, xfer);
@@ -1559,6 +1708,15 @@
 +	}
 +}
 +
++static void mt6630_wlan_rx_dispatch(struct mt6630_wlan *wl, u16 len)
++{
++	if ((get_unaligned_le16(&wl->rx_buf[2]) &
++	     RXD_TYPE_SW_MASK) == RXD_TYPE_SW_EVENT)
++		mt6630_wlan_rx_event(wl, wl->rx_buf, len);
++	else
++		mt6630_wlan_rx_frame(wl, wl->rx_buf, len);
++}
++
 +static int mt6630_wlan_rx_thread(void *data)
 +{
 +	struct mt6630_wlan *wl = data;
@@ -1566,6 +1724,10 @@
 +	int ret, port, got;
 +
 +	while (!kthread_should_stop()) {
++		if (kthread_should_park()) {
++			kthread_parkme();	/* interrupt mode owns RX */
++			continue;
++		}
 +		got = 0;
 +		for (port = 0; port < 2; port++) {
 +			sdio_claim_host(func);
@@ -1574,18 +1736,180 @@
 +			if (ret <= 0)
 +				continue;
 +			got++;
-+
-+			if ((get_unaligned_le16(&wl->rx_buf[2]) &
-+			     RXD_TYPE_SW_MASK) == RXD_TYPE_SW_EVENT)
-+				mt6630_wlan_rx_event(wl, wl->rx_buf, ret);
-+			else
-+				mt6630_wlan_rx_frame(wl, wl->rx_buf, ret);
++			mt6630_wlan_rx_dispatch(wl, ret);
 +		}
 +		if (!got)
 +			usleep_range(1000, 2000);
 +	}
 +	return 0;
 +}
++
++/* ---- interrupt-mode RX (chained from the wmt driver's SDIO irq) ----
++ *
++ * One 112-byte CMD53 at WHISR returns status + pending RX lengths
++ * atomically and clears them (all read-clear). The RX lengths are
++ * authoritative -- WRPLR is never consulted, which is what prevented the
++ * historical interrupt storm (WHISR asserting before WRPLR updates).
++ * Runs from sdio_irq_thread context with the host claimed; must stay
++ * bounded (the thread is SCHED_FIFO -- an unbounded loop starves the
++ * system). Level-triggered: pending work just re-fires the interrupt. */
++
++static atomic_t mt6630_wlan_isr_calls = ATOMIC_INIT(0);
++
++static void mt6630_wlan_isr(void *ctx)
++{
++	struct mt6630_wlan *wl = ctx;
++	struct sdio_func *func = wl->func;
++	int calls = atomic_inc_return(&mt6630_wlan_isr_calls);
++	int loops, port, i, ret;
++
++	for (loops = 0; loops < IRQ_RX_BUDGET; loops++) {
++		u16 nvalid[2];
++		u32 whisr;
++		bool tx_credit = false;
++
++		ret = sdio_readsb(func, wl->int_buf, MCR_WHISR,
++				  INT_STRUCT_LEN);
++		if (ret) {
++			dev_warn_ratelimited(&func->dev,
++					     "isr: enhanced read failed %d\n",
++					     ret);
++			return;
++		}
++		whisr = get_unaligned_le32(&wl->int_buf[INT_WHISR_OFF]);
++		nvalid[0] = get_unaligned_le16(&wl->int_buf[INT_RX0_NUM_OFF]);
++		nvalid[1] = get_unaligned_le16(&wl->int_buf[INT_RX1_NUM_OFF]);
++
++		if (calls <= 4)	/* bring-up visibility */
++			dev_info(&func->dev,
++				 "isr #%d.%d whisr 0x%08x rx %u/%u\n",
++				 calls, loops, whisr, nvalid[0], nvalid[1]);
++
++		/* released TX pages (read-clear, consumed by this read);
++		 * vendor fix-up: counts can be non-zero with bit0 clear */
++		for (i = 0; i < 32; i += 4)
++			if (get_unaligned_le32(&wl->int_buf[INT_WTSR_OFF + i]))
++				tx_credit = true;
++		if ((whisr & WHISR_TX_DONE) || tx_credit)
++			complete(&wl->tx_done);
++
++		if (whisr & WHISR_ABNORMAL) {
++			/* read-clear; expected: 0x100 rx0 underflow from
++			 * the block-mode round-up on large frames */
++			u32 wasr = sdio_readl(func, MCR_WASR, &ret);
++
++			dev_dbg(&func->dev, "abnormal int, wasr 0x%08x\n",
++				wasr);
++		}
++
++		if (!nvalid[0] && !nvalid[1])
++			return;	/* status quiescent */
++
++		for (port = 0; port < 2; port++) {
++			u32 len_off = port ? INT_RX1_LEN_OFF : INT_RX0_LEN_OFF;
++
++			if (nvalid[port] > INT_MAX_RX_PKTS) {
++				dev_warn_ratelimited(&func->dev,
++						     "rx%d count %u insane\n",
++						     port, nvalid[port]);
++				continue;
++			}
++			for (i = 0; i < nvalid[port]; i++) {
++				u16 len = get_unaligned_le16(
++					&wl->int_buf[len_off + 2 * i]);
++				u32 xfer = ALIGN(len + HIF_RX_HW_APPENDED, 4);
++
++				if (!len || xfer > MT6630_XFER_BUF_SIZE)
++					break;
++				ret = sdio_readsb(func, wl->rx_buf,
++						  port ? MCR_WRDR1 : MCR_WRDR0,
++						  xfer);
++				if (ret)
++					return;
++				mt6630_wlan_rx_dispatch(wl, len);
++			}
++		}
++	}
++}
++
++/* Switch between the polled kthread and interrupt RX. Runs from a
++ * workqueue (the param setter cannot sleep on the sdio host lock). */
++static void mt6630_wlan_irq_mode_work(struct work_struct *work)
++{
++	struct mt6630_wlan *wl = container_of(work, struct mt6630_wlan,
++					      irq_mode_work);
++	struct sdio_func *func = wl->func;
++	bool want = READ_ONCE(irq_rx);
++	u32 whcr;
++	int ret = 0;
++
++	if (want == wl->irq_active)
++		return;
++
++	if (want) {
++		u8 ien;
++
++		/* park the poller first: rx_buf must have a single owner */
++		kthread_park(wl->rx_thread);
++		WRITE_ONCE(wl->irq_active, true);
++
++		sdio_claim_host(func);
++		/* CCCR IENx: sdio_claim_irq would set the per-function gate,
++		 * but we chain off the wmt (func 2) claim instead -- open
++		 * function 1's gate into DAT1 by hand (LENIENT_FN0 quirk) */
++		ien = sdio_f0_readb(func, SDIO_CCCR_IENx, &ret);
++		sdio_f0_writeb(func, ien | BIT(func->num) | BIT(0),
++			       SDIO_CCCR_IENx, &ret);
++		dev_info(&func->dev, "cccr ienx 0x%02x -> 0x%02x (%d)\n",
++			 ien, (u8)(ien | BIT(func->num) | BIT(0)), ret);
++		/* WHCR: read-to-clear WHISR, no rx-enhance tail, rx len
++		 * reporting unlimited (field 0 = 16) */
++		whcr = sdio_readl(func, MCR_WHCR, &ret);
++		whcr &= ~(WHCR_RX_ENHANCE_MODE_EN | WHCR_MAX_HIF_RX_LEN_NUM |
++			  WHCR_RECV_MAILBOX_RD_CLR | WHCR_W_INT_CLR_CTRL);
++		sdio_writel(func, whcr, MCR_WHCR, &ret);
++		sdio_writel(func, WHIER_IRQ_BITS, MCR_WHIER, &ret);
++		mt6630_wmt_register_wlan_isr(mt6630_wlan_isr, wl);
++		/* card-level interrupt output on (CMD52, byte 0) */
++		sdio_writeb(func, WHLPCR_INT_EN_SET, MCR_WHLPCR, &ret);
++		/* prime: drain anything already pending (and prove the
++		 * enhanced read works) while we still hold the host */
++		mt6630_wlan_isr(wl);
++		sdio_release_host(func);
++		dev_info(&func->dev, "interrupt rx enabled (%d)\n", ret);
++	} else {
++		u8 ien;
++
++		mt6630_wmt_unregister_wlan_isr();
++		/* taking the host lock synchronizes with a running isr */
++		sdio_claim_host(func);
++		sdio_writeb(func, WHLPCR_INT_EN_CLR, MCR_WHLPCR, &ret);
++		ien = sdio_f0_readb(func, SDIO_CCCR_IENx, &ret);
++		sdio_f0_writeb(func, ien & ~BIT(func->num), SDIO_CCCR_IENx,
++			       &ret);
++		sdio_release_host(func);
++		WRITE_ONCE(wl->irq_active, false);
++		kthread_unpark(wl->rx_thread);
++		dev_info(&func->dev, "polled rx restored (%d)\n", ret);
++	}
++}
++
++static int mt6630_wlan_irq_rx_set(const char *val,
++				  const struct kernel_param *kp)
++{
++	int ret = param_set_bool(val, kp);
++
++	if (!ret && mt6630_wlan_dev)
++		schedule_work(&mt6630_wlan_dev->irq_mode_work);
++	return ret;
++}
++
++static const struct kernel_param_ops mt6630_wlan_irq_rx_ops = {
++	.set = mt6630_wlan_irq_rx_set,
++	.get = param_get_bool,
++};
++module_param_cb(irq_rx, &mt6630_wlan_irq_rx_ops, &irq_rx, 0644);
++MODULE_PARM_DESC(irq_rx, "use interrupt-driven RX (default: polled)");
 +
 +/* ---- runtime commands (rx thread delivers the response) ---- */
 +
@@ -2407,6 +2731,9 @@
 +		return -ENODEV;
 +	if (!mt6630_wmt_ready())
 +		return -EPROBE_DEFER;
++	/* we poke CCCR IENx by hand for the chained interrupt (see
++	 * mt6630_wlan_irq_mode_work); fn0 writes need this quirk */
++	func->card->quirks |= MMC_QUIRK_LENIENT_FN0;
 +
 +	hw = ieee80211_alloc_hw(sizeof(*wl), &mt6630_wlan_ops);
 +	if (!hw)
@@ -2419,8 +2746,10 @@
 +	spin_lock_init(&wl->resp_lock);
 +	init_completion(&wl->resp_done);
 +	init_completion(&wl->ch_grant);
++	init_completion(&wl->tx_done);
 +	skb_queue_head_init(&wl->tx_skbs);
 +	INIT_WORK(&wl->tx_work, mt6630_wlan_tx_work);
++	INIT_WORK(&wl->irq_mode_work, mt6630_wlan_irq_mode_work);
 +	INIT_DELAYED_WORK(&wl->scan_timeout, mt6630_wlan_scan_timeout);
 +	sdio_set_drvdata(func, wl);
 +
@@ -2428,7 +2757,8 @@
 +				  GFP_KERNEL);
 +	wl->rx_buf = devm_kmalloc(&func->dev, MT6630_XFER_BUF_SIZE,
 +				  GFP_KERNEL);
-+	if (!wl->tx_buf || !wl->rx_buf) {
++	wl->int_buf = devm_kmalloc(&func->dev, INT_STRUCT_LEN, GFP_KERNEL);
++	if (!wl->tx_buf || !wl->rx_buf || !wl->int_buf) {
 +		ret = -ENOMEM;
 +		goto err_free_hw;
 +	}
@@ -2519,6 +2849,10 @@
 +
 +	dev_info(&func->dev, "registered %s (%pM)\n",
 +		 wiphy_name(hw->wiphy), wl->macaddr);
++
++	mt6630_wlan_dev = wl;
++	if (irq_rx)	/* set via modprobe.d: honor it, but boot polled */
++		schedule_work(&wl->irq_mode_work);
 +	return 0;
 +
 +err_stop_thread:
@@ -2541,7 +2875,17 @@
 +{
 +	struct mt6630_wlan *wl = sdio_get_drvdata(func);
 +
++	mt6630_wlan_dev = NULL;
 +	ieee80211_unregister_hw(wl->hw);
++	cancel_work_sync(&wl->irq_mode_work);
++	if (wl->irq_active) {
++		mt6630_wmt_unregister_wlan_isr();
++		sdio_claim_host(func);
++		sdio_writeb(func, WHLPCR_INT_EN_CLR, MCR_WHLPCR, NULL);
++		sdio_release_host(func);
++		wl->irq_active = false;
++		kthread_unpark(wl->rx_thread);
++	}
 +	cancel_work_sync(&wl->tx_work);
 +	cancel_delayed_work_sync(&wl->scan_timeout);
 +	ieee80211_purge_tx_queue(wl->hw, &wl->tx_skbs);
