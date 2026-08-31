@@ -1,6 +1,6 @@
 --- a/drivers/misc/Kconfig
 +++ b/drivers/misc/Kconfig
-@@ -661,4 +661,21 @@
+@@ -661,4 +661,22 @@
  source "drivers/misc/keba/Kconfig"
  source "drivers/misc/amd-sbi/Kconfig"
  source "drivers/misc/rp1/Kconfig"
@@ -14,12 +14,13 @@
 +	  for amazon-suez mainline bring-up.
 +
 +config MT6630_WLAN
-+	tristate "MediaTek MT6630 WLAN firmware loader (function 1)"
++	tristate "MediaTek MT6630 WLAN mac80211 driver (function 1)"
 +	depends on MT6630_WMT && MAC80211
 +	help
-+	  Bring-up WLAN firmware loader for the MediaTek MT6630: claims
-+	  SDIO function 1, downloads WIFI_RAM_CODE and starts it. Not yet
-+	  a wireless driver. Say M here for amazon-suez mainline bring-up.
++	  mac80211 driver for the MediaTek MT6630 WLAN function: claims
++	  SDIO function 1, downloads and starts WIFI_RAM_CODE, then
++	  provides scanning and station-mode association (WPA2 verified).
++	  Say M here for amazon-suez mainline bring-up.
 +
  endmenu
 --- a/drivers/misc/Makefile
@@ -938,16 +939,18 @@
 +MODULE_LICENSE("GPL");
 --- a/drivers/misc/mt6630-wlan.c
 +++ b/drivers/misc/mt6630-wlan.c
-@@ -0,0 +1,925 @@
+@@ -0,0 +1,1630 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/*
 + * WLAN driver for the MediaTek MT6630 combo chip, SDIO function 1.
 + *
-+ * Bring-up scope: firmware download + start, then a minimal mac80211
-+ * device whose hw_scan is backed by the firmware's offloaded scan
-+ * (CMD_ID_SCAN_REQ_V2); scan results (fw-forwarded beacon/probe-response
-+ * frames, RXD type SW_FRAME) are parsed and fed to mac80211. TX and
-+ * connection support are not implemented yet.
++ * Bring-up scope: firmware download + start, then a mac80211 device:
++ * hw_scan backed by the firmware's offloaded scan (CMD_ID_SCAN_REQ_V2),
++ * frame TX (long-format TXD to WTDR1), and the station-mode MLME glue
++ * (bss activate / channel privilege / sta_rec / bss_info / keys) so
++ * mac80211's host MLME can authenticate, associate and pass traffic.
++ * The firmware runs autorate for data; management goes out at the base
++ * rate like the vendor driver.
 + *
 + * Protocol per ~/suez-work/MT6630-WIFI-DESIGN.md (hardware-verified).
 + * RX runs a polling kthread for now; the SDIO in-band interrupt +
@@ -1010,13 +1013,65 @@
 +#define INIT_CMD_WIFI_START		2
 +#define INIT_EVT_CMD_RESULT		1
 +
++#define CMD_ID_BASIC_CONFIG	0x02
 +#define CMD_ID_SCAN_REQ_V2	0x03
 +#define CMD_ID_SCAN_CANCEL	0x04
++#define CMD_ID_POWER_SAVE_MODE	0x05
++#define CMD_ID_ADD_REMOVE_KEY	0x07
++#define CMD_ID_BSS_ACTIVATE_CTRL 0x11
++#define CMD_ID_SET_BSS_INFO	0x12
++#define CMD_ID_UPDATE_STA_RECORD 0x13
++#define CMD_ID_REMOVE_STA_RECORD 0x14
++#define CMD_ID_PM_BSS_CONNECTED	0x16
++#define CMD_ID_PM_BSS_ABORT	0x17
++#define CMD_ID_CH_PRIVILEGE	0x1c
 +#define CMD_ID_GET_NIC_CAPABILITY 0x80
 +
 +#define EVENT_ID_NIC_CAPABILITY	0x01
++#define EVENT_ID_ACTIVATE_STA_REC 0x0c
 +#define EVENT_ID_SCAN_DONE	0x0d
++#define EVENT_ID_TX_DONE	0x0f
++#define EVENT_ID_CH_PRIVILEGE	0x10
++#define EVENT_ID_BSS_BEACON_TIMEOUT 0x13
 +#define EVENT_ID_DEBUG_MSG	0x27
++
++/* Fixed index plan (host-chosen; the fw learns them from our commands):
++ * one BSS, one own-MAC entry, WTBL 0 = broadcast/multicast, WTBL 1 = the
++ * AP's station entry, sta_rec slot 0.  WTBL 31 is the hardware's
++ * "no station" TX index (probe requests, pre-auth frames). */
++#define MT6630_BSS_IDX		0
++#define MT6630_OWN_MAC_IDX	0
++#define MT6630_BMC_WLAN_IDX	0
++#define MT6630_AP_WLAN_IDX	1
++#define MT6630_AP_STA_IDX	0
++#define MT6630_NO_STA_WLAN_IDX	31
++
++/* Long-format TX descriptor (28 bytes, vendor nic_tx.h). Written to WTDR1
++ * as [TXD][frame]; the byte count in DW0 includes the TXD. */
++#define MT6630_TXD_LEN		28
++
++#define TXD_PQ_MGMT		0x88	/* port 1 (MCU), queue 1 */
++#define TXD_PQ_DATA(hwq)	((hwq) << 3)	/* port 0 (LMAC), AC queue */
++#define TXD_HWQ_NON_QOS		4
++
++#define TXD_FMT_LONG		BIT(7)	/* byte 5 */
++#define TXD_HF_802_11		(2 << 5)
++#define TXD_NO_ACK		BIT(3)	/* byte 6 */
++#define TXD_PROTECTED		BIT(7)
++#define TXD_BMC			BIT(2)	/* byte 9 */
++#define TXD_FIXED_RATE		BIT(7)	/* byte 11 */
++
++#define TXD_RETRY_MGMT		30
++#define TXD_RETRY_DATA		7
++
++#define RATE_CCK_1M		0x0000	/* DW6 fixed-rate codes << 2 */
++#define RATE_OFDM_6M		(0x4b << 2)
++
++/* CMD_802_11_KEY cipher ids (vendor privacy.h CIPHER_SUITE_*) */
++#define MT6630_CIPHER_WEP40	1
++#define MT6630_CIPHER_TKIP	2
++#define MT6630_CIPHER_CCMP	4
++#define MT6630_CIPHER_WEP104	5
 +
 +#define DL_CONFIG_ENCRYPTION	BIT(0)
 +#define DL_CONFIG_RESET		BIT(3)
@@ -1043,6 +1098,16 @@
 +#define RXD_GRP4		BIT(3)	/* 16 bytes: hdr translation */
 +#define RXD_BASE_LEN		16
 +#define RXD_HDR_OFFSET		BIT(6)	/* in ucHeaderLen byte */
++#define RXD_HDR_TRANSLATED	BIT(7)	/* payload is 802.3, not 802.11 */
++
++/* RXD DW2: byte 9 high nibble = cipher the hw used, bytes 10-11 = status
++ * flags (vendor nic_rx.h RX_STATUS_FLAG_*) */
++#define RXD_SEC_MODE(p)		((p)[9] >> 4)
++#define RXD_FLAG_FCS_ERR	BIT(1)
++#define RXD_FLAG_CIPHER_MISMATCH BIT(2)
++#define RXD_FLAG_CIPHER_LEN_ERR	BIT(3)
++#define RXD_FLAG_ICV_ERR	BIT(4)
++#define RXD_FLAG_TKIP_MIC_ERR	BIT(5)
 +
 +#define NIC_CAPABILITY_LEN	116
 +
@@ -1091,7 +1156,20 @@
 +	struct completion resp_done;
 +
 +	bool scanning;
++	struct delayed_work scan_timeout;
 +	u8 macaddr[ETH_ALEN];
++
++	/* single station-mode interface */
++	struct ieee80211_vif *vif;
++	bool sta_added;			/* AP sta_rec pushed to fw */
++	bool assoc;			/* bss_info CONNECTED sent */
++	u8 sta_addr[ETH_ALEN];
++
++	struct sk_buff_head tx_skbs;	/* .tx op defers here (SDIO sleeps) */
++	struct work_struct tx_work;
++
++	u8 ch_token;			/* channel privilege request id */
++	struct completion ch_grant;
 +};
 +
 +/* ---- low-level ---- */
@@ -1116,20 +1194,55 @@
 +	return -ETIMEDOUT;
 +}
 +
-+/* Send one frame to WTDR1 and wait for TX_DONE (one in flight). */
-+static int mt6630_wlan_tx(struct mt6630_wlan *wl, u16 pq_id, u8 cid, u8 set,
-+			  u8 seq, const void *payload, u16 len)
++/* Write the first 'total' bytes of wl->tx_buf to WTDR1 (padded, with the
++ * zero-dword aggregation terminator) and wait for TX_DONE (one frame in
++ * flight). Caller holds tx_lock. */
++static int mt6630_wlan_port_write(struct mt6630_wlan *wl, u32 total)
 +{
 +	struct sdio_func *func = wl->func;
-+	u16 total = 8 + len;
 +	u32 xfer = ALIGN(total + 4, 4);	/* + zero-dword terminator */
-+	u8 *tx = wl->tx_buf;
 +	u32 whisr;
 +	int ret, i;
 +
 +	if (xfer > MT6630_SDIO_BLK_SIZE)
 +		xfer = ALIGN(xfer, MT6630_SDIO_BLK_SIZE);
 +	if (xfer > MT6630_XFER_BUF_SIZE)
++		return -EINVAL;
++	memset(wl->tx_buf + total, 0, xfer - total);
++
++	sdio_claim_host(func);
++	ret = sdio_writesb(func, MCR_WTDR1, wl->tx_buf, xfer);
++	if (!ret) {
++		for (i = 0; i < EVT_POLL_RETRIES; i++) {
++			whisr = sdio_readl(func, MCR_WHISR, &ret);
++			if (ret || (whisr & WHISR_TX_DONE))
++				break;
++			udelay(EVT_POLL_DELAY_US);
++		}
++		if (!ret && !(whisr & WHISR_TX_DONE)) {
++			/* nothing consumed; WHISR bit31 = fw assert */
++			u32 q0 = sdio_readl(func, 0x0130, &ret);
++			u32 q1 = sdio_readl(func, 0x0134, &ret);
++
++			dev_warn_ratelimited(&func->dev,
++					     "tx_done timeout, whisr %08x wtqcr %08x %08x\n",
++					     whisr, q0, q1);
++			ret = -ETIMEDOUT;
++		}
++	}
++	sdio_release_host(func);
++	return ret;
++}
++
++/* Send one command frame (8-byte WIFI_CMD_T header) to WTDR1. */
++static int mt6630_wlan_tx(struct mt6630_wlan *wl, u16 pq_id, u8 cid, u8 set,
++			  u8 seq, const void *payload, u16 len)
++{
++	u16 total = 8 + len;
++	u8 *tx = wl->tx_buf;
++	int ret;
++
++	if (total > MT6630_XFER_BUF_SIZE)
 +		return -EINVAL;
 +
 +	mutex_lock(&wl->tx_lock);
@@ -1143,23 +1256,12 @@
 +		memcpy(&tx[8], payload, len);
 +	else if (len)
 +		memset(&tx[8], 0, len);
-+	memset(&tx[8 + len], 0, xfer - 8 - len);
-+
-+	sdio_claim_host(func);
-+	ret = sdio_writesb(func, MCR_WTDR1, tx, xfer);
-+	if (!ret) {
-+		for (i = 0; i < EVT_POLL_RETRIES; i++) {
-+			whisr = sdio_readl(func, MCR_WHISR, &ret);
-+			if (ret || (whisr & WHISR_TX_DONE))
-+				break;
-+			udelay(EVT_POLL_DELAY_US);
-+		}
-+	}
-+	sdio_release_host(func);
++	ret = mt6630_wlan_port_write(wl, total);
 +	mutex_unlock(&wl->tx_lock);
 +
 +	if (ret)
-+		dev_err(&func->dev, "tx cid 0x%02x failed: %d\n", cid, ret);
++		dev_err(&wl->func->dev, "tx cid 0x%02x failed: %d\n",
++			cid, ret);
 +	return ret;
 +}
 +
@@ -1310,8 +1412,11 @@
 +	struct ieee80211_rx_status *status;
 +	struct sk_buff *skb;
 +	u16 pkt_type = get_unaligned_le16(&pkt[2]);
++	u16 sflag = get_unaligned_le16(&pkt[10]);
 +	u8 groups = RXD_GROUP_VLD(pkt_type);
 +	u8 channel = pkt[5];
++	u8 sec = RXD_SEC_MODE(pkt);
++	bool translated = pkt[6] & RXD_HDR_TRANSLATED;
 +	u32 hdr_len = RXD_BASE_LEN;
 +	u8 rcpi = 0;
 +
@@ -1332,10 +1437,51 @@
 +	if (len <= hdr_len || len > MT6630_XFER_BUF_SIZE)
 +		return;
 +
-+	skb = dev_alloc_skb(len - hdr_len);
-+	if (!skb)
-+		return;
-+	skb_put_data(skb, pkt + hdr_len, len - hdr_len);
++	if (translated) {
++		/* The fw translates data frames to 802.3 unconditionally
++		 * (ucNative80211 is not honored). Rebuild the 802.11 frame:
++		 * group 4 has the original FC/TA/seq-ctl/QoS, the payload is
++		 * DA/SA/ethertype. STA infra: addr1=DA, addr2=TA, addr3=SA. */
++		const u8 *g4 = pkt + RXD_BASE_LEN, *eth = pkt + hdr_len;
++		u32 plen = len - hdr_len;
++		struct ieee80211_hdr *hdr;
++		__le16 fc;
++		u32 wlen;
++
++		if (!(groups & RXD_GRP4) || plen < ETH_HLEN) {
++			dev_warn_ratelimited(&wl->func->dev,
++					     "translated rx without group4 (groups %x len %u)\n",
++					     groups, plen);
++			return;
++		}
++		fc = cpu_to_le16(get_unaligned_le16(&g4[0]));
++		if (!ieee80211_is_data(fc))
++			return;
++		wlen = ieee80211_hdrlen(fc);
++		if (wlen < 24 || wlen > 30)
++			return;
++
++		skb = dev_alloc_skb(wlen + 8 + plen - ETH_HLEN);
++		if (!skb)
++			return;
++		hdr = skb_put_zero(skb, wlen);
++		hdr->frame_control = fc;
++		memcpy(hdr->addr1, &eth[0], ETH_ALEN);	/* DA */
++		memcpy(hdr->addr2, &g4[2], ETH_ALEN);	/* TA/BSSID */
++		memcpy(hdr->addr3, &eth[6], ETH_ALEN);	/* SA */
++		hdr->seq_ctrl = cpu_to_le16(get_unaligned_le16(&g4[8]));
++		if (ieee80211_is_data_qos(fc))
++			memcpy(ieee80211_get_qos_ctl(hdr), &g4[10], 2);
++		/* LLC/SNAP + ethertype, then the payload */
++		skb_put_data(skb, rfc1042_header, 6);
++		skb_put_data(skb, &eth[12], 2);
++		skb_put_data(skb, eth + ETH_HLEN, plen - ETH_HLEN);
++	} else {
++		skb = dev_alloc_skb(len - hdr_len);
++		if (!skb)
++			return;
++		skb_put_data(skb, pkt + hdr_len, len - hdr_len);
++	}
 +
 +	status = IEEE80211_SKB_RXCB(skb);
 +	memset(status, 0, sizeof(*status));
@@ -1349,6 +1495,17 @@
 +							NL80211_BAND_2GHZ);
 +	}
 +	status->signal = rcpi / 2 - 110;	/* RCPI -> dBm */
++
++	if (sflag & RXD_FLAG_FCS_ERR)
++		status->flag |= RX_FLAG_FAILED_FCS_CRC;
++	if (sflag & RXD_FLAG_TKIP_MIC_ERR)
++		status->flag |= RX_FLAG_MMIC_ERROR;
++	/* hw decrypted and stripped IV/MIC (mt7615, the direct descendant,
++	 * reports the same way) */
++	if (sec && !(sflag & (RXD_FLAG_CIPHER_MISMATCH |
++			      RXD_FLAG_CIPHER_LEN_ERR | RXD_FLAG_ICV_ERR)))
++		status->flag |= RX_FLAG_DECRYPTED | RX_FLAG_IV_STRIPPED |
++				RX_FLAG_MMIC_STRIPPED | RX_FLAG_MIC_STRIPPED;
 +
 +	ieee80211_rx_irqsafe(wl->hw, skb);
 +}
@@ -1376,10 +1533,24 @@
 +		if (wl->scanning) {
 +			struct cfg80211_scan_info info = {};
 +
++			cancel_delayed_work(&wl->scan_timeout);
 +			wl->scanning = false;
 +			ieee80211_scan_completed(wl->hw, &info);
 +		}
 +		break;
++	case EVENT_ID_CH_PRIVILEGE:
++		/* grant: {bss, token, status, chan, ...}, status 0 = ok */
++		if (len >= 8 + 3 && pkt[8 + 1] == wl->ch_token &&
++		    pkt[8 + 2] == 0)
++			complete(&wl->ch_grant);
++		break;
++	case EVENT_ID_BSS_BEACON_TIMEOUT:
++		dev_info(dev, "fw reports beacon timeout\n");
++		if (wl->vif && wl->assoc)
++			ieee80211_connection_loss(wl->vif);
++		break;
++	case EVENT_ID_TX_DONE:
++		break;			/* not requested (no PID set) */
 +	case EVENT_ID_DEBUG_MSG:
 +		dev_dbg(dev, "fw: %.*s\n", len - 8, &pkt[8]);
 +		break;
@@ -1512,14 +1683,345 @@
 +	return ret;
 +}
 +
++/* ---- frame TX ---- */
++
++static bool mt6630_wlan_band_5ghz(struct mt6630_wlan *wl)
++{
++	struct ieee80211_channel *chan = wl->hw->conf.chandef.chan;
++
++	return chan && chan->band == NL80211_BAND_5GHZ;
++}
++
++/* Build the long-format TXD + frame in tx_buf and send it. */
++static int mt6630_wlan_tx_frame(struct mt6630_wlan *wl, struct sk_buff *skb)
++{
++	struct ieee80211_tx_info *info = IEEE80211_SKB_CB(skb);
++	struct ieee80211_hdr *hdr = (struct ieee80211_hdr *)skb->data;
++	/* RA decides the WTBL entry and ACK policy: in infra STA mode even
++	 * broadcast-DA frames (DHCP!) are unicast to the AP */
++	bool mcast = is_multicast_ether_addr(hdr->addr1);
++	bool mgmt = ieee80211_is_mgmt(hdr->frame_control);
++	bool fixed_rate = mgmt;
++	u32 hdrlen = ieee80211_hdrlen(hdr->frame_control);
++	u16 fc, total = MT6630_TXD_LEN + skb->len;
++	u8 *txd, wlan_idx, tid = 0;
++	int ret;
++
++	if (total > MT6630_XFER_BUF_SIZE || hdrlen > 62)
++		return -EMSGSIZE;
++
++	/* hw crypto: the fw/WTBL inserts IV and encrypts; mark the frame */
++	if (info->control.hw_key)
++		hdr->frame_control |= cpu_to_le16(IEEE80211_FCTL_PROTECTED);
++	fc = le16_to_cpu(hdr->frame_control);
++
++	if (mcast)
++		wlan_idx = MT6630_BMC_WLAN_IDX;
++	else if (wl->sta_added && ether_addr_equal(hdr->addr1, wl->sta_addr))
++		wlan_idx = MT6630_AP_WLAN_IDX;
++	else
++		wlan_idx = MT6630_NO_STA_WLAN_IDX;
++
++	if (ieee80211_is_data_qos(hdr->frame_control))
++		tid = ieee80211_get_tid(hdr);
++
++	/* EAPOL at the base rate, like the vendor's security-frame path */
++	if (!mgmt && skb->len >= hdrlen + 8 &&
++	    get_unaligned((__be16 *)(skb->data + hdrlen + 6)) ==
++							htons(ETH_P_PAE))
++		fixed_rate = true;
++
++	mutex_lock(&wl->tx_lock);
++	txd = wl->tx_buf;
++	memset(txd, 0, MT6630_TXD_LEN);
++	put_unaligned_le16(total, &txd[0]);
++	/* ether-type offset (words); only consumed by csum offload */
++	txd[2] = (MT6630_TXD_LEN + hdrlen + (mgmt ? 0 : 6)) >> 1;
++	if (mgmt)
++		txd[3] = TXD_PQ_MGMT;
++	else if (ieee80211_is_data_qos(hdr->frame_control))
++		/* mac80211 queue 0..3 = VO..BK; hw AC queue 3..0 */
++		txd[3] = TXD_PQ_DATA(3 - skb_get_queue_mapping(skb));
++	else
++		txd[3] = TXD_PQ_DATA(TXD_HWQ_NON_QOS);
++	txd[4] = wlan_idx;
++	txd[5] = TXD_FMT_LONG | TXD_HF_802_11 | (hdrlen >> 1);
++	txd[6] = tid << 4;
++	if (mcast || (info->flags & IEEE80211_TX_CTL_NO_ACK))
++		txd[6] |= TXD_NO_ACK;
++	if (info->control.hw_key)
++		txd[6] |= TXD_PROTECTED;
++	txd[7] = MT6630_OWN_MAC_IDX << 2;
++	/* DW2: FC subtype/type; SN/PN stay hw-assigned (DW3/4 zero) */
++	txd[8] = ((fc >> 4) & 0x0f) | (((fc >> 2) & 0x03) << 4);
++	if (mcast)
++		txd[9] = TXD_BMC;
++	if (fixed_rate) {
++		txd[11] = TXD_FIXED_RATE;
++		put_unaligned_le16(mt6630_wlan_band_5ghz(wl) ? RATE_OFDM_6M
++							     : RATE_CCK_1M,
++				   &txd[26]);
++	}
++	put_unaligned_le16((mgmt ? TXD_RETRY_MGMT : TXD_RETRY_DATA) << 11,
++			   &txd[12]);
++	memcpy(txd + MT6630_TXD_LEN, skb->data, skb->len);
++	ret = mt6630_wlan_port_write(wl, total);
++	mutex_unlock(&wl->tx_lock);
++	return ret;
++}
++
++static void mt6630_wlan_tx_work(struct work_struct *work)
++{
++	struct mt6630_wlan *wl = container_of(work, struct mt6630_wlan,
++					      tx_work);
++	struct sk_buff *skb;
++	int ret;
++
++	while ((skb = skb_dequeue(&wl->tx_skbs))) {
++		struct ieee80211_tx_info *info = IEEE80211_SKB_CB(skb);
++
++		ret = mt6630_wlan_tx_frame(wl, skb);
++		ieee80211_tx_info_clear_status(info);
++		/* no hw ACK reporting; claim success so MLME proceeds */
++		if (!ret && !(info->flags & IEEE80211_TX_CTL_NO_ACK))
++			info->flags |= IEEE80211_TX_STAT_ACK;
++		ieee80211_tx_status_ni(wl->hw, skb);
++	}
++}
++
++/* ---- MLME firmware glue (layouts per the vendor gen3 driver; all
++ * fire-and-forget except the state-3 sta_rec update) ---- */
++
++/* vendor RATE_SET_BIT_* bitmap: bits 0-3 = 1/2/5.5/11M (CCK), bits 6-13 =
++ * 6/9/12/18/24/36/48/54M (OFDM; bits 4-5 are the unused 22/33M) */
++#define MT6630_BASIC_RATES_2G	0x000f		/* CCK basic set */
++#define MT6630_BASIC_RATES_5G	0x0540		/* 6/12/24M */
++#define MT6630_ALL_RATES_2G	0x3fcf
++#define MT6630_ALL_RATES_5G	0x3fc0
++
++static u16 mt6630_wlan_rate_bitmap(enum nl80211_band band, u32 supp)
++{
++	u16 set = 0;
++	int i;
++
++	for (i = 0; i < 12; i++) {
++		if (!(supp & BIT(i)))
++			continue;
++		if (band == NL80211_BAND_5GHZ)
++			set |= BIT(i + 6);	/* 5 GHz bitrates start at 6M */
++		else
++			set |= BIT(i < 4 ? i : i + 2);
++	}
++	return set;
++}
++
++static int mt6630_wlan_bss_activate(struct mt6630_wlan *wl, bool active)
++{
++	u8 cmd[12] = {};
++
++	cmd[0] = MT6630_BSS_IDX;
++	cmd[1] = active;
++	/* [2] network type 0 = AIS, [3] own-MAC index 0 */
++	if (wl->vif)
++		memcpy(&cmd[4], wl->vif->addr, ETH_ALEN);
++	cmd[10] = MT6630_BMC_WLAN_IDX;
++	return mt6630_wlan_cmd(wl, CMD_ID_BSS_ACTIVATE_CTRL, true, cmd,
++			       sizeof(cmd), 0, NULL, 0);
++}
++
++static int mt6630_wlan_ps_profile(struct mt6630_wlan *wl, u8 profile)
++{
++	u8 cmd[4] = { MT6630_BSS_IDX, profile, 0, 0 };
++
++	return mt6630_wlan_cmd(wl, CMD_ID_POWER_SAVE_MODE, true, cmd,
++			       sizeof(cmd), 0, NULL, 0);
++}
++
++/* Ask the fw to park on the join channel (vendor CH_REQ_TYPE_JOIN, 4 s
++ * window). The grant arrives as an unsolicited event; a timeout is not
++ * fatal, mac80211 will retry the auth anyway. */
++static void mt6630_wlan_ch_abort(struct mt6630_wlan *wl)
++{
++	u8 cmd[16] = {};
++
++	cmd[0] = MT6630_BSS_IDX;
++	cmd[1] = wl->ch_token;
++	cmd[2] = 1;			/* abort */
++	mt6630_wlan_cmd(wl, CMD_ID_CH_PRIVILEGE, true, cmd, sizeof(cmd),
++			0, NULL, 0);
++}
++
++static int mt6630_wlan_ch_request(struct mt6630_wlan *wl,
++				  struct ieee80211_channel *chan)
++{
++	int tries;
++
++	for (tries = 0; tries < 2; tries++) {
++		u8 cmd[16] = {};
++		int ret;
++
++		cmd[0] = MT6630_BSS_IDX;
++		cmd[1] = ++wl->ch_token;
++		/* [2] action 0 = req, [4] sco, [6] 20 MHz, [9] type JOIN */
++		cmd[3] = chan->hw_value;
++		cmd[5] = chan->band == NL80211_BAND_5GHZ ? 2 : 1;
++		put_unaligned_le32(4000, &cmd[12]);	/* ms */
++
++		reinit_completion(&wl->ch_grant);
++		ret = mt6630_wlan_cmd(wl, CMD_ID_CH_PRIVILEGE, true, cmd,
++				      sizeof(cmd), 0, NULL, 0);
++		if (ret)
++			return ret;
++		/* grants are deferred while the fw scan engine is busy */
++		if (wait_for_completion_timeout(&wl->ch_grant, 5 * HZ))
++			return 0;
++		/* stale privilege state (e.g. after a teardown) can block
++		 * the grant; abort and ask once more */
++		dev_warn(&wl->func->dev, "no channel grant for ch %u%s\n",
++			 chan->hw_value, tries ? "" : ", retrying");
++		mt6630_wlan_ch_abort(wl);
++	}
++	return 0;
++}
++
++/* CMD_SET_BSS_INFO, 88 bytes with the RLM sub-struct at +68. Padding holes
++ * at +49 and +61..63 are real (the vendor struct is naturally aligned). */
++static int mt6630_wlan_bss_info(struct mt6630_wlan *wl, bool connected,
++				u16 rates_op)
++{
++	struct ieee80211_bss_conf *conf = &wl->vif->bss_conf;
++	bool g5 = mt6630_wlan_band_5ghz(wl);
++	struct ieee80211_channel *chan = wl->hw->conf.chandef.chan;
++	/* mac80211 doesn't expose the AKM; approximate from the AP's
++	 * privacy capability bit (only informs fw-side heuristics) */
++	bool privacy = conf->assoc_capability & WLAN_CAPABILITY_PRIVACY;
++	u8 cmd[88] = {};
++
++	cmd[0] = MT6630_BSS_IDX;
++	cmd[1] = connected ? 0 : 1;	/* media state */
++	/* [2] op mode 0 = infrastructure */
++	if (connected) {
++		cmd[3] = min_t(u8, wl->vif->cfg.ssid_len, 32);
++		memcpy(&cmd[4], wl->vif->cfg.ssid, cmd[3]);
++		memcpy(&cmd[36], conf->bssid, ETH_ALEN);
++		cmd[42] = conf->qos;
++		put_unaligned_le16(rates_op, &cmd[44]);
++		put_unaligned_le16(g5 ? MT6630_BASIC_RATES_5G
++				      : MT6630_BASIC_RATES_2G, &cmd[46]);
++		cmd[48] = MT6630_AP_STA_IDX;
++		put_unaligned_le16(g5 ? RATE_OFDM_6M >> 2 : RATE_CCK_1M,
++				   &cmd[50]);
++		cmd[52] = g5 ? 3 : 1;		/* non-HT phy: OFDM / ERP */
++		cmd[53] = privacy ? 7 : 0;	/* auth: WPA2_PSK / open */
++		cmd[54] = privacy ? 6 : 1;	/* enc: ENC3 / disabled */
++		cmd[55] = g5 ? 0x08 : 0x03;	/* phy set: OFDM / DSSS|ERP */
++		cmd[58] = MT6630_BMC_WLAN_IDX;
++		/* [60] disconnect detect threshold 0 = fw default */
++	} else {
++		cmd[48] = 0xfe;		/* STA_REC_INDEX_NOT_FOUND */
++	}
++	/* RLM parameters (+68) */
++	cmd[68] = MT6630_BSS_IDX;
++	if (connected && chan) {
++		cmd[69] = g5 ? 2 : 1;		/* band */
++		cmd[70] = chan->hw_value;
++		/* [71] sco 0, [83] vht width 0 = 20/40 */
++		cmd[81] = conf->use_short_preamble;
++		cmd[82] = conf->use_short_slot;
++		put_unaligned_le16(g5 ? MT6630_BASIC_RATES_5G
++				      : MT6630_BASIC_RATES_2G, &cmd[86]);
++	}
++	return mt6630_wlan_cmd(wl, CMD_ID_SET_BSS_INFO, true, cmd,
++			       sizeof(cmd), 0, NULL, 0);
++}
++
++/* CMD_UPDATE_STA_RECORD, 124 bytes (padding hole at +78). state is the
++ * wire value: 0 = class 1 (pre-auth, makes the hw ACK the AP), 2 = class 3
++ * (associated; needs the ACTIVATE_STA_REC response before data flows). */
++static int mt6630_wlan_sta_rec(struct mt6630_wlan *wl, const u8 *mac,
++			       u16 aid, u16 rates, bool qos, u8 state,
++			       bool need_resp)
++{
++	bool g5 = mt6630_wlan_band_5ghz(wl);
++	u8 cmd[124] = {};
++	u8 resp[8];
++	int ret;
++
++	cmd[0] = MT6630_AP_STA_IDX;
++	cmd[1] = 0x21;			/* STA_TYPE_LEGACY_AP */
++	memcpy(&cmd[2], mac, ETH_ALEN);
++	put_unaligned_le16(aid, &cmd[8]);
++	put_unaligned_le16(10, &cmd[10]);	/* listen interval */
++	cmd[12] = MT6630_BSS_IDX;
++	cmd[13] = g5 ? 0x08 : 0x03;	/* desired phy type set */
++	put_unaligned_le16(rates, &cmd[14]);
++	put_unaligned_le16(g5 ? MT6630_BASIC_RATES_5G : MT6630_BASIC_RATES_2G,
++			   &cmd[16]);
++	cmd[18] = qos;
++	cmd[20] = state;
++	cmd[50] = 100;			/* RCPI seed (~-60 dBm) for autorate */
++	cmd[51] = need_resp;
++	cmd[54] = MT6630_AP_WLAN_IDX;
++	cmd[55] = MT6630_BMC_WLAN_IDX;
++	cmd[68] = 3;			/* RTS policy: legacy */
++	put_unaligned_le16(g5 ? RATE_OFDM_6M >> 2 : RATE_CCK_1M, &cmd[74]);
++
++	if (!need_resp)
++		return mt6630_wlan_cmd(wl, CMD_ID_UPDATE_STA_RECORD, true,
++				       cmd, sizeof(cmd), 0, NULL, 0);
++	ret = mt6630_wlan_cmd(wl, CMD_ID_UPDATE_STA_RECORD, true, cmd,
++			      sizeof(cmd), EVENT_ID_ACTIVATE_STA_REC,
++			      resp, sizeof(resp));
++	return ret < 0 ? ret : 0;
++}
++
++static int mt6630_wlan_sta_remove(struct mt6630_wlan *wl)
++{
++	/* action 0 = remove this sta_rec */
++	u8 cmd[4] = { 0, MT6630_AP_STA_IDX, MT6630_BSS_IDX, 0 };
++
++	return mt6630_wlan_cmd(wl, CMD_ID_REMOVE_STA_RECORD, true, cmd,
++			       sizeof(cmd), 0, NULL, 0);
++}
++
++/* PM/CNM connected indication (vendor nicPmIndicateBssConnected). Without
++ * it the fw does not pin the radio to the connected BSS's channel: RX went
++ * silent right as the 4 s JOIN grant expired. Deliberately no BSS_ABORT
++ * counterpart at disconnect (suspected in an earlier full-fw wedge). */
++static int mt6630_wlan_pm_connected(struct mt6630_wlan *wl)
++{
++	struct ieee80211_bss_conf *conf = &wl->vif->bss_conf;
++	u8 cmd[12] = {};
++
++	cmd[0] = MT6630_BSS_IDX;
++	cmd[1] = conf->dtim_period ?: 1;
++	put_unaligned_le16(wl->vif->cfg.aid, &cmd[2]);
++	put_unaligned_le16(conf->beacon_int, &cmd[4]);
++	return mt6630_wlan_cmd(wl, CMD_ID_PM_BSS_CONNECTED, true, cmd,
++			       sizeof(cmd), 0, NULL, 0);
++}
++
++/* Native-802.11 RX: without this the fw hands data frames up translated
++ * to 802.3 (vendor default), which mac80211 cannot take. */
++static int mt6630_wlan_basic_config(struct mt6630_wlan *wl)
++{
++	u8 cmd[8] = {};
++
++	cmd[0] = 1;			/* ucNative80211 */
++	return mt6630_wlan_cmd(wl, CMD_ID_BASIC_CONFIG, true, cmd,
++			       sizeof(cmd), 0, NULL, 0);
++}
++
 +/* ---- mac80211 ---- */
 +
 +static void mt6630_wlan_op_tx(struct ieee80211_hw *hw,
 +			      struct ieee80211_tx_control *control,
 +			      struct sk_buff *skb)
 +{
-+	/* TX not implemented yet (scan-only bring-up) */
-+	ieee80211_free_txskb(hw, skb);
++	struct mt6630_wlan *wl = hw->priv;
++
++	skb_queue_tail(&wl->tx_skbs, skb);
++	schedule_work(&wl->tx_work);
 +}
 +
 +static int mt6630_wlan_op_start(struct ieee80211_hw *hw)
@@ -1534,16 +2036,182 @@
 +static int mt6630_wlan_op_add_interface(struct ieee80211_hw *hw,
 +					struct ieee80211_vif *vif)
 +{
-+	return 0;
++	struct mt6630_wlan *wl = hw->priv;
++
++	if (vif->type != NL80211_IFTYPE_STATION || wl->vif)
++		return -EOPNOTSUPP;
++	wl->vif = vif;
++	/* PS off during bring-up: missed auth/assoc responses otherwise */
++	mt6630_wlan_ps_profile(wl, 0);	/* CONTINUOUS_ACTIVE */
++	return mt6630_wlan_bss_activate(wl, true);
 +}
 +
 +static void mt6630_wlan_op_remove_interface(struct ieee80211_hw *hw,
 +					    struct ieee80211_vif *vif)
 +{
++	struct mt6630_wlan *wl = hw->priv;
++
++	cancel_work_sync(&wl->tx_work);
++	ieee80211_purge_tx_queue(hw, &wl->tx_skbs);
++	mt6630_wlan_bss_activate(wl, false);
++	wl->vif = NULL;
++	wl->sta_added = false;
++	wl->assoc = false;
 +}
 +
 +static int mt6630_wlan_op_config(struct ieee80211_hw *hw, int radio_idx,
 +				 u32 changed)
++{
++	return 0;
++}
++
++static int mt6630_wlan_op_sta_state(struct ieee80211_hw *hw,
++				    struct ieee80211_vif *vif,
++				    struct ieee80211_sta *sta,
++				    enum ieee80211_sta_state old_state,
++				    enum ieee80211_sta_state new_state)
++{
++	struct mt6630_wlan *wl = hw->priv;
++	struct ieee80211_channel *chan = hw->conf.chandef.chan;
++	int ret = 0;
++
++	if (old_state == IEEE80211_STA_NOTEXIST &&
++	    new_state == IEEE80211_STA_NONE) {
++		/* vendor join order: channel privilege, then the state-1
++		 * sta_rec that makes the hardware ACK the AP; mac80211
++		 * sends the auth frame right after this returns */
++		if (chan)
++			mt6630_wlan_ch_request(wl, chan);
++		memcpy(wl->sta_addr, sta->addr, ETH_ALEN);
++		ret = mt6630_wlan_sta_rec(wl, sta->addr, 0, 0, false, 0,
++					  false);
++		if (!ret)
++			wl->sta_added = true;
++	} else if (old_state == IEEE80211_STA_NONE &&
++		   new_state == IEEE80211_STA_NOTEXIST) {
++		flush_work(&wl->tx_work);	/* let the deauth out first */
++		mt6630_wlan_sta_remove(wl);
++		wl->sta_added = false;
++	}
++	return ret;
++}
++
++static void mt6630_wlan_op_bss_info_changed(struct ieee80211_hw *hw,
++					    struct ieee80211_vif *vif,
++					    struct ieee80211_bss_conf *info,
++					    u64 changed)
++{
++	struct mt6630_wlan *wl = hw->priv;
++
++	if (!(changed & BSS_CHANGED_ASSOC))
++		return;
++
++	if (vif->cfg.assoc && !wl->assoc) {
++		enum nl80211_band band = mt6630_wlan_band_5ghz(wl) ?
++				NL80211_BAND_5GHZ : NL80211_BAND_2GHZ;
++		struct ieee80211_sta *sta;
++		u16 rates = 0;
++		bool qos = false;
++
++		rcu_read_lock();
++		sta = ieee80211_find_sta(vif, info->bssid);
++		if (sta) {
++			rates = mt6630_wlan_rate_bitmap(band,
++					sta->deflink.supp_rates[band]);
++			qos = sta->wme;
++		}
++		rcu_read_unlock();
++		if (!rates)
++			rates = band == NL80211_BAND_5GHZ ?
++				MT6630_ALL_RATES_5G : MT6630_ALL_RATES_2G;
++
++		/* vendor order: bss_info CONNECTED, then sta_rec state 3
++		 * (its ACTIVATE_STA_REC response gates the data path) */
++		mt6630_wlan_bss_info(wl, true, rates);
++		if (mt6630_wlan_sta_rec(wl, wl->sta_addr, vif->cfg.aid,
++					rates, qos, 2, true))
++			dev_warn(&wl->func->dev,
++				 "sta_rec state-3 update failed\n");
++		/* No ch_abort here: aborting the privilege right as the
++		 * 4-way EAPOL starts races the fw off-channel (observed as
++		 * a 2/4 -> 3/4 stall). The 4 s grant expires on its own;
++		 * the connected BSS then holds the channel. */
++		/* the connect path resets per-BSS PS state in the fw;
++		 * re-assert always-on (dozing showed as ~1 s ping RTT) */
++		mt6630_wlan_ps_profile(wl, 0);
++		mt6630_wlan_pm_connected(wl);
++		wl->assoc = true;
++	} else if (!vif->cfg.assoc && wl->assoc) {
++		mt6630_wlan_bss_info(wl, false, 0);
++		wl->assoc = false;
++	}
++}
++
++static int mt6630_wlan_op_set_key(struct ieee80211_hw *hw,
++				  enum set_key_cmd cmd_op,
++				  struct ieee80211_vif *vif,
++				  struct ieee80211_sta *sta,
++				  struct ieee80211_key_conf *key)
++{
++	struct mt6630_wlan *wl = hw->priv;
++	bool pairwise = key->flags & IEEE80211_KEY_FLAG_PAIRWISE;
++	u8 cmd[64] = {};
++	u8 algo;
++
++	switch (key->cipher) {
++	case WLAN_CIPHER_SUITE_WEP40:
++		algo = MT6630_CIPHER_WEP40;
++		break;
++	case WLAN_CIPHER_SUITE_TKIP:
++		algo = MT6630_CIPHER_TKIP;
++		break;
++	case WLAN_CIPHER_SUITE_CCMP:
++		algo = MT6630_CIPHER_CCMP;
++		break;
++	case WLAN_CIPHER_SUITE_WEP104:
++		algo = MT6630_CIPHER_WEP104;
++		break;
++	default:
++		/* incl. BIP: mac80211 falls back to software crypto */
++		return -EOPNOTSUPP;
++	}
++	if (key->keylen > 32)
++		return -EOPNOTSUPP;
++
++	cmd[0] = cmd_op == SET_KEY;	/* add / remove */
++	cmd[1] = pairwise;		/* tx key */
++	cmd[2] = pairwise;		/* key type */
++	if (sta)
++		memcpy(&cmd[4], sta->addr, ETH_ALEN);
++	else if (wl->sta_added)		/* GTK: vendor uses the AP's MAC */
++		memcpy(&cmd[4], wl->sta_addr, ETH_ALEN);
++	cmd[10] = MT6630_BSS_IDX;
++	cmd[11] = algo;
++	cmd[12] = key->keyidx;
++	cmd[13] = key->keylen;
++	cmd[14] = pairwise ? MT6630_AP_WLAN_IDX : MT6630_BMC_WLAN_IDX;
++	memcpy(&cmd[16], key->key, key->keylen);
++	if (key->cipher == WLAN_CIPHER_SUITE_TKIP && key->keylen == 32) {
++		/* fw wants rx mic @16, tx mic @24 (mac80211: the reverse) */
++		memcpy(&cmd[16 + 16], key->key + 24, 8);
++		memcpy(&cmd[16 + 24], key->key + 16, 8);
++	}
++	return mt6630_wlan_cmd(wl, CMD_ID_ADD_REMOVE_KEY, true, cmd,
++			       sizeof(cmd), 0, NULL, 0);
++}
++
++static void mt6630_wlan_op_flush(struct ieee80211_hw *hw,
++				 struct ieee80211_vif *vif, u32 queues,
++				 bool drop)
++{
++	struct mt6630_wlan *wl = hw->priv;
++
++	flush_work(&wl->tx_work);
++}
++
++/* required by HAS_RATE_CONTROL; the fw applies the sta_rec RTS policy */
++static int mt6630_wlan_op_set_rts_threshold(struct ieee80211_hw *hw,
++					    int radio_idx, u32 value)
 +{
 +	return 0;
 +}
@@ -1611,7 +2279,24 @@
 +			      SCAN_REQ_V2_LEN, 0, NULL, 0);
 +	if (ret)
 +		wl->scanning = false;
++	else
++		/* the fw sometimes swallows a scan (e.g. while connected);
++		 * without SCAN_DONE mac80211 would stay -EBUSY forever */
++		schedule_delayed_work(&wl->scan_timeout, 10 * HZ);
 +	return ret;
++}
++
++static void mt6630_wlan_scan_timeout(struct work_struct *work)
++{
++	struct mt6630_wlan *wl = container_of(work, struct mt6630_wlan,
++					      scan_timeout.work);
++	struct cfg80211_scan_info info = { .aborted = true };
++
++	if (!wl->scanning)
++		return;
++	dev_warn(&wl->func->dev, "scan done never arrived, aborting scan\n");
++	wl->scanning = false;
++	ieee80211_scan_completed(wl->hw, &info);
 +}
 +
 +static void mt6630_wlan_op_cancel_hw_scan(struct ieee80211_hw *hw,
@@ -1622,6 +2307,7 @@
 +
 +	if (!wl->scanning)
 +		return;
++	cancel_delayed_work_sync(&wl->scan_timeout);
 +	mt6630_wlan_cmd(wl, CMD_ID_SCAN_CANCEL, true, cmd, sizeof(cmd),
 +			0, NULL, 0);
 +	if (wl->scanning) {
@@ -1645,6 +2331,11 @@
 +	.remove_interface = mt6630_wlan_op_remove_interface,
 +	.config = mt6630_wlan_op_config,
 +	.configure_filter = mt6630_wlan_op_configure_filter,
++	.sta_state = mt6630_wlan_op_sta_state,
++	.bss_info_changed = mt6630_wlan_op_bss_info_changed,
++	.set_key = mt6630_wlan_op_set_key,
++	.flush = mt6630_wlan_op_flush,
++	.set_rts_threshold = mt6630_wlan_op_set_rts_threshold,
 +	.hw_scan = mt6630_wlan_op_hw_scan,
 +	.cancel_hw_scan = mt6630_wlan_op_cancel_hw_scan,
 +};
@@ -1727,6 +2418,10 @@
 +	mutex_init(&wl->cmd_lock);
 +	spin_lock_init(&wl->resp_lock);
 +	init_completion(&wl->resp_done);
++	init_completion(&wl->ch_grant);
++	skb_queue_head_init(&wl->tx_skbs);
++	INIT_WORK(&wl->tx_work, mt6630_wlan_tx_work);
++	INIT_DELAYED_WORK(&wl->scan_timeout, mt6630_wlan_scan_timeout);
 +	sdio_set_drvdata(func, wl);
 +
 +	wl->tx_buf = devm_kmalloc(&func->dev, MT6630_XFER_BUF_SIZE,
@@ -1789,6 +2484,12 @@
 +		goto err_stop_thread;
 +	}
 +
++	ret = mt6630_wlan_basic_config(wl);
++	if (ret) {
++		dev_err(&func->dev, "basic config failed: %d\n", ret);
++		goto err_stop_thread;
++	}
++
 +	/* the fw eeprom MAC is all-zero on this board; the bootloader has
 +	 * the factory address in the device tree */
 +	if (!is_valid_ether_addr(wl->macaddr)) {
@@ -1799,13 +2500,15 @@
 +			eth_random_addr(wl->macaddr);
 +	}
 +
-+	/* mac80211 setup: scan-only for now */
 +	hw->wiphy->bands[NL80211_BAND_2GHZ] = &mt6630_band_2ghz;
 +	hw->wiphy->bands[NL80211_BAND_5GHZ] = &mt6630_band_5ghz;
 +	hw->wiphy->interface_modes = BIT(NL80211_IFTYPE_STATION);
 +	hw->wiphy->max_scan_ssids = SCAN_MAX_SSIDS;
 +	hw->wiphy->max_scan_ie_len = SCAN_MAX_IE;
 +	ieee80211_hw_set(hw, SIGNAL_DBM);
++	ieee80211_hw_set(hw, HAS_RATE_CONTROL);	/* fw autorate */
++	/* fw watches beacons (EVENT_ID_BSS_BEACON_TIMEOUT) */
++	ieee80211_hw_set(hw, CONNECTION_MONITOR);
 +	hw->queues = 4;
 +	SET_IEEE80211_DEV(hw, &func->dev);
 +	SET_IEEE80211_PERM_ADDR(hw, wl->macaddr);
@@ -1839,6 +2542,9 @@
 +	struct mt6630_wlan *wl = sdio_get_drvdata(func);
 +
 +	ieee80211_unregister_hw(wl->hw);
++	cancel_work_sync(&wl->tx_work);
++	cancel_delayed_work_sync(&wl->scan_timeout);
++	ieee80211_purge_tx_queue(wl->hw, &wl->tx_skbs);
 +	kthread_stop(wl->rx_thread);
 +	sdio_claim_host(func);
 +	sdio_disable_func(func);
@@ -1862,5 +2568,5 @@
 +
 +MODULE_FIRMWARE(MT6630_FW_RAM_CODE);
 +MODULE_AUTHOR("amazon-suez mainline bringup");
-+MODULE_DESCRIPTION("mac80211 driver for MT6630 on SDIO (scan-only bring-up)");
++MODULE_DESCRIPTION("mac80211 driver for MT6630 on SDIO");
 +MODULE_LICENSE("GPL");
