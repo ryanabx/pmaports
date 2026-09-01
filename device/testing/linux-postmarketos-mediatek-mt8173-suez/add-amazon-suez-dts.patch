@@ -12,7 +12,7 @@ diff --git a/arch/arm64/boot/dts/mediatek/Makefile b/arch/arm64/boot/dts/mediate
 diff --git a/arch/arm64/boot/dts/mediatek/mt8173-amazon-suez.dts b/arch/arm64/boot/dts/mediatek/mt8173-amazon-suez.dts
 --- a/arch/arm64/boot/dts/mediatek/mt8173-amazon-suez.dts
 +++ b/arch/arm64/boot/dts/mediatek/mt8173-amazon-suez.dts
-@@ -0,0 +1,1379 @@
+@@ -0,0 +1,1404 @@
 +// SPDX-License-Identifier: (GPL-2.0 OR MIT)
 +/*
 + * Copyright (c) 2026 Ryan Brue <ryanbrue.dev@gmail.com>
@@ -1238,6 +1238,31 @@ diff --git a/arch/arm64/boot/dts/mediatek/mt8173-amazon-suez.dts b/arch/arm64/bo
 +		reg = <0x6b>;
 +		interrupt-parent = <&pio>;
 +		interrupts = <9 IRQ_TYPE_EDGE_FALLING>;
++
++		/*
++		 * Suppress the driver's deprecated "battery" power supply.
++		 * bq24190_charger.c registers it purely for backwards
++		 * compatibility and offers this property to hide it:
++		 *
++		 *     the battery class is deprecated and will be removed;
++		 *     in the interim, this property hides it --
++		 *     if (!device_property_read_bool(dev, "omit-battery-class"))
++		 *
++		 * Hiding it matters here because it is a phantom: this part is
++		 * a charger with no fuel gauge, so bq24190-battery exposes
++		 * status and scope and nothing else -- no present, no capacity,
++		 * no energy_*. upower 1.91 still counts it as a real battery
++		 * ("present: yes, energy-full: 0 Wh"), computes
++		 * energy / energy_full = 0 / 0, and logs
++		 *   value "nan" ... is invalid or out of range for 'percentage'
++		 * twice every five seconds forever. That polling is also what
++		 * generates the endless kernel warning
++		 *   bq24190-charger 3-006b: warning: .../bq24190-battery is deprecated
++		 * -- 120 of them in 890 s, measured.
++		 *
++		 * The real gauge is mt6397-battery, which reports properly.
++		 */
++		omit-battery-class;
 +	};
 +};
 +
