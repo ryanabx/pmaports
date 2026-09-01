@@ -11,7 +11,7 @@
 maintainer="Ryan Brue <ryanbrue.dev@gmail.com>"
 pkgname=linux-postmarketos-mediatek-mt8173-suez
 pkgver=7.1.8
-pkgrel=11
+pkgrel=12
 pkgdesc="Mainline kernel fork for the Amazon Fire HD 10 (2017)"
 arch="aarch64"
 _carch="arm64"
@@ -112,7 +112,7 @@ package() {
 
 sha512sums="
 e17057478fd498fd4d83c4b6d3712fdfc3c6ae1d077114ea74ee41186cbd75add292f5e5f810fdf41242fd506a476d34447392b1c8194b5e8a6af1a59ac48a74  linux-7.1.8.tar.xz
-25d30bce46951e7211913b200eaac877e2f9a7dfb318dcf68f505afc08c363faf3720da83198eac2ea24c82c4581ebd860bdb6bb9231d43887048eb9aa86cc22  config-postmarketos-mediatek-mt8173-suez.aarch64
+aeee273660cf905e901d108133c57579df4ac46bec2baf4cd7612fb61b455a7a165160d91b2a4a7c7342f67f7bc0e9656c147c1e361952949ec99107ff652b41  config-postmarketos-mediatek-mt8173-suez.aarch64
 901780c4c468ebf8b6af7c27530fafb0439dfae889208c35f22aa7447902078d147db69a1c8e2115cd13f51c641eef878d9335b7527dc7fa2240cd617e045aab  0001-resolve_btfids-preserve-parameter-names-when-process.patch
 aedbf42178f26a0b38b0deee02cbf24a7d3cfaf90cdcf30da12ff1cc334be1e14eada0d924b0082830812d16eebd432230a1476542d23238acd9da527973facf  0003-display-blank.patch
 4c36d3fb97341082368620f9194b166fde8dc5d8e9b32324bc4da5817a9780915ed0eeafcc9a8a46c54c6b5a69eda987c90d0bf7ffa7f47c15ad13ba5738f5da  mtk-dsi-force-cmd-mode.patch
