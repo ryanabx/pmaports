@@ -1,0 +1,114 @@
+--- a/arch/arm64/kernel/head.S
++++ b/arch/arm64/kernel/head.S
+@@ -83,6 +83,19 @@
+ 	 *  x21        primary_entry() .. start_kernel()        FDT pointer passed at boot in x0
+ 	 */
+ SYM_CODE_START(primary_entry)
++	/* DEBUG: paint the framebuffer red to prove we reached the kernel.
++	 * MMU and caches are off, so this is a plain physical write.
++	 * 1216*1920 px: scanlines are padded to 1216, not the visible 1200.
++	 * Only x10-x12 are touched; x0 still holds the FDT pointer.
++	 */
++	movz	x10, #0xb4bc, lsl #16
++	movz	w11, #0
++	movk	w11, #0xffff, lsl #16
++	movz	w12, #0x9400
++	movk	w12, #0x0023, lsl #16
++0:	str	w11, [x10], #4
++	subs	w12, w12, #1
++	b.ne	0b
+ 	bl	record_mmu_state
+ 	bl	preserve_boot_args
+ 
+--- a/init/main.c
++++ b/init/main.c
+@@ -968,6 +968,59 @@
+ 		pr_notice("%s%s\n", KERNEL_CMDLINE_PREFIX, cmdline);
+ }
+ 
++/*
++ * DEBUG: fill the whole framebuffer with one colour. This device has no UART,
++ * and a full-screen colour is the one thing that renders unambiguously here -
++ * unlike text (far too slow to draw) or bands (easy to misjudge).
++ *
++ * Must be defined before start_kernel(), which is the first caller.
++ */
++static void __init suez_paint(u32 colour)
++{
++	void __iomem *fb;
++	unsigned int i;
++
++	fb = ioremap_wc(0xb4bc0000UL, 1216 * 1920 * 4);
++	if (!fb)
++		return;
++	for (i = 0; i < 1216 * 1920; i++)
++		writel(colour, fb + i * 4);
++	iounmap(fb);
++}
++
++/*
++ * Something during initcall level 6 corrupts the panel (vertical black bar,
++ * flicker, fading), which makes every later colour unreadable - so a static
++ * colour cannot tell us whether the boot got past that point. Strobing can:
++ * gross brightness changes stay visible through the artifacts, and the flash
++ * count is countable even when the colour is not. Phases are deliberately
++ * long (1.5 s): this panel visibly blends faster transitions.
++ */
++static void __init suez_strobe(unsigned int flashes)
++{
++	unsigned int n;
++
++	for (n = 0; n < flashes; n++) {
++		suez_paint(0xffffffff);
++		mdelay(1500);
++		suez_paint(0xff000000);
++		mdelay(1500);
++	}
++	suez_paint(0xffffffff);
++}
++
++/* one distinct colour per initcall level, painted as that level is entered */
++static const u32 suez_level_colour[8] __initconst = {
++	0xff000080,	/* 0 early    - dark blue  */
++	0xff0000ff,	/* 1 core     - blue       */
++	0xff00ffff,	/* 2 postcore - cyan       */
++	0xff008000,	/* 3 arch     - dark green */
++	0xff00ff00,	/* 4 subsys   - green      */
++	0xffffff00,	/* 5 fs       - yellow     */
++	0xffff8000,	/* 6 device   - orange     */
++	0xffff00ff,	/* 7 late     - magenta    */
++};
++
+ asmlinkage __visible __init __no_sanitize_address __noreturn __no_stack_protector
+ void start_kernel(void)
+ {
+@@ -1171,6 +1224,9 @@
+ 	arch_post_acpi_subsys_init();
+ 	kcsan_init();
+ 
++	/* DEBUG: grey - start_kernel() completed */
++	suez_paint(0xff808080);
++
+ 	/* Do the rest non-__init'ed, we're now alive */
+ 	rest_init();
+ 
+@@ -1420,6 +1476,9 @@
+ 		panic("%s: Failed to allocate %zu bytes\n", __func__, len);
+ 
+ 	for (level = 0; level < ARRAY_SIZE(initcall_levels) - 1; level++) {
++		suez_paint(suez_level_colour[level]);
++		if (level == 7)
++			suez_strobe(2);
+ 		/* Parser modifies command_line, restore it each time */
+ 		strcpy(command_line, saved_command_line);
+ 		do_initcall_level(level, command_line);
+@@ -1657,6 +1716,9 @@
+ 
+ 	do_basic_setup();
+ 
++	/* DEBUG: 5 flashes - every initcall completed, heading for userspace */
++	suez_strobe(5);
++
+ 	kunit_run_all_tests();
+ 
+ 	wait_for_initramfs();

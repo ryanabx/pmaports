@@ -1,0 +1,35 @@
+# Reference: <https://postmarketos.org/devicepkg>
+maintainer="Ryan Brue <ryanbrue.dev@gmail.com>"
+pkgname=device-amazon-suez-mainline
+pkgdesc="Amazon Fire HD 10 (2017) (mainline)"
+pkgver=1
+pkgrel=1
+url="https://postmarketos.org"
+license="MIT"
+arch="aarch64"
+options="!check !archcheck"
+depends="
+	linux-postmarketos-mediatek-mt8173-suez
+	mkbootimg
+	postmarketos-base
+"
+makedepends="devicepkg-dev"
+source="
+	deviceinfo
+	kernel-cmdline.conf
+	modules-initfs
+"
+
+build() {
+	devicepkg_build $startdir $pkgname
+}
+
+package() {
+	devicepkg_package $startdir $pkgname
+}
+
+sha512sums="
+2b67cd8aee55bb498674f0392d133f865ff9d6a4da5766ac9cc48a93371b6f248478cf1e16e2981ed087200c5b1d86492a266477ff38487201715196ff02f2e5  deviceinfo
+cbe68304072ac6d6d8190b9ad875545444fe623f1af7261975a50878d871c7c2b2373a13515df9659e486f99535d80a3eccd0d17bfa6d3862ea2741ba3dcce20  kernel-cmdline.conf
+d89fa6205d2ec177514a6e47877f27c7c69745d30994e36597ac6940c114a71868940d7050ba67dc5a260dc338ca5d789c521e35c37d7f2d3645762ab02101a9  modules-initfs
+"

@@ -1,0 +1,107 @@
+# Kernel config based on: device/community/linux-postmarketos-mediatek-mt8173
+maintainer="Ryan Brue <ryanbrue.dev@gmail.com>"
+pkgname=linux-postmarketos-mediatek-mt8173-suez
+pkgver=7.1.8
+pkgrel=1
+pkgdesc="Mainline kernel fork for the Amazon Fire HD 10 (2017)"
+arch="aarch64"
+_carch="arm64"
+_flavor="${pkgname#linux-}"
+url="https://kernel.org"
+license="GPL-2.0-only"
+# This is a copy of linux-postmarketos-mediatek-mt8173 with a device tree for
+# amazon-suez and a heavily trimmed config, for two reasons:
+#
+#  1. The boot partition (boot_x) is only 16 MiB.
+#  2. The vendor bootloader cannot decompress a kernel larger than somewhere
+#     between 28 and 32 MiB. This was measured on the device by booting
+#     synthetic payloads of known size: 28 MiB runs, 32 MiB does not, at any
+#     load address. A stock config decompresses to 35.4 MiB and therefore
+#     never starts at all - the bootloader silently gives up and the watchdog
+#     reboots, with no output anywhere.
+#
+# pmb:kconfigcheck-community is intentionally not set: it pulls in
+# category:debug, which requires CONFIG_FUNCTION_TRACER, whose instrumentation
+# is worth ~1 MiB here. kconfigcheck.toml explicitly allows dropping this
+# option for devices in testing.
+#
+# KNOWN DEVIATION: CONFIG_DEBUG_INFO_BTF is disabled, which category:default
+# requires, so "pmbootstrap kconfig check" fails on this package. BTF measures
+# 6.00 MiB of the 35.4 MiB image (from __start_BTF/__stop_BTF in System.map),
+# and without it the kernel cannot be made to fit under the bootloader's
+# ceiling without gutting entire driver classes. This needs resolving before
+# the port can be upstreamed - either with an exception for devices whose
+# bootloader cannot load a BTF-sized kernel, or by chainloading U-Boot so the
+# kernel is no longer loaded by the vendor bootloader at all.
+options="!strip !check !tracedeps
+	pmb:cross-native
+"
+makedepends="
+	bash
+	bison
+	clang
+	elfutils-dev
+	findutils
+	flex
+	linux-headers
+	lld
+	llvm
+	openssl-dev
+	pahole
+	perl
+	postmarketos-installkernel
+	python3
+	xz
+	zstd
+"
+
+# Source
+_config="config-$_flavor.$arch"
+case $pkgver in
+	*.*.*)	_kernver=${pkgver%.0};;
+	*.*)	_kernver=$pkgver;;
+esac
+source="
+	https://cdn.kernel.org/pub/linux/kernel/v7.x/linux-${pkgver//_/-}.tar.xz
+	$_config
+	0001-resolve_btfids-preserve-parameter-names-when-process.patch
+	0003-display-blank.patch
+	add-amazon-suez-dts.patch
+	debug-paint-framebuffer.patch
+"
+builddir="$srcdir/linux-${_kernver//_/-}"
+
+prepare() {
+	default_prepare
+	cp "$srcdir/config-$_flavor.$CARCH" .config
+}
+
+build() {
+	unset LDFLAGS
+	make ARCH="$_carch" LLVM=1 \
+		KBUILD_BUILD_VERSION="$((pkgrel + 1 ))-postmarketOS"
+}
+
+package() {
+	mkdir -p "$pkgdir"/boot
+	make zinstall modules_install dtbs_install \
+		ARCH="$_carch" \
+		LLVM=1 \
+		INSTALL_PATH="$pkgdir"/boot \
+		INSTALL_MOD_PATH="$pkgdir"/usr \
+		INSTALL_MOD_STRIP=1 \
+		INSTALL_DTBS_PATH="$pkgdir/boot/dtbs"
+	rm -f "$pkgdir"/lib/modules/*/build "$pkgdir"/lib/modules/*/source
+
+	install -D "$builddir"/include/config/kernel.release \
+		"$pkgdir"/usr/share/kernel/$_flavor/kernel.release
+}
+
+sha512sums="
+e17057478fd498fd4d83c4b6d3712fdfc3c6ae1d077114ea74ee41186cbd75add292f5e5f810fdf41242fd506a476d34447392b1c8194b5e8a6af1a59ac48a74  linux-7.1.8.tar.xz
+b232f2c5bc9607f1c24baa61c5dc6610edbe6b830ad27943160743ecf79bb7b61d70ab8f5c5ba7e87ed6f3682bc8a5b21222636e17ae074f2a450fc167fa9ac9  config-postmarketos-mediatek-mt8173-suez.aarch64
+901780c4c468ebf8b6af7c27530fafb0439dfae889208c35f22aa7447902078d147db69a1c8e2115cd13f51c641eef878d9335b7527dc7fa2240cd617e045aab  0001-resolve_btfids-preserve-parameter-names-when-process.patch
+aedbf42178f26a0b38b0deee02cbf24a7d3cfaf90cdcf30da12ff1cc334be1e14eada0d924b0082830812d16eebd432230a1476542d23238acd9da527973facf  0003-display-blank.patch
+2a0aa092d8583903fada0e2c29e98abe43d879a57aac54d92675104398a54b5f03d50ca1ed1775f57912cbdc3490a561eb490538eec74bcb28c212e73e8ed706  add-amazon-suez-dts.patch
+a7eeaf2b58a0851a4e1591a6d91c717ff091cccbb4a3e56dcc866d9c665013c472b500ad82b7162afbaf774fb67115cd05472fa722c0853d9156b89327a12bdf  debug-paint-framebuffer.patch
+"
