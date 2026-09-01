@@ -11,7 +11,7 @@ diff -urN a/arch/arm64/boot/dts/mediatek/Makefile b/arch/arm64/boot/dts/mediatek
  dtb-$(CONFIG_ARCH_MEDIATEK) += mt8173-elm-hana-rev7.dtb
 --- a/arch/arm64/boot/dts/mediatek/mt8173-amazon-suez.dts
 +++ b/arch/arm64/boot/dts/mediatek/mt8173-amazon-suez.dts
-@@ -0,0 +1,1317 @@
+@@ -0,0 +1,1324 @@
 +// SPDX-License-Identifier: (GPL-2.0 OR MIT)
 +/*
 + * Copyright (c) 2026 Ryan Brue <ryanbrue.dev@gmail.com>
@@ -178,6 +178,13 @@ diff -urN a/arch/arm64/boot/dts/mediatek/Makefile b/arch/arm64/boot/dts/mediatek
 +		io-channels = <&pmic_auxadc 0>;
 +		io-channel-names = "voltage";
 +		monitored-battery = <&battery>;
++		/*
++		 * Without this, power_supply_am_i_supplied() finds no
++		 * suppliers at all and returns -ENODEV, which is nonzero and
++		 * so reads as "yes, supplied" in gab_work() -- the battery
++		 * then reports Charging forever, even on battery power.
++		 */
++		power-supplies = <&bq24297>;
 +	};
 +
 +	sound {
@@ -1170,7 +1177,7 @@ diff -urN a/arch/arm64/boot/dts/mediatek/Makefile b/arch/arm64/boot/dts/mediatek
 +	 * exactly what mainline's bq24190_charger matches on, so this node is
 +	 * the vendor's, minus its MTK-specific properties.
 +	 */
-+	charger@6b {
++	bq24297: charger@6b {
 +		compatible = "ti,bq24297";
 +		reg = <0x6b>;
 +		interrupt-parent = <&pio>;
