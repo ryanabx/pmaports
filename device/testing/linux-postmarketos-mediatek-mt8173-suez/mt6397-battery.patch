@@ -1,0 +1,290 @@
+diff -urN base/drivers/mfd/mt6397-core.c new/drivers/mfd/mt6397-core.c
+--- base/drivers/mfd/mt6397-core.c	2026-08-31 22:13:35.382780097 -0500
++++ new/drivers/mfd/mt6397-core.c	2026-08-31 22:13:53.120641508 -0500
+@@ -258,6 +258,9 @@
+ 		.name = "mt6397-auxadc",
+ 		.of_compatible = "mediatek,mt6397-auxadc",
+ 	}, {
++		.name = "mt6397-battery",
++		.of_compatible = "mediatek,mt6397-battery",
++	}, {
+ 		.name = "mt6397-rtc",
+ 		.num_resources = ARRAY_SIZE(mt6397_rtc_resources),
+ 		.resources = mt6397_rtc_resources,
+diff -urN base/drivers/power/supply/Kconfig new/drivers/power/supply/Kconfig
+--- base/drivers/power/supply/Kconfig	2026-08-09 13:26:58.000000000 -0500
++++ new/drivers/power/supply/Kconfig	2026-08-31 22:13:53.103880600 -0500
+@@ -38,6 +38,18 @@
+ config ADC_BATTERY_HELPER
+ 	tristate
+ 
++config BATTERY_MT6397
++	tristate "MediaTek MT6397 PMIC fuel gauge support"
++	depends on MFD_MT6397 || COMPILE_TEST
++	depends on IIO
++	select ADC_BATTERY_HELPER
++	help
++	  Say Y here to enable support for the fuel gauge in the MediaTek
++	  MT6397 PMIC. It measures battery current across a board-provided
++	  sense resistor, which combined with the pack voltage from the
++	  PMIC's auxiliary ADC gives an internal-resistance compensated
++	  state of charge.
++
+ config GENERIC_ADC_BATTERY
+ 	tristate "Generic battery support using IIO"
+ 	depends on IIO
+diff -urN base/drivers/power/supply/Makefile new/drivers/power/supply/Makefile
+--- base/drivers/power/supply/Makefile	2026-08-09 13:26:58.000000000 -0500
++++ new/drivers/power/supply/Makefile	2026-08-31 22:13:53.105880618 -0500
+@@ -8,6 +8,7 @@
+ obj-$(CONFIG_POWER_SUPPLY)	+= power_supply.o
+ obj-$(CONFIG_POWER_SUPPLY_HWMON) += power_supply_hwmon.o
+ obj-$(CONFIG_ADC_BATTERY_HELPER) += adc-battery-helper.o
++obj-$(CONFIG_BATTERY_MT6397)	+= mt6397-battery.o
+ obj-$(CONFIG_GENERIC_ADC_BATTERY)	+= generic-adc-battery.o
+ 
+ obj-$(CONFIG_APM_POWER)		+= apm_power.o
+diff -urN base/drivers/power/supply/mt6397-battery.c new/drivers/power/supply/mt6397-battery.c
+--- base/drivers/power/supply/mt6397-battery.c	1969-12-31 18:00:00.000000000 -0600
++++ new/drivers/power/supply/mt6397-battery.c	2026-08-31 22:13:53.107684499 -0500
+@@ -0,0 +1,240 @@
++// SPDX-License-Identifier: GPL-2.0-only
++/*
++ * Battery driver for the MediaTek MT6397 PMIC's fuel gauge
++ *
++ * The PMIC contains a fuel gauge (FGADC) that measures battery current across
++ * a board-provided sense resistor, and a charge accumulator. Only the current
++ * measurement is used here: combined with the pack voltage from the PMIC's
++ * auxiliary ADC it is enough to subtract I*R and look up the rested
++ * open-circuit voltage rather than the loaded terminal voltage, which is what
++ * makes a voltage-based gauge usable. Without it the reported charge steps by
++ * around ten percent whenever the charger is plugged or unplugged, because a
++ * lithium discharge curve is flat enough that tens of millivolts of I*R are
++ * tens of percent of indicated charge.
++ *
++ * The charge accumulator is deliberately not used. Integrating it properly
++ * means handling initialisation from a rested OCV, drift correction, capacity
++ * learning and accumulation across suspend, which is a great deal more than
++ * this driver does.
++ *
++ * Copyright (C) 2026 Ryan Brue <ryanbrue.dev@gmail.com>
++ */
++
++#include <linux/bitfield.h>
++#include <linux/iio/consumer.h>
++#include <linux/math64.h>
++#include <linux/mfd/mt6397/core.h>
++#include <linux/mod_devicetable.h>
++#include <linux/module.h>
++#include <linux/platform_device.h>
++#include <linux/power_supply.h>
++#include <linux/property.h>
++#include <linux/regmap.h>
++
++#include "adc-battery-helper.h"
++
++/* Clock gates for the gauge; it runs from the RTC's 32 kHz oscillator. */
++#define MT6397_TOP_CKPDN		0x0102
++#define MT6397_TOP_CKPDN_FGADC_CK	(BIT(6) | BIT(5))
++
++#define MT6397_FGADC_CON0		0x0618
++#define MT6397_FGADC_CON0_MODE		GENMASK(7, 0)
++#define MT6397_FGADC_CON0_MODE_SETUP	0x28
++#define MT6397_FGADC_CON0_MODE_ON	0x29
++#define MT6397_FGADC_CON0_LATCHED	BIT(10)
++#define MT6397_FGADC_CON0_CMD		GENMASK(15, 8)
++#define MT6397_FGADC_CON0_CMD_IDLE	0x00
++#define MT6397_FGADC_CON0_CMD_LATCH	0x02
++#define MT6397_FGADC_CON0_CMD_CLEAR	0x08
++#define MT6397_FGADC_CON0_CMD_RESET	0x71
++
++#define MT6397_FGADC_CON8		0x0628
++
++#define MT6397_FGADC_TIMEOUT_US		100000
++
++/*
++ * One LSB is 158.122 nA * 1000 across a 20 mOhm sense resistor, and scales
++ * inversely with the resistor a board actually fits.
++ */
++#define MT6397_FGADC_NA_PER_LSB		158122
++#define MT6397_FGADC_REF_SENSE_MOHM	20
++
++struct mt6397_battery {
++	/* Must be first, the helper casts the drvdata straight to it. */
++	struct adc_battery_helper helper;
++	struct regmap *regmap;
++	struct iio_channel *vbat;
++	struct power_supply *psy;
++	u32 sense_mohm;
++};
++
++static int mt6397_battery_fg_cmd(struct mt6397_battery *bat, unsigned int cmd)
++{
++	return regmap_update_bits(bat->regmap, MT6397_FGADC_CON0,
++				  MT6397_FGADC_CON0_CMD,
++				  FIELD_PREP(MT6397_FGADC_CON0_CMD, cmd));
++}
++
++static int mt6397_battery_fg_enable(struct mt6397_battery *bat)
++{
++	int ret;
++
++	ret = regmap_update_bits(bat->regmap, MT6397_TOP_CKPDN,
++				 MT6397_TOP_CKPDN_FGADC_CK, 0);
++	if (ret)
++		return ret;
++
++	/* Current mode with auto-calibration, then enable. */
++	ret = regmap_update_bits(bat->regmap, MT6397_FGADC_CON0,
++				 MT6397_FGADC_CON0_MODE,
++				 MT6397_FGADC_CON0_MODE_SETUP);
++	if (ret)
++		return ret;
++
++	ret = regmap_update_bits(bat->regmap, MT6397_FGADC_CON0,
++				 MT6397_FGADC_CON0_MODE,
++				 MT6397_FGADC_CON0_MODE_ON);
++	if (ret)
++		return ret;
++
++	return mt6397_battery_fg_cmd(bat, MT6397_FGADC_CON0_CMD_RESET);
++}
++
++static int mt6397_battery_read_current(struct mt6397_battery *bat, int *curr_ua)
++{
++	unsigned int reg;
++	int raw, ret;
++
++	ret = mt6397_battery_fg_cmd(bat, MT6397_FGADC_CON0_CMD_LATCH);
++	if (ret)
++		return ret;
++
++	ret = regmap_read_poll_timeout(bat->regmap, MT6397_FGADC_CON0, reg,
++				       reg & MT6397_FGADC_CON0_LATCHED,
++				       100, MT6397_FGADC_TIMEOUT_US);
++	if (ret)
++		return ret;
++
++	ret = regmap_read(bat->regmap, MT6397_FGADC_CON8, &reg);
++	if (ret)
++		return ret;
++
++	/*
++	 * Not two's complement: the gauge reports a magnitude with the sign
++	 * folded in as 65535 - raw. Convert to a signed value that is positive
++	 * when current flows into the battery, which is what the helper and
++	 * the power-supply class both expect.
++	 */
++	raw = reg > 32767 ? -(65535 - (int)reg) : (int)reg;
++
++	*curr_ua = div_s64((s64)raw * MT6397_FGADC_NA_PER_LSB *
++			   MT6397_FGADC_REF_SENSE_MOHM,
++			   (s64)bat->sense_mohm * 1000);
++
++	ret = mt6397_battery_fg_cmd(bat, MT6397_FGADC_CON0_CMD_CLEAR);
++	if (ret)
++		return ret;
++
++	ret = regmap_read_poll_timeout(bat->regmap, MT6397_FGADC_CON0, reg,
++				       !(reg & MT6397_FGADC_CON0_LATCHED),
++				       100, MT6397_FGADC_TIMEOUT_US);
++	if (ret)
++		return ret;
++
++	return mt6397_battery_fg_cmd(bat, MT6397_FGADC_CON0_CMD_IDLE);
++}
++
++static int mt6397_battery_get_voltage_and_current_now(struct power_supply *psy,
++						      int *volt_uv, int *curr_ua)
++{
++	struct mt6397_battery *bat = power_supply_get_drvdata(psy);
++	int ret, volt_mv;
++
++	ret = iio_read_channel_processed(bat->vbat, &volt_mv);
++	if (ret < 0)
++		return ret;
++
++	*volt_uv = volt_mv * 1000;
++
++	return mt6397_battery_read_current(bat, curr_ua);
++}
++
++static const struct power_supply_desc mt6397_battery_desc = {
++	.name			= "mt6397-battery",
++	.type			= POWER_SUPPLY_TYPE_BATTERY,
++	.get_property		= adc_battery_helper_get_property,
++	.external_power_changed	= adc_battery_helper_external_power_changed,
++	.properties		= adc_battery_helper_properties,
++	.num_properties		= ADC_HELPER_NUM_PROPERTIES,
++};
++
++static int mt6397_battery_probe(struct platform_device *pdev)
++{
++	struct power_supply_config psy_cfg = {};
++	struct device *dev = &pdev->dev;
++	struct mt6397_chip *chip = dev_get_drvdata(dev->parent);
++	struct mt6397_battery *bat;
++	int ret;
++
++	bat = devm_kzalloc(dev, sizeof(*bat), GFP_KERNEL);
++	if (!bat)
++		return -ENOMEM;
++
++	bat->regmap = chip->regmap;
++
++	ret = device_property_read_u32(dev, "mediatek,sense-resistor-milli-ohms",
++				       &bat->sense_mohm);
++	if (ret || !bat->sense_mohm)
++		return dev_err_probe(dev, ret ?: -EINVAL,
++				     "missing mediatek,sense-resistor-milli-ohms\n");
++
++	bat->vbat = devm_iio_channel_get(dev, "voltage");
++	if (IS_ERR(bat->vbat))
++		return dev_err_probe(dev, PTR_ERR(bat->vbat),
++				     "failed to get the voltage channel\n");
++
++	ret = mt6397_battery_fg_enable(bat);
++	if (ret)
++		return dev_err_probe(dev, ret, "failed to start the fuel gauge\n");
++
++	psy_cfg.drv_data = bat;
++	psy_cfg.fwnode = dev_fwnode(dev);
++	bat->psy = devm_power_supply_register(dev, &mt6397_battery_desc, &psy_cfg);
++	if (IS_ERR(bat->psy))
++		return dev_err_probe(dev, PTR_ERR(bat->psy),
++				     "failed to register the power supply\n");
++
++	ret = adc_battery_helper_init(&bat->helper, bat->psy,
++				      mt6397_battery_get_voltage_and_current_now,
++				      NULL);
++	if (ret)
++		return dev_err_probe(dev, ret, "failed to init the battery helper\n");
++
++	platform_set_drvdata(pdev, bat);
++
++	return 0;
++}
++
++static DEFINE_SIMPLE_DEV_PM_OPS(mt6397_battery_pm_ops,
++				adc_battery_helper_suspend,
++				adc_battery_helper_resume);
++
++static const struct of_device_id mt6397_battery_of_match[] = {
++	{ .compatible = "mediatek,mt6397-battery" },
++	{ }
++};
++MODULE_DEVICE_TABLE(of, mt6397_battery_of_match);
++
++static struct platform_driver mt6397_battery_driver = {
++	.driver = {
++		.name = "mt6397-battery",
++		.of_match_table = mt6397_battery_of_match,
++		.pm = pm_sleep_ptr(&mt6397_battery_pm_ops),
++	},
++	.probe = mt6397_battery_probe,
++};
++module_platform_driver(mt6397_battery_driver);
++
++MODULE_AUTHOR("Ryan Brue <ryanbrue.dev@gmail.com>");
++MODULE_DESCRIPTION("MediaTek MT6397 PMIC fuel gauge battery driver");
++MODULE_LICENSE("GPL");

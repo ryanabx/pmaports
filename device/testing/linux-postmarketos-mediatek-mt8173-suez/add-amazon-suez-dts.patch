@@ -11,7 +11,7 @@ diff -urN a/arch/arm64/boot/dts/mediatek/Makefile b/arch/arm64/boot/dts/mediatek
  dtb-$(CONFIG_ARCH_MEDIATEK) += mt8173-elm-hana-rev7.dtb
 --- a/arch/arm64/boot/dts/mediatek/mt8173-amazon-suez.dts
 +++ b/arch/arm64/boot/dts/mediatek/mt8173-amazon-suez.dts
-@@ -0,0 +1,1333 @@
+@@ -0,0 +1,1336 @@
 +// SPDX-License-Identifier: (GPL-2.0 OR MIT)
 +/*
 + * Copyright (c) 2026 Ryan Brue <ryanbrue.dev@gmail.com>
@@ -158,6 +158,7 @@ diff -urN a/arch/arm64/boot/dts/mediatek/Makefile b/arch/arm64/boot/dts/mediatek
 +		 * and connector, as expected.
 +		 */
 +		factory-internal-resistance-micro-ohms = <86000>;
++		constant-charge-voltage-max-microvolt = <4340000>;
 +		ocv-capacity-celsius = <25>;
 +		ocv-capacity-table-0 = <4340000 100>,
 +				       <4267000 95>,
@@ -180,20 +181,6 @@ diff -urN a/arch/arm64/boot/dts/mediatek/Makefile b/arch/arm64/boot/dts/mediatek
 +				       <3694000 10>,
 +				       <3684000 5>,
 +				       <3410000 0>;
-+	};
-+
-+	adc-battery {
-+		compatible = "adc-battery";
-+		io-channels = <&pmic_auxadc 0>, <&pmic_auxadc 1>;
-+		io-channel-names = "voltage", "current";
-+		monitored-battery = <&battery>;
-+		/*
-+		 * Without this, power_supply_am_i_supplied() finds no
-+		 * suppliers at all and returns -ENODEV, which is nonzero and
-+		 * so reads as "yes, supplied" in gab_work() -- the battery
-+		 * then reports Charging forever, even on battery power.
-+		 */
-+		power-supplies = <&bq24297>;
 +	};
 +
 +	sound {
@@ -368,6 +355,22 @@ diff -urN a/arch/arm64/boot/dts/mediatek/Makefile b/arch/arm64/boot/dts/mediatek
 +		pmic_auxadc: adc {
 +			compatible = "mediatek,mt6397-auxadc";
 +			#io-channel-cells = <1>;
++		};
++
++		/*
++		 * The PMIC's fuel gauge. It measures pack current across the
++		 * board's sense resistor, which is what lets the state of
++		 * charge be looked up from the rested voltage rather than the
++		 * loaded one -- without it the reported charge steps about ten
++		 * points whenever the charger is plugged or unplugged.
++		 */
++		fuel_gauge: battery {
++			compatible = "mediatek,mt6397-battery";
++			io-channels = <&pmic_auxadc 0>;
++			io-channel-names = "voltage";
++			monitored-battery = <&battery>;
++			power-supplies = <&bq24297>;
++			mediatek,sense-resistor-milli-ohms = <10>;
 +		};
 +
 +		mt6397pin: pinctrl {
