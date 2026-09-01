@@ -3,7 +3,7 @@ maintainer="Ryan Brue <ryanbrue.dev@gmail.com>"
 pkgname=device-amazon-suez-mainline
 pkgdesc="Amazon Fire HD 10 (2017) (mainline)"
 pkgver=1
-pkgrel=34
+pkgrel=36
 url="https://postmarketos.org"
 license="MIT"
 arch="aarch64"
@@ -33,6 +33,7 @@ source="
 	suez-charger-limit.service
 	suez-hardlockup.service
 	suez-lid.conf
+	suez-no-idle-suspend.conf
 	suez-pstore-blk
 	suez-pstore-blk.service
 	suez-stability.conf
@@ -113,6 +114,27 @@ package() {
 	install -Dm644 "$srcdir"/suez-lid.conf \
 		"$pkgdir"/usr/lib/systemd/logind.conf.d/99-suez-lid.conf
 
+	# ...and keep everything ELSE from suspending either. A failed s2idle on
+	# this board leaves the MT6630 dead -- no Wi-Fi, no Bluetooth -- until a
+	# reboot, and the lid is not the only way in: gnome-shell's power manager
+	# asked on its own after 900 s of idle. The file has the measurement.
+	install -Dm644 "$srcdir"/suez-no-idle-suspend.conf \
+		"$pkgdir"/usr/lib/systemd/logind.conf.d/99-suez-no-idle-suspend.conf
+
+	# Mask the sleep targets. This is the part that actually takes effect:
+	# logind's SleepOperation= was tried in r35 and measured ineffective on
+	# systemd 261.2 (CanSuspend still answered "yes"); with these masks it
+	# answers "no". Same idiom, and same directory, as the nftables.service
+	# mask this package already ships below -- masking belongs in
+	# /etc/systemd/system, NOT /usr/lib/systemd/system, because systemd's own
+	# package owns the unit files there and shipping symlinks over them is a
+	# file conflict.
+	install -d "$pkgdir"/etc/systemd/system
+	for _t in sleep.target suspend.target hibernate.target hybrid-sleep.target \
+	          suspend-then-hibernate.target; do
+		ln -sf /dev/null "$pkgdir"/etc/systemd/system/"$_t"
+	done
+
 	# The board's only persistent kernel log. ramoops cannot work here --
 	# no reset preserves DRAM -- so crash records go to the eMMC instead.
 	# The script explains the partition choice and why best_effort is not
@@ -164,6 +186,7 @@ a36d73275d8bbd45365b0a28cd7f1d2ddcfe43842c05c36320d7213dd89629b8169281723db7687c
 3d6fe65bf0ddbdcdcb59a11d5df77ab9d2c477af59bcf0980cf697c6031ceec26599a79712b9147c9648b284eb27031dd58b75684a9898f7d87a11cf9044c6f4  suez-charger-limit.service
 23a31b720d49046880090b671164dd06c7ec662246dbe4580938ef5f0c9b58b3c0dc5b1688b7110c76c3c1d7b4196497ff2b55149dd4b4aa479eeae4924d3c0a  suez-hardlockup.service
 68a831dbb5204455cc58a9719635c4675f50779548d9cf5584def601b25af7e31de5bcc7b7540b38ec586a257e265bffa426959199e9554fa80d7cb968f81091  suez-lid.conf
+3525e35071aac83f495ae290541c261bb14a012196f1cabc1929795a76fa734364aade2259b00c5a91b3856799ab027a810d148c8e8a58523486399a497ee3a8  suez-no-idle-suspend.conf
 8814fc2c8418110c39e62e26a6afb5a06c71ec4d79919fc0ef51cca899da833d75a6a411f4158893e36bf760ccba506b94cb68a892b5541544bb01716ea6b0c2  suez-pstore-blk
 5641f47975b388bef6e83b6062b885357539df30a2bb893391e5088df67fe3e6720c618cb67fef53c6eb6617bf2c0ba5bdd5d714b855c797a0a99a63f34ec4d8  suez-pstore-blk.service
 35c47540da0f6adc6afecfa5ac1d2b2d10beef5cba655078fe7076c7a61af289ba586d0072cf88f4b918d0d07e1abbb98a7f00e362da38686e3767a5875199da  suez-stability.conf
