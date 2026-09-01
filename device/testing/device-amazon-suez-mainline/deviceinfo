@@ -16,6 +16,12 @@ deviceinfo_external_storage="true"
 deviceinfo_screen_width="1200"
 deviceinfo_screen_height="1920"
 
+# The initramfs waits 10 s for /dev/fb0, twice (stage 1 and stage 2), and it
+# never appears: DRM_SIMPLEDRM is a module, so fb0 only shows up once systemd
+# loads it, long after the initramfs is done. There is therefore no splash to
+# lose here -- just 19 s of the boot. Revisit if simpledrm is ever built in.
+deviceinfo_no_framebuffer="true"
+
 # Bootloader related
 deviceinfo_flash_method="fastboot"
 deviceinfo_generate_bootimg="true"
