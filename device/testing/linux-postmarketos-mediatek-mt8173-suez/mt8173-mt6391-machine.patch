@@ -1,3 +1,4 @@
+diff --git a/sound/soc/mediatek/Kconfig b/sound/soc/mediatek/Kconfig
 --- a/sound/soc/mediatek/Kconfig
 +++ b/sound/soc/mediatek/Kconfig
 @@ -96,6 +96,16 @@
@@ -17,6 +18,7 @@
  config SND_SOC_MT8173_RT5650
  	tristate "ASoC Audio driver for MT8173 with RT5650 codec"
  	depends on SND_SOC_MT8173 && I2C
+diff --git a/sound/soc/mediatek/mt8173/Makefile b/sound/soc/mediatek/mt8173/Makefile
 --- a/sound/soc/mediatek/mt8173/Makefile
 +++ b/sound/soc/mediatek/mt8173/Makefile
 @@ -3,6 +3,7 @@
@@ -27,6 +29,7 @@
  obj-$(CONFIG_SND_SOC_MT8173_RT5650) += mt8173-rt5650.o
  obj-$(CONFIG_SND_SOC_MT8173_RT5650_RT5514) += mt8173-rt5650-rt5514.o
  obj-$(CONFIG_SND_SOC_MT8173_RT5650_RT5676) += mt8173-rt5650-rt5676.o
+diff --git a/sound/soc/mediatek/mt8173/mt8173-mt6391.c b/sound/soc/mediatek/mt8173/mt8173-mt6391.c
 --- a/sound/soc/mediatek/mt8173/mt8173-mt6391.c
 +++ b/sound/soc/mediatek/mt8173/mt8173-mt6391.c
 @@ -0,0 +1,136 @@

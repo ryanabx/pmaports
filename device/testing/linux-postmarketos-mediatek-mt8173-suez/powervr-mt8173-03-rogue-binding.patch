@@ -1,0 +1,41 @@
+From git@z Thu Jan  1 00:00:00 1970
+Subject: [PATCH v4 3/5] dt-bindings: gpu: powervr-rogue: Add MediaTek
+ MT8173 GPU
+From: Chen-Yu Tsai <wenst@chromium.org>
+Date: Tue, 28 Jul 2026 17:18:01 +0800
+Message-Id: <20260728091804.382753-4-wenst@chromium.org>
+MIME-Version: 1.0
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 7bit
+
+The MediaTek MT8173 comes with a PowerVR Rogue GX6250, which is one
+of the Series6XT GPUs, another sub-family of the Rogue family.
+
+This was part of the very first few versions of the PowerVR submission,
+but was later dropped.
+
+[1] https://lore.kernel.org/dri-devel/6eeccb26e09aad67fb30ffcd523c793a43c79c2a.camel@imgtec.com/
+
+Reviewed-by: AngeloGioacchino Del Regno <angelogioacchino.delregno@collabora.com>
+Reviewed-by: Conor Dooley <conor.dooley@microchip.com>
+Signed-off-by: Chen-Yu Tsai <wenst@chromium.org>
+Tested-by: YoungJoon Lee <getfeus@gmail.com>
+---
+ Documentation/devicetree/bindings/gpu/img,powervr-rogue.yaml | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/Documentation/devicetree/bindings/gpu/img,powervr-rogue.yaml b/Documentation/devicetree/bindings/gpu/img,powervr-rogue.yaml
+index a6bccb600a57..e9218e0f363d 100644
+--- a/Documentation/devicetree/bindings/gpu/img,powervr-rogue.yaml
++++ b/Documentation/devicetree/bindings/gpu/img,powervr-rogue.yaml
+@@ -16,6 +16,7 @@ properties:
+     oneOf:
+       - items:
+           - enum:
++              - mediatek,mt8173-gpu
+               - renesas,r8a7796-gpu
+               - renesas,r8a77961-gpu
+           - const: img,img-gx6250
+-- 
+2.55.0.229.g6434b31f56-goog
+

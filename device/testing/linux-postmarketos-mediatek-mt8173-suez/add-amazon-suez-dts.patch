@@ -12,7 +12,7 @@ diff --git a/arch/arm64/boot/dts/mediatek/Makefile b/arch/arm64/boot/dts/mediate
 diff --git a/arch/arm64/boot/dts/mediatek/mt8173-amazon-suez.dts b/arch/arm64/boot/dts/mediatek/mt8173-amazon-suez.dts
 --- a/arch/arm64/boot/dts/mediatek/mt8173-amazon-suez.dts
 +++ b/arch/arm64/boot/dts/mediatek/mt8173-amazon-suez.dts
-@@ -0,0 +1,1224 @@
+@@ -0,0 +1,1227 @@
 +// SPDX-License-Identifier: (GPL-2.0 OR MIT)
 +/*
 + * Copyright (c) 2026 Ryan Brue <ryanbrue.dev@gmail.com>
@@ -526,25 +526,28 @@ diff --git a/arch/arm64/boot/dts/mediatek/mt8173-amazon-suez.dts b/arch/arm64/bo
 +};
 +
 +/*
-+ * Delete the GPU power domain outright rather than supplying it.
++ * The GPU power domain, restored. History, because it bit us twice:
 + *
 + * mtk-power-controller refuses to probe if power-domain@7 (mfg_async) has no
-+ * supply, and without the power controller nothing gets power domains at all -
-+ * 11271000.usb sits in "deferred probe pending" forever, so there is no USB
-+ * gadget and no SSH. But giving it the MT6397 vgpu buck (as the vendor DTB
-+ * does) makes the probe hang instead: the log stops immediately after
++ * supply, and without the power controller nothing gets power domains at all
++ * - so for most of the bringup this node was /delete-node/'d outright, after
++ * an early attempt at giving it the MT6397 vgpu buck hung the SoC at scpsys
++ * probe (log stopped right after the regulator link was created).
 + *
-+ *   device: 'regulator:regulator.6--platform:...power-controller': device_add
-+ *
-+ * i.e. right after that supply link is created, and the SoC wedges until the
-+ * watchdog fires.
-+ *
-+ * Nothing in mt8173.dtsi references mfg_async - there is no GPU node - so
-+ * removing it costs us nothing we currently use, lets the power controller
-+ * register the remaining domains (including USB), and sidesteps the hang.
-+ * Revisit if/when the Mali GPU is wired up.
++ * What changed: Chen-Yu Tsai's mfgtop series (carried in our tree) exists
++ * precisely because mfg_async's clock in mt8173.dtsi was wrong - clk26m
++ * instead of CLK_TOP_AXI_MFG_IN_SEL - and a wrong domain clock during the
++ * scpsys attach/power-sync is a plausible mechanism for that old hang. With
++ * the series applied (clock fixed, gpu + mfgtop nodes in the dtsi), this is
++ * the same wiring mt8173-elm ships upstream (domain-supply = vgpu buck) and
++ * works there. The GPU itself is a PowerVR GX6250 (BVNC 4.40.2.51, NOT a
++ * Mali); the pvr driver binds only with powervr.exp_hw_support=1, and the
++ * mfgtop clock/power glue (clk-mt8173-mfgtop, module) must probe before the
++ * MFG domains can power on.
 + */
-+/delete-node/ &mfg_async;
++&mfg_async {
++	domain-supply = <&mt6397_vgpu_reg>;
++};
 +
 +&i2c0 {
 +	/*
