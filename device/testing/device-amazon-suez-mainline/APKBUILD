@@ -3,7 +3,7 @@ maintainer="Ryan Brue <ryanbrue.dev@gmail.com>"
 pkgname=device-amazon-suez-mainline
 pkgdesc="Amazon Fire HD 10 (2017) (mainline)"
 pkgver=1
-pkgrel=8
+pkgrel=9
 url="https://postmarketos.org"
 license="MIT"
 arch="aarch64"
@@ -12,6 +12,7 @@ depends="
 	linux-postmarketos-mediatek-mt8173-suez
 	mkbootimg
 	postmarketos-base
+	postmarketos-base-ui-audio-backend-pipewire
 "
 makedepends="devicepkg-dev"
 source="
@@ -22,6 +23,8 @@ source="
 	suez-bcb-disarm
 	suez-bcb-disarm.service
 	suez-lid.conf
+	ucm-HiFi.conf
+	ucm-mt8173-mt6391.conf
 "
 
 build() {
@@ -55,6 +58,15 @@ package() {
 	ln -s ../suez-bcb-disarm.service \
 		"$pkgdir"/usr/lib/systemd/system/multi-user.target.wants/suez-bcb-disarm.service
 
+	# ALSA UCM for the mt8173-mt6391 card. The card is DPCM and everything
+	# powers up muted; without this profile the front-end PCMs cannot even
+	# be opened and the desktop only sees dummy outputs. See the comments
+	# in ucm-HiFi.conf. PipeWire is the audio backend on purpose: its ALSA
+	# probing copes with the capture path's 48 kHz-only constraint, while
+	# PulseAudio's profile prober rejects the whole card over it.
+	install -Dm644 "$srcdir"/ucm-mt8173-mt6391.conf 		"$pkgdir"/usr/share/alsa/ucm2/conf.d/mt8173-mt6391/mt8173-mt6391.conf
+	install -Dm644 "$srcdir"/ucm-HiFi.conf 		"$pkgdir"/usr/share/alsa/ucm2/conf.d/mt8173-mt6391/HiFi.conf
+
 	# Keep systemd-logind from suspending when the folio cover closes; see
 	# the comments in the file.
 	install -Dm644 "$srcdir"/suez-lid.conf \
@@ -69,4 +81,6 @@ fbdb7d4e8dbd03258dca7b1147130865513cf45599bd9f83e253079d1dfe009c890198adc2bbb147
 33b6cca3c1c822781f5a8da665d60843239152344b7d585081eb531adb30933631487c8f422893e0a2e274307c7537c97284016634370620a41badccb3a4efd9  suez-bcb-disarm
 aaf34e1a660df1fe4782b8a130ab7cd9477c39eb559f48f3ee78aa01673666491087d9f0ed6403b33fafddf61411f5a1efa0ba101c86934df0fdae24c712f3c5  suez-bcb-disarm.service
 68a831dbb5204455cc58a9719635c4675f50779548d9cf5584def601b25af7e31de5bcc7b7540b38ec586a257e265bffa426959199e9554fa80d7cb968f81091  suez-lid.conf
+8707a047e44722c74495773647da00fef1ab71016509baa8a4be25ffc79b578c34180178c37dc994dbc5902130ddcd91190e15105da566cfd284fab56dd1b838  ucm-HiFi.conf
+0a8b6c05b00bba01e727ed1de39ef2e6c0a2c68c243625bc44579f1b576dff9c4a167aabc8364f46d03b74df523868f78f73eae399464c3037a5707b7222d692  ucm-mt8173-mt6391.conf
 "

@@ -12,7 +12,7 @@ diff --git a/arch/arm64/boot/dts/mediatek/Makefile b/arch/arm64/boot/dts/mediate
 diff --git a/arch/arm64/boot/dts/mediatek/mt8173-amazon-suez.dts b/arch/arm64/boot/dts/mediatek/mt8173-amazon-suez.dts
 --- a/arch/arm64/boot/dts/mediatek/mt8173-amazon-suez.dts
 +++ b/arch/arm64/boot/dts/mediatek/mt8173-amazon-suez.dts
-@@ -0,0 +1,1102 @@
+@@ -0,0 +1,1121 @@
 +// SPDX-License-Identifier: (GPL-2.0 OR MIT)
 +/*
 + * Copyright (c) 2026 Ryan Brue <ryanbrue.dev@gmail.com>
@@ -179,6 +179,12 @@ diff --git a/arch/arm64/boot/dts/mediatek/mt8173-amazon-suez.dts b/arch/arm64/bo
 +		monitored-battery = <&battery>;
 +	};
 +
++	sound {
++		compatible = "mediatek,mt8173-mt6391";
++		mediatek,audio-codec = <&mt6397codec>;
++		mediatek,platform = <&afe>;
++	};
++
 +	lid-switch {
 +		compatible = "gpio-keys";
 +		pinctrl-names = "default";
@@ -274,6 +280,19 @@ diff --git a/arch/arm64/boot/dts/mediatek/mt8173-amazon-suez.dts b/arch/arm64/bo
 +		mt6397clk: mt6397clock {
 +			compatible = "mediatek,mt6397-clk";
 +			#clock-cells = <1>;
++		};
++
++		/*
++		 * The MT6391 audio codec, marketing name for the audio block
++		 * of this MT6397-family PMIC. Values from the vendor DTS
++		 * (all three board revisions agree): Class-D speaker mode,
++		 * ADC/DMIC warm-up times.
++		 */
++		mt6397codec: audio-codec {
++			compatible = "mediatek,mt6397-codec";
++			mediatek,speaker-mode = <0>;
++			mediatek,adc-warmup-time-us = <10000>;
++			mediatek,dmic-warmup-time-us = <45000>;
 +		};
 +
 +		/*
