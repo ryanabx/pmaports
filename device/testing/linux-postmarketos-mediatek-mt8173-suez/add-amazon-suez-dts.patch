@@ -12,7 +12,7 @@ diff --git a/arch/arm64/boot/dts/mediatek/Makefile b/arch/arm64/boot/dts/mediate
 diff --git a/arch/arm64/boot/dts/mediatek/mt8173-amazon-suez.dts b/arch/arm64/boot/dts/mediatek/mt8173-amazon-suez.dts
 --- a/arch/arm64/boot/dts/mediatek/mt8173-amazon-suez.dts
 +++ b/arch/arm64/boot/dts/mediatek/mt8173-amazon-suez.dts
-@@ -0,0 +1,907 @@
+@@ -0,0 +1,1011 @@
 +// SPDX-License-Identifier: (GPL-2.0 OR MIT)
 +/*
 + * Copyright (c) 2026 Ryan Brue <ryanbrue.dev@gmail.com>
@@ -22,6 +22,7 @@ diff --git a/arch/arm64/boot/dts/mediatek/mt8173-amazon-suez.dts b/arch/arm64/bo
 +
 +/dts-v1/;
 +#include <dt-bindings/gpio/gpio.h>
++#include <dt-bindings/input/input.h>
 +#include <dt-bindings/input/linux-event-codes.h>
 +#include "mt8173.dtsi"
 +
@@ -86,6 +87,46 @@ diff --git a/arch/arm64/boot/dts/mediatek/mt8173-amazon-suez.dts b/arch/arm64/bo
 +	memory@40000000 {
 +		device_type = "memory";
 +		reg = <0 0x40000000 0 0x80000000>;
++	};
++
++	/*
++	 * Hall effect sensor, for the magnetic folio cover.
++	 *
++	 * The vendor describes it as a bare "hall,hall-sensor" node on pio 124
++	 * with IRQ_TYPE_LEVEL_LOW, which has no mainline driver; gpio-keys
++	 * reporting SW_LID is the mainline idiom, and mt8173-elm.dtsi does
++	 * exactly this for its own lid.
++	 *
++	 * Confirmed present on this unit before being described, because the
++	 * vendor DTS also lists parts that are not fitted (the STK3x1x and the
++	 * camera both fail to answer). Sampling the pin's input level through
++	 * the pinctrl register file while the folio was closed and reopened
++	 * gave 1 -> 0 on close and 0 -> 1 on open, so the sensor is real and
++	 * active low as the vendor says.
++	 *
++	 * Note pio 124 is KPCOL2, the keypad's third column. This board reuses
++	 * it for the hall sensor and only fits two keys, which is why the
++	 * keypad node above sees nothing on column 2.
++	 *
++	 * Deliberately NOT a wakeup-source, unlike elm: suspend has never been
++	 * exercised on this board and the reboot path already hangs, so arming
++	 * a wakeup here would be untested at best. systemd-logind would also
++	 * suspend on SW_LID by default, which is why
++	 * device-amazon-suez-mainline ships a HandleLidSwitch=ignore drop-in.
++	 * Revisit both together if suspend is ever made to work.
++	 */
++	lid-switch {
++		compatible = "gpio-keys";
++		pinctrl-names = "default";
++		pinctrl-0 = <&hall_pins>;
++
++		switch-lid {
++			label = "Hall Effect Sensor";
++			gpios = <&pio 124 GPIO_ACTIVE_LOW>;
++			linux,input-type = <EV_SW>;
++			linux,code = <SW_LID>;
++			debounce-interval = <20>;
++		};
 +	};
 +
 +	reserved-memory {
@@ -522,10 +563,8 @@ diff --git a/arch/arm64/boot/dts/mediatek/mt8173-amazon-suez.dts b/arch/arm64/bo
 +	 * board-level numbers. The vendor spells them hs400_cmd_int_delay and
 +	 * cmd_resp_sel = <0> (0 meaning rising); mainline's names are used here.
 +	 *
-+	 * NOT YET TESTED ON HARDWARE. If HS400 tuning fails the controller may
-+	 * not initialise the eMMC at all, which means no rootfs, so this was
-+	 * deliberately not flashed unattended. Recovery if it does fail is
-+	 * TWRP, whose 3.18 vendor kernel drives this part in HS400 happily.
++	 * Verified on hardware: the controller reports "mmc0: new HS400 MMC
++	 * card" and cold sequential reads roughly double, to 278 MB/s.
 +	 */
 +	mmc-hs400-1_8v;
 +	hs400-ds-delay = <0x14015>;
@@ -569,6 +608,14 @@ diff --git a/arch/arm64/boot/dts/mediatek/mt8173-amazon-suez.dts b/arch/arm64/bo
 +
 +		pins-rst {
 +			pinmux = <MT8173_PIN_68_MSDC0_RST___FUNC_MSDC0_RSTB>;
++			bias-pull-up;
++		};
++	};
++
++	hall_pins: hall-pins {
++		pins-hall {
++			pinmux = <MT8173_PIN_124_KPCOL2__FUNC_GPIO124>;
++			input-enable;
 +			bias-pull-up;
 +		};
 +	};
@@ -624,6 +671,63 @@ diff --git a/arch/arm64/boot/dts/mediatek/mt8173-amazon-suez.dts b/arch/arm64/bo
 +	mcucfg: syscon@10200000 {
 +		compatible = "mediatek,mt8173-mcucfg", "syscon";
 +		reg = <0 0x10200000 0 0x1000>;
++	};
++
++	/*
++	 * The keypad controller, which carries the volume rocker. mt8173.dtsi
++	 * does not describe it at all, and mainline has no mt8173 keypad
++	 * driver -- but mt6779-keypad drives this block unmodified, so the
++	 * node only needs the fallback compatible. Everything below was
++	 * measured on this unit rather than assumed:
++	 *
++	 *   - The block is register-compatible. LK leaves it enabled and the
++	 *     vendor's hal_kpd.h agrees offset for offset (STA 0x00,
++	 *     MEM1..5 0x04..0x14, DEBOUNCE 0x18, SEL 0x20, EN 0x24), and
++	 *     KP_MEM1..4 read 0x0000ffff / KP_MEM5 0x000000ff -- i.e. 16
++	 *     valid bits per register, 72 keys, exactly what mt6779-keypad
++	 *     already assumes and what the vendor spells KPD_NUM_KEYS.
++	 *
++	 *   - Pressing a key clears its bit in eight places at a stride of
++	 *     nine (key 0,9,18..63 for one, 1,10,19..64 for the other), so
++	 *     mt6779-keypad's single-group mapping -- row = key / 9,
++	 *     col = key % 9 -- is right for this SoC too, and both keys sit
++	 *     on row 0.
++	 *
++	 * num-rows/num-columns describe the *bit layout*, not the two keys
++	 * actually fitted. A press asserts all eight row slots of its column
++	 * even when KP_SEL enables a single row (verified by reprogramming
++	 * KP_SEL and re-measuring), and the interrupt handler maps every
++	 * changed bit through MATRIX_SCAN_CODE before looking it up. Declaring
++	 * one row would therefore index past the end of the keymap; 8x9 keeps
++	 * every possible (row, col) inside it, and the unfitted positions stay
++	 * KEY_RESERVED and are dropped by the input core. Enabling the full
++	 * geometry costs nothing: with KP_SEL at 0xfff0 the idle state is
++	 * still all ones, so no unconnected line reads as pressed.
++	 *
++	 * The keys are the other way round from the vendor's
++	 * mediatek,kpd-hw-init-map, which maps hw key 0 to KEY_VOLUMEUP and
++	 * hw key 1 to KEY_VOLUMEDOWN. On this unit pressing volume up moved
++	 * column 1 and volume down moved column 0. The measurement is used
++	 * here; if it ever feels inverted, swap these two lines and confirm
++	 * with evtest -- that is the whole fix.
++	 *
++	 * debounce-delay-ms is LK's KP_DEBOUNCE of 0x400 expressed in the
++	 * driver's units: it writes debounce * 32, and 32 * 32 = 1024, which
++	 * is also the vendor's mediatek,kpd-key-debounce.
++	 */
++	keypad: keypad@10010000 {
++		compatible = "mediatek,mt8173-keypad",
++			     "mediatek,mt6779-keypad";
++		reg = <0 0x10010000 0 0x1000>;
++		interrupts = <GIC_SPI 154 IRQ_TYPE_EDGE_FALLING>;
++		clocks = <&infracfg CLK_INFRA_KP>;
++		clock-names = "kpd";
++		wakeup-source;
++		debounce-delay-ms = <32>;
++		keypad,num-rows = <8>;
++		keypad,num-columns = <9>;
++		linux,keymap = <MATRIX_KEY(0, 0, KEY_VOLUMEDOWN)
++				MATRIX_KEY(0, 1, KEY_VOLUMEUP)>;
 +	};
 +};
 +
