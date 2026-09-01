@@ -12,7 +12,7 @@ diff --git a/arch/arm64/boot/dts/mediatek/Makefile b/arch/arm64/boot/dts/mediate
 diff --git a/arch/arm64/boot/dts/mediatek/mt8173-amazon-suez.dts b/arch/arm64/boot/dts/mediatek/mt8173-amazon-suez.dts
 --- a/arch/arm64/boot/dts/mediatek/mt8173-amazon-suez.dts
 +++ b/arch/arm64/boot/dts/mediatek/mt8173-amazon-suez.dts
-@@ -0,0 +1,1140 @@
+@@ -0,0 +1,1224 @@
 +// SPDX-License-Identifier: (GPL-2.0 OR MIT)
 +/*
 + * Copyright (c) 2026 Ryan Brue <ryanbrue.dev@gmail.com>
@@ -55,6 +55,7 @@ diff --git a/arch/arm64/boot/dts/mediatek/mt8173-amazon-suez.dts b/arch/arm64/bo
 +		 * the card slot instead. Pin them.
 +		 */
 +		mmc0 = &mmc0;
++		mmc1 = &mmc1;
 +
 +		serial0 = &uart0;
 +	};
@@ -714,7 +715,90 @@ diff --git a/arch/arm64/boot/dts/mediatek/mt8173-amazon-suez.dts b/arch/arm64/bo
 +	non-removable;
 +};
 +
++/*
++ * The microSD slot. The vendor DTS describes it identically to upstream
++ * mt8173-elm: card detect on pio 1, VMCH/VMC from the PMIC, four bits,
++ * SDR50/SDR104. Two independent trees agreeing is what makes these SoC-level
++ * rather than board-level values -- the same reasoning used for the eMMC's
++ * HS400 tuning.
++ *
++ * Note the vendor's &mmc3, also enabled downstream, is NOT this slot: it is
++ * non-removable with no card detect and hosts the MT6630 WiFi/BT combo over
++ * SDIO. It stays disabled because that chip has no mainline driver at all;
++ * see NEXT-GPU-AND-WIFI.md.
++ */
++&mmc1 {
++	status = "okay";
++	pinctrl-names = "default", "state_uhs";
++	pinctrl-0 = <&mmc1_pins_default>;
++	pinctrl-1 = <&mmc1_pins_uhs>;
++	bus-width = <4>;
++	max-frequency = <200000000>;
++	cap-sd-highspeed;
++	sd-uhs-sdr50;
++	sd-uhs-sdr104;
++	/*
++	 * Card present is HIGH on this board. upstream mt8173-elm says
++	 * GPIO_ACTIVE_LOW and the vendor DTS says <&pio 1 0>; the vendor is
++	 * right here. Measured by watching the pin through the pinctrl
++	 * register file: removing the card drove pio 1 from 1 to 0 and
++	 * reinserting it drove 0 to 1.
++	 *
++	 * Getting this backwards is not a no-op -- it inverts the meaning of
++	 * every insertion, so the core powers the slot up and runs the whole
++	 * CMD55/CMD1 identification sequence at the instant the card is
++	 * *removed*, times every command out, and powers back down when one
++	 * is actually inserted.
++	 */
++	cd-gpios = <&pio 1 GPIO_ACTIVE_HIGH>;
++	vmmc-supply = <&mt6397_vmch_reg>;
++	vqmmc-supply = <&mt6397_vmc_reg>;
++};
++
 +&pio {
++	mmc1_pins_default: mmc1-default-pins {
++		pins-cmd-dat {
++			pinmux = <MT8173_PIN_73_MSDC1_DAT0__FUNC_MSDC1_DAT0>,
++				 <MT8173_PIN_74_MSDC1_DAT1__FUNC_MSDC1_DAT1>,
++				 <MT8173_PIN_75_MSDC1_DAT2__FUNC_MSDC1_DAT2>,
++				 <MT8173_PIN_76_MSDC1_DAT3__FUNC_MSDC1_DAT3>,
++				 <MT8173_PIN_78_MSDC1_CMD__FUNC_MSDC1_CMD>;
++			input-enable;
++			drive-strength = <4>;
++			bias-pull-up = <MTK_PUPD_SET_R1R0_10>;
++		};
++
++		pins-clk {
++			pinmux = <MT8173_PIN_77_MSDC1_CLK__FUNC_MSDC1_CLK>;
++			bias-pull-down;
++			drive-strength = <4>;
++		};
++
++		pins-insert {
++			pinmux = <MT8173_PIN_1_EINT1__FUNC_GPIO1>;
++			bias-pull-up;
++		};
++	};
++
++	mmc1_pins_uhs: mmc1-uhs-pins {
++		pins-cmd-dat {
++			pinmux = <MT8173_PIN_73_MSDC1_DAT0__FUNC_MSDC1_DAT0>,
++				 <MT8173_PIN_74_MSDC1_DAT1__FUNC_MSDC1_DAT1>,
++				 <MT8173_PIN_75_MSDC1_DAT2__FUNC_MSDC1_DAT2>,
++				 <MT8173_PIN_76_MSDC1_DAT3__FUNC_MSDC1_DAT3>,
++				 <MT8173_PIN_78_MSDC1_CMD__FUNC_MSDC1_CMD>;
++			input-enable;
++			drive-strength = <6>;
++			bias-pull-up = <MTK_PUPD_SET_R1R0_10>;
++		};
++
++		pins-clk {
++			pinmux = <MT8173_PIN_77_MSDC1_CLK__FUNC_MSDC1_CLK>;
++			drive-strength = <8>;
++			bias-pull-down = <MTK_PUPD_SET_R1R0_10>;
++		};
++	};
++
 +	mmc0_pins_default: mmc0-default-pins {
 +		pins-cmd-dat {
 +			pinmux = <MT8173_PIN_57_MSDC0_DAT0__FUNC_MSDC0_DAT0>,
