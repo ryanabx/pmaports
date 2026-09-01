@@ -3,7 +3,7 @@ maintainer="Ryan Brue <ryanbrue.dev@gmail.com>"
 pkgname=device-amazon-suez-mainline
 pkgdesc="Amazon Fire HD 10 (2017) (mainline)"
 pkgver=1
-pkgrel=31
+pkgrel=32
 url="https://postmarketos.org"
 license="MIT"
 arch="aarch64"
@@ -20,6 +20,7 @@ depends="
 makedepends="devicepkg-dev"
 source="
 	61-powervr-mutter-ignore.rules
+	99-suez-charge-voltage.rules
 	amazon-suez-gpu.service
 	deviceinfo
 	kernel-cmdline.conf
@@ -68,6 +69,11 @@ package() {
 	install -d "$pkgdir"/usr/lib/systemd/system/multi-user.target.wants
 	ln -s ../suez-bcb-disarm.service \
 		"$pkgdir"/usr/lib/systemd/system/multi-user.target.wants/suez-bcb-disarm.service
+
+	# Charge the battery to its rated voltage rather than the charger
+	# chip's default; the rule file explains why this is not done in DT.
+	install -Dm644 "$srcdir"/99-suez-charge-voltage.rules \
+		"$pkgdir"/usr/lib/udev/rules.d/99-suez-charge-voltage.rules
 
 	# Keep mutter away from the render-only PowerVR card node; see the
 	# comments in the rule file.
@@ -134,6 +140,7 @@ package() {
 
 sha512sums="
 24175a01baf284dfbb2393745f88ec8610c0e0fc828d65b50194cbed7e0013005d6584d6412dfbcc043d3882e6a8c5dec20449e0464b1fd8ec5f532ddb25a099  61-powervr-mutter-ignore.rules
+7c0bc0904e64d096c2218264352ef0788afbebb633616c58fafbd186805a06959bf8a160ca9768a1b11b1e57d15e0886f85bdfbc44382d034e8d3984e550f829  99-suez-charge-voltage.rules
 acbd142eb5a789d740ecfffed67f65e827fadc29f47e04bf4084e97152381ffc897f6f12b62fafc28ba8e4d12cacecdcc8b4c0b421fde9ce1261cf5c4889f043  amazon-suez-gpu.service
 a1c7602bfd1eb0b431c1e96d592dfaf5da7e5498c3adfad756b6d73fe37b7889ea6c6d0fb681727796a3c95cbd247040d764ba6f477354a43cf8836887ecbedd  deviceinfo
 5bb871570c94633d5a53107bcf9e2aa1285328a16a53b80b99c41761c84eeb9ca0af2cc78f9f4ecd75fdbb350b46397b10c0a7e43e5c109213adaa4f1e551b74  kernel-cmdline.conf
