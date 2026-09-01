@@ -1,0 +1,23 @@
+[Unit]
+Description=Enable the buddy hard-lockup detector
+# Setting kernel.nmi_watchdog=1 via sysctl.d does not work on this board, and
+# fails silently: systemd-sysctl reports success but the detector stays off.
+# Reading nmi_watchdog does not report the value you wrote -- on read it
+# reports the effective watchdog_enabled bit -- so the failure is invisible
+# unless you look. proc_watchdog_common() only calls proc_watchdog_update(),
+# which is what actually arms the detector, when the written value DIFFERS
+# from the current one, so writing 1 can be a silent no-op.
+#
+# Forcing an explicit 0 -> 1 transition makes the update run regardless of
+# what the value happened to be, and running late means the detector's
+# delayed init (the buddy probe) has certainly completed by then.
+After=multi-user.target
+ConditionPathExists=/proc/sys/kernel/nmi_watchdog
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/bin/sh -c 'echo 0 > /proc/sys/kernel/nmi_watchdog; echo 1 > /proc/sys/kernel/nmi_watchdog'
+
+[Install]
+WantedBy=multi-user.target
