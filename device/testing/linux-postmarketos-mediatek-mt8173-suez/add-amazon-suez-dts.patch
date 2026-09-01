@@ -12,7 +12,7 @@ diff --git a/arch/arm64/boot/dts/mediatek/Makefile b/arch/arm64/boot/dts/mediate
 diff --git a/arch/arm64/boot/dts/mediatek/mt8173-amazon-suez.dts b/arch/arm64/boot/dts/mediatek/mt8173-amazon-suez.dts
 --- a/arch/arm64/boot/dts/mediatek/mt8173-amazon-suez.dts
 +++ b/arch/arm64/boot/dts/mediatek/mt8173-amazon-suez.dts
-@@ -0,0 +1,891 @@
+@@ -0,0 +1,907 @@
 +// SPDX-License-Identifier: (GPL-2.0 OR MIT)
 +/*
 + * Copyright (c) 2026 Ryan Brue <ryanbrue.dev@gmail.com>
@@ -515,8 +515,24 @@ diff --git a/arch/arm64/boot/dts/mediatek/mt8173-amazon-suez.dts b/arch/arm64/bo
 +	max-frequency = <200000000>;
 +	cap-mmc-highspeed;
 +	mmc-hs200-1_8v;
++	/*
++	 * HS400. The vendor DTS for this board enables it with exactly the
++	 * delay values below, and upstream mt8173-elm uses the identical set --
++	 * two independent trees agreeing makes these SoC-level rather than
++	 * board-level numbers. The vendor spells them hs400_cmd_int_delay and
++	 * cmd_resp_sel = <0> (0 meaning rising); mainline's names are used here.
++	 *
++	 * NOT YET TESTED ON HARDWARE. If HS400 tuning fails the controller may
++	 * not initialise the eMMC at all, which means no rootfs, so this was
++	 * deliberately not flashed unattended. Recovery if it does fail is
++	 * TWRP, whose 3.18 vendor kernel drives this part in HS400 happily.
++	 */
++	mmc-hs400-1_8v;
++	hs400-ds-delay = <0x14015>;
 +	cap-mmc-hw-reset;
 +	mediatek,hs200-cmd-int-delay = <30>;
++	mediatek,hs400-cmd-int-delay = <14>;
++	mediatek,hs400-cmd-resp-sel-rising;
 +	vmmc-supply = <&mt6397_vemc_3v3_reg>;
 +	vqmmc-supply = <&mt6397_vio18_reg>;
 +	/*
