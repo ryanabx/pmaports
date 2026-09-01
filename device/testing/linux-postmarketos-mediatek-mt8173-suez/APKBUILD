@@ -11,7 +11,7 @@
 maintainer="Ryan Brue <ryanbrue.dev@gmail.com>"
 pkgname=linux-postmarketos-mediatek-mt8173-suez
 pkgver=7.1.8
-pkgrel=6
+pkgrel=7
 pkgdesc="Mainline kernel fork for the Amazon Fire HD 10 (2017)"
 arch="aarch64"
 _carch="arm64"
@@ -75,9 +75,12 @@ source="
 	$_config
 	0001-resolve_btfids-preserve-parameter-names-when-process.patch
 	0003-display-blank.patch
+	mtk-dsi-force-cmd-mode.patch
 	add-amazon-suez-dts.patch
 	mt8173-smp-mtcmos.patch
 	panel-novatek-nt51021.patch
+	mtk-ovl-reset-bootloader-handover.patch
+	mt8173-disp-handover.patch
 "
 builddir="$srcdir/linux-${_kernver//_/-}"
 
@@ -112,7 +115,10 @@ e17057478fd498fd4d83c4b6d3712fdfc3c6ae1d077114ea74ee41186cbd75add292f5e5f810fdf4
 f4552aa7802ea20252401b665b5b28d60e7f42fdff2f82e3b2eeaf32d3c524ce24f843f0e5459b75942792cde5cd2a0074c60e2a4e39a4e8ce421c55fc34e446  config-postmarketos-mediatek-mt8173-suez.aarch64
 901780c4c468ebf8b6af7c27530fafb0439dfae889208c35f22aa7447902078d147db69a1c8e2115cd13f51c641eef878d9335b7527dc7fa2240cd617e045aab  0001-resolve_btfids-preserve-parameter-names-when-process.patch
 aedbf42178f26a0b38b0deee02cbf24a7d3cfaf90cdcf30da12ff1cc334be1e14eada0d924b0082830812d16eebd432230a1476542d23238acd9da527973facf  0003-display-blank.patch
+21675c9d220f3c5718a39d874ddbb530bb6ee14194c3329dd4de2e14bd0f7cd0031eb7b75bccc356c3202c8825c91319677f4b3c6c8b4533ffaa6100bfde656f  mtk-dsi-force-cmd-mode.patch
 d0f7dc06dda17e22412b4e089997ac883385f3e75405a2304ef2a22f0d6465f22d045a3c0460a9c5c53acef1e86e9b3a33ce3db94833e07e9fd72432f609f168  add-amazon-suez-dts.patch
 1aec3bb495b818c89429f5f6b520697f1f8739fc5b7ca894424418de43eac031a7b61fb1b4352d849476a7d461d43c8af0d46987cb28524673e58241a9926696  mt8173-smp-mtcmos.patch
 8c0b4a4663dfe8b38c7fb3f03a3d0a8cc60a6c2448ca531cb3b1d98ebac5149042b425d3cb79fbdb44f7147eb1101958a5891cdb93e78ba2ae02597654a981b9  panel-novatek-nt51021.patch
+85cfc67eedbaee6daedb8b76a4995019c7c5e66a9f69c254dbf84d580597e6e57ff1414fee2d3cc04e65df3c61265ee249890288234c049f77b80c4b04bff9d2  mtk-ovl-reset-bootloader-handover.patch
+f43eb5087348e781bda6ee51d7a220b8a7cd78a9c7e24c15b9b747ffebd4e318c1b392c911cf1edfeb6ac3942b96a584da036b709bf68d6c60c3b4c1923efb2c  mt8173-disp-handover.patch
 "
