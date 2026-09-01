@@ -1,0 +1,439 @@
+diff -urN dorig/arch/arm64/kernel/cpu_ops.c dw8/arch/arm64/kernel/cpu_ops.c
+--- dorig/arch/arm64/kernel/cpu_ops.c	1970-01-01 00:00:00.000000000 +0000
++++ dw8/arch/arm64/kernel/cpu_ops.c	1970-01-01 00:00:00.000000000 +0000
+@@ -19,11 +19,17 @@
+ extern const struct cpu_operations acpi_parking_protocol_ops;
+ #endif
+ extern const struct cpu_operations cpu_psci_ops;
++#ifdef CONFIG_ARCH_MEDIATEK
++extern const struct cpu_operations mtk_cpu_ops;
++#endif
+ 
+ static const struct cpu_operations *cpu_ops[NR_CPUS] __ro_after_init;
+ 
+ static const struct cpu_operations *const dt_supported_cpu_ops[] __initconst = {
+ 	&smp_spin_table_ops,
++#ifdef CONFIG_ARCH_MEDIATEK
++	&mtk_cpu_ops,
++#endif
+ 	&cpu_psci_ops,
+ 	NULL,
+ };
+diff -urN dorig/arch/arm64/kernel/Makefile dw8/arch/arm64/kernel/Makefile
+--- dorig/arch/arm64/kernel/Makefile	1970-01-01 00:00:00.000000000 +0000
++++ dw8/arch/arm64/kernel/Makefile	1970-01-01 00:00:00.000000000 +0000
+@@ -36,6 +36,7 @@
+ 			   syscall.o proton-pack.o idle.o patching.o pi/	\
+ 			   rsi.o jump_label.o
+ 
++obj-$(CONFIG_ARCH_MEDIATEK)		+= smp_mtk.o
+ obj-$(CONFIG_COMPAT)			+= sys32.o signal32.o			\
+ 					   sys_compat.o
+ obj-$(CONFIG_COMPAT)			+= sigreturn32.o
+diff -urN dorig/arch/arm64/kernel/smp_mtk.c dw8/arch/arm64/kernel/smp_mtk.c
+--- dorig/arch/arm64/kernel/smp_mtk.c	1970-01-01 00:00:00.000000000 +0000
++++ dw8/arch/arm64/kernel/smp_mtk.c	1970-01-01 00:00:00.000000000 +0000
+@@ -0,0 +1,403 @@
++// SPDX-License-Identifier: GPL-2.0-only
++/*
++ * MediaTek MT8173 secondary CPU bring-up.
++ *
++ * On this SoC, PSCI CPU_ON alone is not enough to start a secondary core: the
++ * firmware sets the core's entry point but leaves its MTCMOS power domain off,
++ * so the core never runs and the kernel reports
++ *
++ *   CPU1: failed to come online
++ *   CPU1: failed in unknown state : 0x0
++ *
++ * Boards that ship ARM Trusted Firmware (e.g. mt8173-elm) do not need this,
++ * because BL31 powers the domain itself. Amazon's firmware does not, and the
++ * vendor 3.18 kernel compensates in
++ * drivers/misc/mediatek/base/power/mt8173/mt_psci.c, whose "mt-boot" method is
++ * simply PSCI CPU_ON followed by spm_mtcmos_ctrl_cpu(cpu, STA_POWER_ON, 1).
++ * The register sequence below is that call, from .../mt8173/mtcmos.c.
++ *
++ * Both clusters are supported, but their sequences differ:
++ *
++ *  - A53 ("CA7"): per-core PWR_CON and per-core L1_PDN registers, and the
++ *    cluster is already powered because the boot CPU lives in it.
++ *  - A72 ("CA15"): a shared L1_PDN register with per-core bits, and the whole
++ *    cluster (CPUTOP + L2) must be powered first, which additionally means
++ *    lifting the VCA15 supply isolation, clearing the TOP_AXI bus protection
++ *    for the CA15 ADB, and deasserting ACINACTM in MCUCFG.
++ *
++ * Sequences transcribed from spm_mtcmos_ctrl_cpu1(), spm_mtcmos_ctrl_cpu4()
++ * and spm_mtcmos_ctrl_cpusys1() in .../mt8173/mtcmos.c.
++ */
++
++#include <linux/bits.h>
++#include <linux/delay.h>
++#include <linux/io.h>
++#include <linux/of.h>
++#include <linux/of_address.h>
++#include <linux/printk.h>
++#include <linux/spinlock.h>
++
++#include <asm/cpu_ops.h>
++#include <asm/cputype.h>
++#include <asm/smp_plat.h>
++
++/*
++ * Declared locally in cpu_ops.c rather than in a header, so redeclare it here.
++ * Everything below delegates to it; this is a wrapper around PSCI, not a
++ * replacement for it.
++ */
++extern const struct cpu_operations cpu_psci_ops;
++
++/* SPM register offsets from the scpsys block at 0x10006000. */
++#define SPM_POWERON_CONFIG_SET	0x000
++#define SPM_PWR_STATUS		0x60c
++#define SPM_PWR_STATUS_2ND	0x610
++
++#define SPM_PROJECT_CODE	0xb16
++#define SPM_REGWR_EN		BIT(0)
++
++/* bits in a per-core SPM_CA7_CPUn_PWR_CON */
++#define PWR_RST_B		BIT(0)
++#define PWR_ISO			BIT(1)
++#define PWR_ON			BIT(2)
++#define PWR_ON_2ND		BIT(3)
++#define PWR_CLK_DIS		BIT(4)
++#define SRAM_CKISO		BIT(5)
++#define SRAM_ISOINT_B		BIT(6)
++
++/* bits in a per-core SPM_CA7_CPUn_L1_PDN */
++#define L1_PDN			BIT(0)
++#define L1_PDN_ACK		BIT(8)
++
++/* A72 ("CA15") cluster */
++#define SPM_CA15_CPU_PWR_CON(n)	(0x2a0 + 4 * (n))
++#define SPM_CA15_CPUTOP_PWR_CON	0x2b0
++#define SPM_CA15_L1_PWR_CON	0x2b4
++#define SPM_CA15_L2_PWR_CON	0x2b8
++#define SPM_SLEEP_DUAL_VCORE_PWR_CON 0x404
++
++#define CA15_CPU(n)		BIT(16 + (n))
++#define CA15_CPUTOP		BIT(15)
++#define CA15_L1_PDN(n)		BIT(n)
++#define CA15_L1_PDN_ACK(n)	BIT(8 + (n))
++#define CA15_L2_PDN		BIT(0)
++#define CA15_L2_PDN_ACK		BIT(8)
++#define VCA15_PWR_ISO		BIT(13)
++
++/* infracfg: TOP_AXI bus protection for the CA15 ADB */
++#define INFRA_TOPAXI_PROTECTEN	0x220
++#define INFRA_TOPAXI_PROTECTSTA1 0x228
++#define PROT_EN_CA15_ADB	BIT(30)
++
++/* mcucfg */
++#define CA15L_MISCDBG		0x20c
++#define CA15L_ACINACTM		BIT(0)
++
++/* The vendor spins forever on these; bound it instead. */
++#define SPM_POLL_US		10000
++
++#define MT8173_CORES_PER_CLUSTER	4
++
++struct mtk_cpu_pwr {
++	u16 pwr_con;
++	u16 l1_pdn;
++	u32 status;
++};
++
++/*
++ * Indexed by the SPM's physical core id, which the vendor computes as
++ * aff0 + (aff1 << 2). The PWR_CON offsets are not contiguous, hence the table.
++ */
++static const struct mtk_cpu_pwr mt8173_ca7_pwr[] = {
++	{ .pwr_con = 0x200, .l1_pdn = 0x25c, .status = BIT(9)  },
++	{ .pwr_con = 0x218, .l1_pdn = 0x264, .status = BIT(10) },
++	{ .pwr_con = 0x21c, .l1_pdn = 0x26c, .status = BIT(11) },
++	{ .pwr_con = 0x220, .l1_pdn = 0x274, .status = BIT(12) },
++};
++
++static void __iomem *spm_base __ro_after_init;
++static void __iomem *infracfg_base __ro_after_init;
++static void __iomem *mcucfg_base __ro_after_init;
++static DEFINE_SPINLOCK(spm_cpu_lock);
++
++static int spm_wait(u32 off, u32 mask, u32 want)
++{
++	unsigned int us = 0;
++
++	while ((readl_relaxed(spm_base + off) & mask) != want) {
++		if (++us > SPM_POLL_US)
++			return -ETIMEDOUT;
++		udelay(1);
++	}
++
++	return 0;
++}
++
++static void reg_rmw(void __iomem *base, u32 off, u32 clear, u32 set)
++{
++	writel_relaxed((readl_relaxed(base + off) & ~clear) | set, base + off);
++}
++
++/*
++ * Power up the whole A72 cluster. Only needed for the first core of that
++ * cluster; spm_mtcmos_ctrl_cpu4() guards this on CA15_CPUTOP already being
++ * powered, and so do we.
++ */
++static int mtk_ca15_cluster_on(void)
++{
++	int ret;
++
++	if ((readl_relaxed(spm_base + SPM_PWR_STATUS) & CA15_CPUTOP) &&
++	    (readl_relaxed(spm_base + SPM_PWR_STATUS_2ND) & CA15_CPUTOP))
++		return 0;
++
++	/* lift supply isolation for the CA15 rail */
++	if (readl_relaxed(spm_base + SPM_SLEEP_DUAL_VCORE_PWR_CON) &
++	    VCA15_PWR_ISO)
++		reg_rmw(spm_base, SPM_SLEEP_DUAL_VCORE_PWR_CON,
++			VCA15_PWR_ISO, 0);
++
++	reg_rmw(spm_base, SPM_CA15_CPUTOP_PWR_CON, 0, PWR_ON);
++	ret = spm_wait(SPM_PWR_STATUS, CA15_CPUTOP, CA15_CPUTOP);
++	if (ret)
++		return ret;
++
++	reg_rmw(spm_base, SPM_CA15_CPUTOP_PWR_CON, 0, PWR_ON_2ND);
++	ret = spm_wait(SPM_PWR_STATUS_2ND, CA15_CPUTOP, CA15_CPUTOP);
++	if (ret)
++		return ret;
++
++	reg_rmw(spm_base, SPM_CA15_CPUTOP_PWR_CON, PWR_CLK_DIS, 0);
++
++	reg_rmw(spm_base, SPM_CA15_L2_PWR_CON, CA15_L2_PDN, 0);
++	ret = spm_wait(SPM_CA15_L2_PWR_CON, CA15_L2_PDN_ACK, 0);
++	if (ret)
++		return ret;
++
++	reg_rmw(spm_base, SPM_CA15_CPUTOP_PWR_CON, 0, SRAM_ISOINT_B);
++	reg_rmw(spm_base, SPM_CA15_CPUTOP_PWR_CON, SRAM_CKISO, 0);
++	reg_rmw(spm_base, SPM_CA15_CPUTOP_PWR_CON, PWR_ISO, 0);
++	reg_rmw(spm_base, SPM_CA15_CPUTOP_PWR_CON, 0, PWR_RST_B);
++
++	/*
++	 * Release the cluster's bus interface. Both of these are asserted by
++	 * the power-DOWN path, so on a cold boot they are usually already
++	 * clear -- but the bootloader's state is not guaranteed, and leaving
++	 * either asserted would keep the cores from fetching.
++	 */
++	reg_rmw(infracfg_base, INFRA_TOPAXI_PROTECTEN, PROT_EN_CA15_ADB, 0);
++	reg_rmw(mcucfg_base, CA15L_MISCDBG, CA15L_ACINACTM, 0);
++
++	return 0;
++}
++
++static int mtk_ca15_cpu_on(unsigned int core)
++{
++	u32 pwr_con = SPM_CA15_CPU_PWR_CON(core);
++	int ret;
++
++	ret = mtk_ca15_cluster_on();
++	if (ret)
++		return ret;
++
++	reg_rmw(spm_base, pwr_con, 0, PWR_ON);
++	ret = spm_wait(SPM_PWR_STATUS, CA15_CPU(core), CA15_CPU(core));
++	if (ret)
++		return ret;
++
++	reg_rmw(spm_base, pwr_con, 0, PWR_ON_2ND);
++	ret = spm_wait(SPM_PWR_STATUS_2ND, CA15_CPU(core), CA15_CPU(core));
++	if (ret)
++		return ret;
++
++	reg_rmw(spm_base, SPM_CA15_L1_PWR_CON, CA15_L1_PDN(core), 0);
++	ret = spm_wait(SPM_CA15_L1_PWR_CON, CA15_L1_PDN_ACK(core), 0);
++	if (ret)
++		return ret;
++
++	reg_rmw(spm_base, pwr_con, SRAM_CKISO, 0);
++	reg_rmw(spm_base, pwr_con, PWR_ISO, 0);
++	reg_rmw(spm_base, pwr_con, 0, PWR_RST_B);
++
++	return 0;
++}
++
++static int mtk_ca7_cpu_on(unsigned int core)
++{
++	const struct mtk_cpu_pwr *p = &mt8173_ca7_pwr[core];
++	int ret;
++
++	reg_rmw(spm_base, p->pwr_con, 0, PWR_ON);
++	udelay(1);
++	reg_rmw(spm_base, p->pwr_con, 0, PWR_ON_2ND);
++
++	ret = spm_wait(SPM_PWR_STATUS, p->status, p->status);
++	if (!ret)
++		ret = spm_wait(SPM_PWR_STATUS_2ND, p->status, p->status);
++	if (ret)
++		return ret;
++
++	reg_rmw(spm_base, p->pwr_con, PWR_ISO, 0);
++	reg_rmw(spm_base, p->l1_pdn, L1_PDN, 0);
++
++	ret = spm_wait(p->l1_pdn, L1_PDN_ACK, 0);
++	if (ret)
++		return ret;
++
++	udelay(1);
++	reg_rmw(spm_base, p->pwr_con, 0, SRAM_ISOINT_B);
++	reg_rmw(spm_base, p->pwr_con, SRAM_CKISO, 0);
++	reg_rmw(spm_base, p->pwr_con, PWR_CLK_DIS, 0);
++	reg_rmw(spm_base, p->pwr_con, 0, PWR_RST_B);
++
++	return 0;
++}
++
++static int mtk_cpu_power_on(unsigned int cpu)
++{
++	u64 mpidr = cpu_logical_map(cpu);
++	unsigned int aff0 = MPIDR_AFFINITY_LEVEL(mpidr, 0);
++	unsigned int aff1 = MPIDR_AFFINITY_LEVEL(mpidr, 1);
++	unsigned long flags;
++	int ret;
++
++	if (aff0 >= MT8173_CORES_PER_CLUSTER || aff1 >= 2) {
++		pr_err("CPU%u: no MTCMOS sequence for mpidr %llx\n", cpu, mpidr);
++		return -EOPNOTSUPP;
++	}
++
++	if (!spm_base)
++		return -ENODEV;
++
++	/* The A72 cluster additionally needs infracfg and mcucfg. */
++	if (aff1 && (!infracfg_base || !mcucfg_base)) {
++		pr_err("CPU%u: infracfg/mcucfg not mapped; cannot power the A72 cluster\n",
++		       cpu);
++		return -ENODEV;
++	}
++
++	/* unlock SPM register writes */
++	writel_relaxed((SPM_PROJECT_CODE << 16) | SPM_REGWR_EN,
++		       spm_base + SPM_POWERON_CONFIG_SET);
++
++	spin_lock_irqsave(&spm_cpu_lock, flags);
++	ret = aff1 ? mtk_ca15_cpu_on(aff0) : mtk_ca7_cpu_on(aff0);
++	spin_unlock_irqrestore(&spm_cpu_lock, flags);
++
++	if (ret)
++		pr_err("CPU%u: timed out powering up the MTCMOS domain (%d)\n",
++		       cpu, ret);
++
++	return ret;
++}
++
++static int __init mtk_cpu_init(unsigned int cpu)
++{
++	return cpu_psci_ops.cpu_init(cpu);
++}
++
++static int __init mtk_cpu_prepare(unsigned int cpu)
++{
++	struct device_node *np;
++
++	if (!spm_base) {
++		np = of_find_compatible_node(NULL, NULL,
++					     "mediatek,mt8173-scpsys");
++		if (!np) {
++			pr_err("no mediatek,mt8173-scpsys node; cannot power up secondaries\n");
++			return -ENODEV;
++		}
++
++		spm_base = of_iomap(np, 0);
++		of_node_put(np);
++
++		if (!spm_base) {
++			pr_err("failed to map the SPM registers\n");
++			return -ENOMEM;
++		}
++
++		/*
++		 * Only the A72 cluster needs these, so a missing node is not
++		 * fatal here -- mtk_cpu_power_on() refuses that cluster later.
++		 */
++		np = of_find_compatible_node(NULL, NULL,
++					     "mediatek,mt8173-infracfg");
++		if (np) {
++			infracfg_base = of_iomap(np, 0);
++			of_node_put(np);
++		}
++
++		np = of_find_compatible_node(NULL, NULL,
++					     "mediatek,mt8173-mcucfg");
++		if (np) {
++			mcucfg_base = of_iomap(np, 0);
++			of_node_put(np);
++		}
++	}
++
++	return cpu_psci_ops.cpu_prepare(cpu);
++}
++
++static int mtk_cpu_boot(unsigned int cpu)
++{
++	int ret;
++
++	/*
++	 * Order matters and matches the vendor: PSCI CPU_ON first, so the
++	 * firmware has set the core's entry point, and only then power the
++	 * domain -- the final PWR_RST_B below is what actually releases the
++	 * core. Powering up first would release it towards an undefined entry.
++	 */
++	ret = cpu_psci_ops.cpu_boot(cpu);
++	if (ret)
++		return ret;
++
++	return mtk_cpu_power_on(cpu);
++}
++
++#ifdef CONFIG_HOTPLUG_CPU
++/*
++ * Hotplug matters here for more than unplugging: the A72 rail is an i2c
++ * regulator (MT6311) whose driver probes long after smp_init(), so those cores
++ * cannot be brought up at boot -- there is no supply yet. Booting with
++ * maxcpus=2 and onlining them once userspace is up is the only ordering that
++ * gives them a powered rail.
++ *
++ * Everything is delegated to PSCI. The MTCMOS domain is deliberately left
++ * powered on the way down: the power-down sequences are transcribed but
++ * unproven, and leaking a little power is a far better failure mode than
++ * wedging a core mid-teardown.
++ */
++static bool mtk_cpu_can_disable(unsigned int cpu)
++{
++	return cpu_psci_ops.cpu_can_disable(cpu);
++}
++
++static int mtk_cpu_disable(unsigned int cpu)
++{
++	return cpu_psci_ops.cpu_disable(cpu);
++}
++
++static void mtk_cpu_die(unsigned int cpu)
++{
++	cpu_psci_ops.cpu_die(cpu);
++}
++
++static int mtk_cpu_kill(unsigned int cpu)
++{
++	return cpu_psci_ops.cpu_kill(cpu);
++}
++#endif
++
++const struct cpu_operations mtk_cpu_ops = {
++	.name		= "mediatek,mt8173-smp",
++	.cpu_init	= mtk_cpu_init,
++	.cpu_prepare	= mtk_cpu_prepare,
++	.cpu_boot	= mtk_cpu_boot,
++#ifdef CONFIG_HOTPLUG_CPU
++	.cpu_can_disable = mtk_cpu_can_disable,
++	.cpu_disable	= mtk_cpu_disable,
++	.cpu_die	= mtk_cpu_die,
++	.cpu_kill	= mtk_cpu_kill,
++#endif
++};

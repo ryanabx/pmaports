@@ -12,7 +12,7 @@ diff --git a/arch/arm64/boot/dts/mediatek/Makefile b/arch/arm64/boot/dts/mediate
 diff --git a/arch/arm64/boot/dts/mediatek/mt8173-amazon-suez.dts b/arch/arm64/boot/dts/mediatek/mt8173-amazon-suez.dts
 --- a/arch/arm64/boot/dts/mediatek/mt8173-amazon-suez.dts
 +++ b/arch/arm64/boot/dts/mediatek/mt8173-amazon-suez.dts
-@@ -0,0 +1,537 @@
+@@ -0,0 +1,644 @@
 +// SPDX-License-Identifier: (GPL-2.0 OR MIT)
 +/*
 + * Copyright (c) 2026 Ryan Brue <ryanbrue.dev@gmail.com>
@@ -450,6 +450,62 @@ diff --git a/arch/arm64/boot/dts/mediatek/mt8173-amazon-suez.dts b/arch/arm64/bo
 +	};
 +};
 +
++&i2c1 {
++	/*
++	 * MT6311 external PMIC. Upstream mt8173-elm/evb feed the A72 cluster
++	 * from a da9211; this board uses an MT6311 instead, which mainline
++	 * already supports (drivers/regulator/mt6311-regulator.c). Values match
++	 * both the vendor DTS and the mainline binding example.
++	 */
++	status = "okay";
++
++	mt6311: pmic@6b {
++		compatible = "mediatek,mt6311-regulator";
++		reg = <0x6b>;
++
++		regulators {
++			/*
++			 * The A72 cluster supply. The vendor calls it
++			 * reg-ext-vpca57-supply; mainline mt8173-evb feeds the
++			 * same rail from a da9211, which this board does not
++			 * have.
++			 *
++			 * Give it the part's true range and let cpufreq do the
++			 * work. mediatek-cpufreq couples this against the A72's
++			 * Vsram (vsramca7) and must keep
++			 * 100mV < Vsram - Vproc < 200mV; constraining Vproc to a
++			 * single voltage defeats mtk_cpufreq_voltage_tracking()
++			 * and makes the machine hang under sustained four-core
++			 * load within a minute. With the real range it runs at
++			 * 2106000 indefinitely.
++			 *
++			 * Note 1400000 -- from both the vendor DTS and the
++			 * mainline binding example -- is NOT reachable: the
++			 * driver's range is 600000 + 6250 * 127 = 1393750.
++			 */
++			mt6311_vcpu_reg: VDVFS {
++				regulator-name = "VDVFS";
++				regulator-min-microvolt = <600000>;
++				regulator-max-microvolt = <1393750>;
++				regulator-ramp-delay = <10000>;
++				regulator-always-on;
++			};
++
++			/*
++			 * No VBIASN node. mt6311-regulator describes that LDO
++			 * with no n_voltages, min_uV or vsel_reg -- it is
++			 * enable-only -- so the voltage constraints in the
++			 * binding example make regulator_register() return
++			 * -EINVAL and take the whole chip down with it:
++			 *   mt6311 1-006b: Failed to register MT6311 regulator
++			 *   mt6311 1-006b: probe ... failed with error -22
++			 * The regulator is still registered by the driver; it
++			 * simply gets no constraints from DT.
++			 */
++		};
++	};
++};
++
 +&mmc0 {
 +	status = "okay";
 +	pinctrl-names = "default", "state_uhs";
@@ -543,10 +599,61 @@ diff --git a/arch/arm64/boot/dts/mediatek/mt8173-amazon-suez.dts b/arch/arm64/bo
 +	status = "okay";
 +};
 +
++&{/soc} {
++	/*
++	 * mt8173.dtsi has no MCUCFG node, but powering the A72 cluster needs
++	 * CA15L_MISCDBG to deassert ACINACTM. Naming follows mt2712e.dtsi's
++	 * "mediatek,mt2712-mcucfg", "syscon".
++	 */
++	mcucfg: syscon@10200000 {
++		compatible = "mediatek,mt8173-mcucfg", "syscon";
++		reg = <0 0x10200000 0 0x1000>;
++	};
++};
++
 +&cpu0 {
 +	proc-supply = <&mt6397_vpca15_reg>;
 +};
 +
 +&cpu1 {
 +	proc-supply = <&mt6397_vpca15_reg>;
++
++	/*
++	 * PSCI CPU_ON alone does not start this core. The firmware sets the
++	 * entry point but leaves the core's MTCMOS power domain off, so it
++	 * never runs:
++	 *   CPU1: failed to come online
++	 *   CPU1: failed in unknown state : 0x0
++	 * (plain "spin-table" at the vendor's cpu-release-addr fails the same
++	 * way, because the core is powered down rather than parked.)
++	 *
++	 * The vendor kernel's "mt-boot" is just PSCI CPU_ON followed by
++	 * spm_mtcmos_ctrl_cpu(cpu, STA_POWER_ON, 1); mt8173-smp-mtcmos.patch
++	 * adds that as a mainline enable-method. Boards with real ARM Trusted
++	 * Firmware (mt8173-elm) do not need it because BL31 powers the domain.
++	 *
++	 * The A72s are deliberately left on psci: their MTCMOS sequence
++	 * differs (shared SPM_CA15_L1_PWR_CON) and they still have no
++	 * proc-supply -- it would be the MT6311 on i2c1 @ 0x6B.
++	 */
++	enable-method = "mediatek,mt8173-smp";
++};
++
++/*
++ * The A72s. proc-supply is the MT6311 above, matching what mt8173-evb does with
++ * its da9211; sram-supply is vsramca7, as on evb. Note the MT6311 is an i2c
++ * regulator whose driver probes long after smp_init(), so at bring-up time the
++ * rail is still at whatever the bootloader left it -- raising nr_cpus to 4
++ * should therefore be done only after confirming the rail's voltage at runtime.
++ */
++&cpu2 {
++	proc-supply = <&mt6311_vcpu_reg>;
++	sram-supply = <&mt6397_vsramca7_reg>;
++	enable-method = "mediatek,mt8173-smp";
++};
++
++&cpu3 {
++	proc-supply = <&mt6311_vcpu_reg>;
++	sram-supply = <&mt6397_vsramca7_reg>;
++	enable-method = "mediatek,mt8173-smp";
 +};
