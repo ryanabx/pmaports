@@ -12,7 +12,7 @@ diff --git a/arch/arm64/boot/dts/mediatek/Makefile b/arch/arm64/boot/dts/mediate
 diff --git a/arch/arm64/boot/dts/mediatek/mt8173-amazon-suez.dts b/arch/arm64/boot/dts/mediatek/mt8173-amazon-suez.dts
 --- a/arch/arm64/boot/dts/mediatek/mt8173-amazon-suez.dts
 +++ b/arch/arm64/boot/dts/mediatek/mt8173-amazon-suez.dts
-@@ -0,0 +1,404 @@
+@@ -0,0 +1,419 @@
 +// SPDX-License-Identifier: (GPL-2.0 OR MIT)
 +/*
 + * Copyright (c) 2026 Ryan Brue <ryanbrue.dev@gmail.com>
@@ -122,6 +122,21 @@ diff --git a/arch/arm64/boot/dts/mediatek/mt8173-amazon-suez.dts b/arch/arm64/bo
 +			reg = <0 0x90000000 0 0x80000>;
 +			console-size = <0x40000>;
 +			record-size = <0x8000>;
++			/*
++			 * The freezes on this board are completely silent: the
++			 * kernel stops with no oops and no warning, and the
++			 * softlockup detector never fires, so interrupts are
++			 * not being serviced either. pstore-ftrace records
++			 * function entries into this persistent region, so
++			 * after the reset the tail of the trace shows what the
++			 * CPU was executing when it died. Needs
++			 * CONFIG_PSTORE_FTRACE and CONFIG_FUNCTION_TRACER, and
++			 * must be enabled at runtime via
++			 * /sys/kernel/debug/pstore/record_ftrace.
++			 * Region budget: 0x80000 = console 0x40000 +
++			 * ftrace 0x20000 + dmesg records 0x8000 each.
++			 */
++			ftrace-size = <0x20000>;
 +		};
 +
 +	};
