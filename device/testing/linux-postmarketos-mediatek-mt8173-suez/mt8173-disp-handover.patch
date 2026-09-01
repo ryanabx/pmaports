@@ -1,6 +1,6 @@
-diff -urN orig/drivers/soc/mediatek/Makefile new/drivers/soc/mediatek/Makefile
---- a/drivers/soc/mediatek/Makefile	1970-01-01 00:00:00.000000000 +0000
-+++ b/drivers/soc/mediatek/Makefile	1970-01-01 00:00:00.000000000 +0000
+diff --git a/drivers/soc/mediatek/Makefile b/drivers/soc/mediatek/Makefile
+--- a/drivers/soc/mediatek/Makefile
++++ b/drivers/soc/mediatek/Makefile
 @@ -6,6 +6,7 @@
  obj-$(CONFIG_MTK_PMIC_WRAP) += mtk-pmic-wrap.o
  obj-$(CONFIG_MTK_REGULATOR_COUPLER) += mtk-regulator-coupler.o
@@ -9,9 +9,9 @@ diff -urN orig/drivers/soc/mediatek/Makefile new/drivers/soc/mediatek/Makefile
  obj-$(CONFIG_MTK_MMSYS) += mtk-mutex.o
  obj-$(CONFIG_MTK_SVS) += mtk-svs.o
  obj-$(CONFIG_MTK_SOCINFO) += mtk-socinfo.o
-diff -urN orig/drivers/soc/mediatek/mt8173-disp-handover.c new/drivers/soc/mediatek/mt8173-disp-handover.c
---- a/drivers/soc/mediatek/mt8173-disp-handover.c	1970-01-01 00:00:00.000000000 +0000
-+++ b/drivers/soc/mediatek/mt8173-disp-handover.c	1970-01-01 00:00:00.000000000 +0000
+diff --git a/drivers/soc/mediatek/mt8173-disp-handover.c b/drivers/soc/mediatek/mt8173-disp-handover.c
+--- a/drivers/soc/mediatek/mt8173-disp-handover.c
++++ b/drivers/soc/mediatek/mt8173-disp-handover.c
 @@ -0,0 +1,108 @@
 +// SPDX-License-Identifier: GPL-2.0-only
 +/*

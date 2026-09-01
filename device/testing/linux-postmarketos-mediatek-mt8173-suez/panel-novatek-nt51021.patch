@@ -1,6 +1,6 @@
-diff -urN porig/drivers/gpu/drm/panel/Kconfig pnew/drivers/gpu/drm/panel/Kconfig
---- porig/drivers/gpu/drm/panel/Kconfig	1970-01-01 00:00:00.000000000 +0000
-+++ pnew/drivers/gpu/drm/panel/Kconfig	1970-01-01 00:00:00.000000000 +0000
+diff --git a/drivers/gpu/drm/panel/Kconfig b/drivers/gpu/drm/panel/Kconfig
+--- a/drivers/gpu/drm/panel/Kconfig
++++ b/drivers/gpu/drm/panel/Kconfig
 @@ -635,6 +635,17 @@
  	  Say Y here if you want to enable support for the panels built
  	  around the Novatek NT39016 display controller.
@@ -19,9 +19,9 @@ diff -urN porig/drivers/gpu/drm/panel/Kconfig pnew/drivers/gpu/drm/panel/Kconfig
  config DRM_PANEL_OLIMEX_LCD_OLINUXINO
  	tristate "Olimex LCD-OLinuXino panel"
  	depends on OF
-diff -urN porig/drivers/gpu/drm/panel/Makefile pnew/drivers/gpu/drm/panel/Makefile
---- porig/drivers/gpu/drm/panel/Makefile	1970-01-01 00:00:00.000000000 +0000
-+++ pnew/drivers/gpu/drm/panel/Makefile	1970-01-01 00:00:00.000000000 +0000
+diff --git a/drivers/gpu/drm/panel/Makefile b/drivers/gpu/drm/panel/Makefile
+--- a/drivers/gpu/drm/panel/Makefile
++++ b/drivers/gpu/drm/panel/Makefile
 @@ -62,6 +62,7 @@
  obj-$(CONFIG_DRM_PANEL_NOVATEK_NT37700F) += panel-novatek-nt37700f.o
  obj-$(CONFIG_DRM_PANEL_NOVATEK_NT37801) += panel-novatek-nt37801.o
@@ -30,9 +30,9 @@ diff -urN porig/drivers/gpu/drm/panel/Makefile pnew/drivers/gpu/drm/panel/Makefi
  obj-$(CONFIG_DRM_PANEL_MANTIX_MLAF057WE51) += panel-mantix-mlaf057we51.o
  obj-$(CONFIG_DRM_PANEL_OLIMEX_LCD_OLINUXINO) += panel-olimex-lcd-olinuxino.o
  obj-$(CONFIG_DRM_PANEL_ORISETECH_OTA5601A) += panel-orisetech-ota5601a.o
-diff -urN porig/drivers/gpu/drm/panel/panel-novatek-nt51021.c pnew/drivers/gpu/drm/panel/panel-novatek-nt51021.c
---- porig/drivers/gpu/drm/panel/panel-novatek-nt51021.c	1970-01-01 00:00:00.000000000 +0000
-+++ pnew/drivers/gpu/drm/panel/panel-novatek-nt51021.c	1970-01-01 00:00:00.000000000 +0000
+diff --git a/drivers/gpu/drm/panel/panel-novatek-nt51021.c b/drivers/gpu/drm/panel/panel-novatek-nt51021.c
+--- a/drivers/gpu/drm/panel/panel-novatek-nt51021.c
++++ b/drivers/gpu/drm/panel/panel-novatek-nt51021.c
 @@ -0,0 +1,424 @@
 +// SPDX-License-Identifier: GPL-2.0-only
 +/*

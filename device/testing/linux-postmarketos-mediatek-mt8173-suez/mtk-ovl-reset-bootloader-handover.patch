@@ -1,6 +1,6 @@
-diff -urN orig/arch/arm64/boot/dts/mediatek/mt8173.dtsi new/arch/arm64/boot/dts/mediatek/mt8173.dtsi
---- a/arch/arm64/boot/dts/mediatek/mt8173.dtsi	1970-01-01 00:00:00.000000000 +0000
-+++ b/arch/arm64/boot/dts/mediatek/mt8173.dtsi	1970-01-01 00:00:00.000000000 +0000
+diff --git a/arch/arm64/boot/dts/mediatek/mt8173.dtsi b/arch/arm64/boot/dts/mediatek/mt8173.dtsi
+--- a/arch/arm64/boot/dts/mediatek/mt8173.dtsi
++++ b/arch/arm64/boot/dts/mediatek/mt8173.dtsi
 @@ -1087,6 +1087,7 @@
  			power-domains = <&spm MT8173_POWER_DOMAIN_MM>;
  			clocks = <&mmsys CLK_MM_DISP_OVL0>;
@@ -9,9 +9,9 @@ diff -urN orig/arch/arm64/boot/dts/mediatek/mt8173.dtsi new/arch/arm64/boot/dts/
  			mediatek,gce-client-reg = <&gce SUBSYS_1400XXXX 0xc000 0x1000>;
  		};
  
-diff -urN orig/drivers/gpu/drm/mediatek/mtk_disp_ovl.c new/drivers/gpu/drm/mediatek/mtk_disp_ovl.c
---- a/drivers/gpu/drm/mediatek/mtk_disp_ovl.c	1970-01-01 00:00:00.000000000 +0000
-+++ b/drivers/gpu/drm/mediatek/mtk_disp_ovl.c	1970-01-01 00:00:00.000000000 +0000
+diff --git a/drivers/gpu/drm/mediatek/mtk_disp_ovl.c b/drivers/gpu/drm/mediatek/mtk_disp_ovl.c
+--- a/drivers/gpu/drm/mediatek/mtk_disp_ovl.c
++++ b/drivers/gpu/drm/mediatek/mtk_disp_ovl.c
 @@ -14,6 +14,7 @@
  #include <linux/of.h>
  #include <linux/platform_device.h>
@@ -61,9 +61,9 @@ diff -urN orig/drivers/gpu/drm/mediatek/mtk_disp_ovl.c new/drivers/gpu/drm/media
  #if IS_REACHABLE(CONFIG_MTK_CMDQ)
  	ret = cmdq_dev_get_client_reg(dev, &priv->cmdq_reg, 0);
  	if (ret)
-diff -urN orig/include/dt-bindings/reset/mt8173-resets.h new/include/dt-bindings/reset/mt8173-resets.h
---- a/include/dt-bindings/reset/mt8173-resets.h	1970-01-01 00:00:00.000000000 +0000
-+++ b/include/dt-bindings/reset/mt8173-resets.h	1970-01-01 00:00:00.000000000 +0000
+diff --git a/include/dt-bindings/reset/mt8173-resets.h b/include/dt-bindings/reset/mt8173-resets.h
+--- a/include/dt-bindings/reset/mt8173-resets.h
++++ b/include/dt-bindings/reset/mt8173-resets.h
 @@ -28,6 +28,7 @@
  #define MT8173_INFRA_MMIOMMURST         47
  

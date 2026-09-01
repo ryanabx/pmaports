@@ -1,6 +1,6 @@
-diff -urN a/drivers/gpu/drm/mediatek/mtk_dsi.c b/drivers/gpu/drm/mediatek/mtk_dsi.c
---- a/drivers/gpu/drm/mediatek/mtk_dsi.c	1970-01-01 00:00:00.000000000 +0000
-+++ b/drivers/gpu/drm/mediatek/mtk_dsi.c	1970-01-01 00:00:00.000000000 +0000
+diff --git a/drivers/gpu/drm/mediatek/mtk_dsi.c b/drivers/gpu/drm/mediatek/mtk_dsi.c
+--- a/drivers/gpu/drm/mediatek/mtk_dsi.c
++++ b/drivers/gpu/drm/mediatek/mtk_dsi.c
 @@ -734,6 +734,29 @@
  		       dsi->regs + dsi->driver_data->reg_shadow_dbg_off);
  

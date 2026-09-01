@@ -1,6 +1,6 @@
-diff -urN dorig/arch/arm64/kernel/cpu_ops.c dw8/arch/arm64/kernel/cpu_ops.c
---- dorig/arch/arm64/kernel/cpu_ops.c	1970-01-01 00:00:00.000000000 +0000
-+++ dw8/arch/arm64/kernel/cpu_ops.c	1970-01-01 00:00:00.000000000 +0000
+diff --git a/arch/arm64/kernel/cpu_ops.c b/arch/arm64/kernel/cpu_ops.c
+--- a/arch/arm64/kernel/cpu_ops.c
++++ b/arch/arm64/kernel/cpu_ops.c
 @@ -19,11 +19,17 @@
  extern const struct cpu_operations acpi_parking_protocol_ops;
  #endif
@@ -19,9 +19,9 @@ diff -urN dorig/arch/arm64/kernel/cpu_ops.c dw8/arch/arm64/kernel/cpu_ops.c
  	&cpu_psci_ops,
  	NULL,
  };
-diff -urN dorig/arch/arm64/kernel/Makefile dw8/arch/arm64/kernel/Makefile
---- dorig/arch/arm64/kernel/Makefile	1970-01-01 00:00:00.000000000 +0000
-+++ dw8/arch/arm64/kernel/Makefile	1970-01-01 00:00:00.000000000 +0000
+diff --git a/arch/arm64/kernel/Makefile b/arch/arm64/kernel/Makefile
+--- a/arch/arm64/kernel/Makefile
++++ b/arch/arm64/kernel/Makefile
 @@ -36,6 +36,7 @@
  			   syscall.o proton-pack.o idle.o patching.o pi/	\
  			   rsi.o jump_label.o
@@ -30,9 +30,9 @@ diff -urN dorig/arch/arm64/kernel/Makefile dw8/arch/arm64/kernel/Makefile
  obj-$(CONFIG_COMPAT)			+= sys32.o signal32.o			\
  					   sys_compat.o
  obj-$(CONFIG_COMPAT)			+= sigreturn32.o
-diff -urN dorig/arch/arm64/kernel/smp_mtk.c dw8/arch/arm64/kernel/smp_mtk.c
---- dorig/arch/arm64/kernel/smp_mtk.c	1970-01-01 00:00:00.000000000 +0000
-+++ dw8/arch/arm64/kernel/smp_mtk.c	1970-01-01 00:00:00.000000000 +0000
+diff --git a/arch/arm64/kernel/smp_mtk.c b/arch/arm64/kernel/smp_mtk.c
+--- a/arch/arm64/kernel/smp_mtk.c
++++ b/arch/arm64/kernel/smp_mtk.c
 @@ -0,0 +1,403 @@
 +// SPDX-License-Identifier: GPL-2.0-only
 +/*

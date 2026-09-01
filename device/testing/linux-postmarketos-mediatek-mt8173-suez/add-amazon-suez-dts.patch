@@ -12,7 +12,7 @@ diff --git a/arch/arm64/boot/dts/mediatek/Makefile b/arch/arm64/boot/dts/mediate
 diff --git a/arch/arm64/boot/dts/mediatek/mt8173-amazon-suez.dts b/arch/arm64/boot/dts/mediatek/mt8173-amazon-suez.dts
 --- a/arch/arm64/boot/dts/mediatek/mt8173-amazon-suez.dts
 +++ b/arch/arm64/boot/dts/mediatek/mt8173-amazon-suez.dts
-@@ -0,0 +1,818 @@
+@@ -0,0 +1,875 @@
 +// SPDX-License-Identifier: (GPL-2.0 OR MIT)
 +/*
 + * Copyright (c) 2026 Ryan Brue <ryanbrue.dev@gmail.com>
@@ -693,6 +693,50 @@ diff --git a/arch/arm64/boot/dts/mediatek/mt8173-amazon-suez.dts b/arch/arm64/bo
 +	};
 +};
 +
++/*
++ * Sensors and charger.
++ *
++ * Every part below was confirmed on the live device by reading its ID register
++ * over /dev/i2c before any of this was written, rather than trusting the vendor
++ * DTS -- which lists parts this board does not fit:
++ *
++ *   BMA253   i2c2 @0x18   CHIP_ID 0xfa
++ *   BQ24297  i2c3 @0x6b   REG0A 0x20; REG08 read 0x6c with the cable in, i.e.
++ *                         "VBUS = USB host, fast charging, power good"
++ *   LTR559   i2c4 @0x23   PART_ID 0x92, MANUFAC_ID 0x05 (Lite-On)
++ *
++ * The vendor also describes an STK3x1x alsps at i2c4 0x48 and a camera at
++ * i2c3 0x3c. Neither answers on this unit, so neither is described here.
++ */
++&i2c2 {
++	status = "okay";
++	clock-frequency = <400000>;
++
++	/*
++	 * Bosch BMA253. The vendor calls it "mediatek,gsensor" and selects it
++	 * with CONFIG_MTK_BMA253; mainline's bmc150-accel covers the part.
++	 * No interrupt is described: the vendor node has none, and the driver
++	 * is happy polling.
++	 */
++	accelerometer@18 {
++		compatible = "bosch,bma253";
++		reg = <0x18>;
++		/*
++		 * Derived empirically (guided rotation test, 2026-08-30): the
++		 * chip is mounted rotated 180 degrees about the (1,-1,0) axis
++		 * relative to the panel. Raw readings were +X = g when the
++		 * tablet is upright and -Z = g face-up; with this matrix
++		 * iio-sensor-proxy reports normal/left-up correctly. Consistent
++		 * with the vendor's hwmsen "direction = <5>" (swap X/Y,
++		 * invert Z) once the Android landscape frame is rotated into
++		 * this panel's portrait frame.
++		 */
++		mount-matrix = "0", "-1", "0",
++			       "-1", "0", "0",
++			       "0", "0", "-1";
++	};
++};
++
 +&i2c4 {
 +	/*
 +	 * TI LP8557 backlight. Every value here is from the vendor's
@@ -740,6 +784,19 @@ diff --git a/arch/arm64/boot/dts/mediatek/mt8173-amazon-suez.dts b/arch/arm64/bo
 +			rom-addr = /bits/ 8 <0x16>;
 +			rom-val = /bits/ 8 <0xe0>;
 +		};
++	};
++
++	/*
++	 * Lite-On LTR-559 ambient light + proximity.
++	 *
++	 * The vendor wires its interrupt to pio 6, level low, but that is
++	 * deliberately not described yet: the proximity threshold interrupt is
++	 * optional for this driver, and a level-triggered line with the wrong
++	 * polarity would sit asserted and storm. Add it once it can be watched.
++	 */
++	light-sensor@23 {
++		compatible = "liteon,ltr559";
++		reg = <0x23>;
 +	};
 +};
 +
