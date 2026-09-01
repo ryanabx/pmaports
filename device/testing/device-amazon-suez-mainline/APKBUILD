@@ -3,7 +3,7 @@ maintainer="Ryan Brue <ryanbrue.dev@gmail.com>"
 pkgname=device-amazon-suez-mainline
 pkgdesc="Amazon Fire HD 10 (2017) (mainline)"
 pkgver=1
-pkgrel=13
+pkgrel=14
 url="https://postmarketos.org"
 license="MIT"
 arch="aarch64"
@@ -24,6 +24,7 @@ source="
 	deviceinfo
 	kernel-cmdline.conf
 	modules-initfs
+	pipewire-pulse.service
 	suez-bcb-arm.sh
 	suez-bcb-disarm
 	suez-bcb-disarm.service
@@ -114,6 +115,14 @@ package() {
 	# both need setting here rather than in the kernel config.
 	install -Dm644 "$srcdir"/suez-stability.conf \
 		"$pkgdir"/usr/lib/sysctl.d/99-suez-stability.conf
+
+	# Alpine's pipewire-systemd ships pipewire-pulse.socket without the
+	# service it triggers, which leaves every libpulse client -- including
+	# GNOME Shell and the Settings sound panel -- with "Connection refused"
+	# and no audio devices at all, even though PipeWire itself is fine.
+	# Installed under /etc on purpose; see the comments in the file.
+	install -Dm644 "$srcdir"/pipewire-pulse.service \
+		"$pkgdir"/etc/systemd/user/pipewire-pulse.service
 }
 
 sha512sums="
@@ -122,6 +131,7 @@ acbd142eb5a789d740ecfffed67f65e827fadc29f47e04bf4084e97152381ffc897f6f12b62fafc2
 a1c7602bfd1eb0b431c1e96d592dfaf5da7e5498c3adfad756b6d73fe37b7889ea6c6d0fb681727796a3c95cbd247040d764ba6f477354a43cf8836887ecbedd  deviceinfo
 be09b93712e7017e2491cf5dce2146b9e0686e88675bb61a65e52e0000bf24a8461e1ff5629d72c4630e43b773f3684d2b4542a11fa99acee6d9a4d63cd25ddf  kernel-cmdline.conf
 d89fa6205d2ec177514a6e47877f27c7c69745d30994e36597ac6940c114a71868940d7050ba67dc5a260dc338ca5d789c521e35c37d7f2d3645762ab02101a9  modules-initfs
+3a31a29ac3a10f4abf2ede9d0363fd060ef1c228b7927bd31dbf9c494bc189d6c3365b413e20902e1928ff68cb59caf351cfd5d4ea21863c25077952568766e9  pipewire-pulse.service
 fbdb7d4e8dbd03258dca7b1147130865513cf45599bd9f83e253079d1dfe009c890198adc2bbb14773d0d20822fe13898bbc2f9e1a0e5ce4b6acfbd4ea64eca2  suez-bcb-arm.sh
 33b6cca3c1c822781f5a8da665d60843239152344b7d585081eb531adb30933631487c8f422893e0a2e274307c7537c97284016634370620a41badccb3a4efd9  suez-bcb-disarm
 aaf34e1a660df1fe4782b8a130ab7cd9477c39eb559f48f3ee78aa01673666491087d9f0ed6403b33fafddf61411f5a1efa0ba101c86934df0fdae24c712f3c5  suez-bcb-disarm.service
