@@ -458,3 +458,82 @@ diff --git a/drivers/gpu/drm/panel/panel-novatek-nt51021.c b/drivers/gpu/drm/pan
 +
 +MODULE_DESCRIPTION("Novatek NT51021 1200x1920 DSI panel driver");
 +MODULE_LICENSE("GPL");
+diff --git a/Documentation/devicetree/bindings/display/panel/novatek,nt51021.yaml b/Documentation/devicetree/bindings/display/panel/novatek,nt51021.yaml
+--- a/Documentation/devicetree/bindings/display/panel/novatek,nt51021.yaml
++++ b/Documentation/devicetree/bindings/display/panel/novatek,nt51021.yaml
+@@ -0,0 +1,75 @@
++# SPDX-License-Identifier: GPL-2.0-only OR BSD-2-Clause
++%YAML 1.2
++---
++$id: http://devicetree.org/schemas/display/panel/novatek,nt51021.yaml#
++$schema: http://devicetree.org/meta-schemas/core.yaml#
++
++title: Novatek NT51021 based 1200x1920 DSI display panels
++
++maintainers:
++  - Ryan Brue <ryanbrue.dev@gmail.com>
++
++description:
++  The Novatek NT51021 is a DSI panel controller driving 1200x1920 WUXGA
++  panels over four lanes in video mode. Panels using it ship with more than
++  one glass vendor behind the same controller and the same board wiring, so
++  the panel in a given unit is identified at runtime from two ID straps
++  rather than from the compatible string.
++
++allOf:
++  - $ref: panel-common.yaml#
++
++properties:
++  compatible:
++    const: novatek,nt51021
++
++  reg:
++    maxItems: 1
++
++  power-supply: true
++  reset-gpios: true
++  backlight: true
++  port: true
++
++  lcm-id-gpios:
++    minItems: 2
++    maxItems: 2
++    description:
++      The panel-vendor ID straps, least significant first. Their value
++      selects which glass vendor's initialisation sequence to send. Boards
++      that fit only one panel may omit these, in which case the first
++      supported panel is assumed.
++
++required:
++  - compatible
++  - reg
++  - power-supply
++  - reset-gpios
++  - port
++
++additionalProperties: false
++
++examples:
++  - |
++    #include <dt-bindings/gpio/gpio.h>
++
++    dsi {
++        #address-cells = <1>;
++        #size-cells = <0>;
++
++        panel@0 {
++            compatible = "novatek,nt51021";
++            reg = <0>;
++            power-supply = <&vgp6>;
++            reset-gpios = <&pio 105 GPIO_ACTIVE_LOW>;
++            lcm-id-gpios = <&pio 102 GPIO_ACTIVE_HIGH>,
++                           <&pio 103 GPIO_ACTIVE_HIGH>;
++            backlight = <&backlight_lcd>;
++
++            port {
++                endpoint {
++                    remote-endpoint = <&dsi_out>;
++                };
++            };
++        };
++    };

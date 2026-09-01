@@ -12,7 +12,7 @@ diff --git a/arch/arm64/boot/dts/mediatek/Makefile b/arch/arm64/boot/dts/mediate
 diff --git a/arch/arm64/boot/dts/mediatek/mt8173-amazon-suez.dts b/arch/arm64/boot/dts/mediatek/mt8173-amazon-suez.dts
 --- a/arch/arm64/boot/dts/mediatek/mt8173-amazon-suez.dts
 +++ b/arch/arm64/boot/dts/mediatek/mt8173-amazon-suez.dts
-@@ -0,0 +1,1336 @@
+@@ -0,0 +1,1379 @@
 +// SPDX-License-Identifier: (GPL-2.0 OR MIT)
 +/*
 + * Copyright (c) 2026 Ryan Brue <ryanbrue.dev@gmail.com>
@@ -418,6 +418,16 @@ diff --git a/arch/arm64/boot/dts/mediatek/mt8173-amazon-suez.dts b/arch/arm64/bo
 +				regulator-always-on;
 +			};
 +
++			/*
++			 * Despite the name this is the A72 cluster's Vsram, not
++			 * the A53's -- see the cpu nodes below. always-on is a
++			 * deliberate deviation from suez_dvt.dts, which leaves
++			 * it off: mediatek-cpufreq drives this rail coupled to
++			 * the A72's Vproc and the rail must not drop while the
++			 * cluster runs. Upstream mt8173-evb.dts and
++			 * mt8173-elm.dtsi both mark it always-on for the same
++			 * reason.
++			 */
 +			mt6397_vsramca7_reg: buck_vsramca7 {
 +				regulator-name = "vsramca7";
 +				regulator-min-microvolt = < 700000>;
@@ -434,12 +444,22 @@ diff --git a/arch/arm64/boot/dts/mediatek/mt8173-amazon-suez.dts b/arch/arm64/bo
 +				regulator-always-on;
 +			};
 +
++			/*
++			 * 150us, not the 115us that mt8173-evb, mt8173-elm and
++			 * MediaTek's own tb8173p1 reference board use. Amazon
++			 * raised it for this board: suez_evt.dts and
++			 * suez_dvt.dts both say 150 and only the later
++			 * suez_hvt.dts returns to 115. This unit is DVT, so
++			 * take the DVT number -- it is also the safe direction,
++			 * since it only makes the core wait longer for the rail
++			 * to settle before declaring the GPU powered.
++			 */
 +			mt6397_vgpu_reg: buck_vgpu {
 +				regulator-name = "vgpu";
 +				regulator-min-microvolt = < 700000>;
 +				regulator-max-microvolt = <1350000>;
 +				regulator-ramp-delay = <12500>;
-+				regulator-enable-ramp-delay = <115>;
++				regulator-enable-ramp-delay = <150>;
 +			};
 +
 +			mt6397_vdrm_reg: buck_vdrm {
@@ -533,6 +553,15 @@ diff --git a/arch/arm64/boot/dts/mediatek/mt8173-amazon-suez.dts b/arch/arm64/bo
 +				regulator-enable-ramp-delay = <218>;
 +			};
 +
++			/*
++			 * suez_dvt.dts marks vgp5 always-on and never routes it
++			 * to anything -- no node in the vendor DTS has it as a
++			 * supply, and suez_hvt.dts drops the always-on again.
++			 * Left switchable here: the rail reads disabled on a
++			 * fully working device, so nothing we describe needs it.
++			 * If the RT5514 or the cameras are ever ported, check
++			 * whether this is their rail before assuming it is idle.
++			 */
 +			mt6397_vgp5_reg: ldo_vgp5 {
 +				regulator-name = "vgp5";
 +				regulator-min-microvolt = <1200000>;
@@ -694,6 +723,11 @@ diff --git a/arch/arm64/boot/dts/mediatek/mt8173-amazon-suez.dts b/arch/arm64/bo
 +				regulator-min-microvolt = <600000>;
 +				regulator-max-microvolt = <1393750>;
 +				regulator-ramp-delay = <10000>;
++				/*
++				 * always-on is ours, not the vendor's: this is
++				 * the A72's Vproc, coupled to vsramca7 above,
++				 * and the pair is kept up for the same reason.
++				 */
 +				regulator-always-on;
 +			};
 +
@@ -787,6 +821,15 @@ diff --git a/arch/arm64/boot/dts/mediatek/mt8173-amazon-suez.dts b/arch/arm64/bo
 +	cd-gpios = <&pio 1 GPIO_ACTIVE_HIGH>;
 +	vmmc-supply = <&mt6397_vmch_reg>;
 +	vqmmc-supply = <&mt6397_vmc_reg>;
++	/*
++	 * The vendor gives this slot a command internal delay of 4
++	 * (hs200_cmd_int_delay in suez_dvt.dts); upstream mt8173-elm sets none.
++	 * Despite the HS200 name it is the delay used for SDR104 too -- mtk-sd
++	 * says so where it declares the field -- and this slot runs SDR104, so
++	 * the value applies. Taking the vendor's number rather than leaving the
++	 * field at its zero default.
++	 */
++	mediatek,hs200-cmd-int-delay = <4>;
 +};
 +
 +/*

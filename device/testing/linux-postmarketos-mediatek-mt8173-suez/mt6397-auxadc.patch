@@ -34,7 +34,7 @@ diff --git a/drivers/iio/adc/Makefile b/drivers/iio/adc/Makefile
 diff --git a/drivers/iio/adc/mt6397-auxadc.c b/drivers/iio/adc/mt6397-auxadc.c
 --- a/drivers/iio/adc/mt6397-auxadc.c
 +++ b/drivers/iio/adc/mt6397-auxadc.c
-@@ -0,0 +1,230 @@
+@@ -0,0 +1,236 @@
 +// SPDX-License-Identifier: GPL-2.0-only
 +/*
 + * MediaTek MT6397 PMIC AUXADC driver
@@ -60,6 +60,12 @@ diff --git a/drivers/iio/adc/mt6397-auxadc.c b/drivers/iio/adc/mt6397-auxadc.c
 +#include <linux/platform_device.h>
 +#include <linux/regmap.h>
 +
++/*
++ * ADC0 is channel 0's result register specifically: the vendor's register map
++ * puts channel n's result at 0x0514 + 2 * n. Only channel 0 is described here,
++ * so reading ADC0 unconditionally is correct -- but anyone adding a channel
++ * must add its result register too, not just a channel-select value.
++ */
 +#define MT6397_AUXADC_ADC0		0x0514
 +#define MT6397_AUXADC_ADC0_RDY		BIT(15)
 +#define MT6397_AUXADC_ADC0_VAL		GENMASK(9, 0)
