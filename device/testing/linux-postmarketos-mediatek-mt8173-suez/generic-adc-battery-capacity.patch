@@ -9,7 +9,7 @@ diff -urN dorig/drivers/power/supply/generic-adc-battery.c dw8/drivers/power/sup
  };
  
  static struct gab *to_generic_bat(struct power_supply *psy)
-@@ -115,6 +116,35 @@
+@@ -115,6 +116,58 @@
  		return gab_read_channel(adc_bat, GAB_POWER, &val->intval);
  	case POWER_SUPPLY_PROP_TEMP:
  		return gab_read_channel(adc_bat, GAB_TEMP, &val->intval);
@@ -19,6 +19,29 @@ diff -urN dorig/drivers/power/supply/generic-adc-battery.c dw8/drivers/power/sup
 +		ret = gab_read_channel(adc_bat, GAB_VOLTAGE, &uv);
 +		if (ret < 0)
 +			return ret;
++
++		/*
++		 * Look up the RESTED voltage, not the loaded one. Charge or
++		 * load current across the pack's internal resistance offsets
++		 * the terminal voltage by tens of millivolts, and on a curve
++		 * as flat as a lithium cell's -- about 1.5 mV per percent
++		 * through the middle of the range -- that is a ten-point step
++		 * in reported charge every time the charger is plugged or
++		 * unplugged, plus a running wobble as the load varies.
++		 * Measured on amazon-suez: 83 mV across a 966 mA swing.
++		 *
++		 * Current is positive into the battery, so one subtraction is
++		 * correct in both directions.
++		 */
++		if (adc_bat->channel[GAB_CURRENT] && adc_bat->info &&
++		    adc_bat->info->factory_internal_resistance_uohm > 0) {
++			int ua;
++
++			if (!gab_read_channel(adc_bat, GAB_CURRENT, &ua))
++				uv -= div_s64((s64)ua *
++					      adc_bat->info->factory_internal_resistance_uohm,
++					      1000000);
++		}
 +
 +		/*
 +		 * The OCV tables are indexed by temperature in degrees
@@ -71,7 +94,7 @@ diff -urN dorig/drivers/power/supply/generic-adc-battery.c dw8/drivers/power/sup
  	 * Total number of properties is equal to static properties
  	 * plus the dynamic properties.Some properties may not be set
  	 * as come channels may be not be supported by the device.So
-@@ -233,6 +275,13 @@
+@@ -233,7 +275,14 @@
  	if (IS_ERR(adc_bat->psy))
  		return dev_err_probe(&pdev->dev, PTR_ERR(adc_bat->psy), "Failed to register power-supply device\n");
  

@@ -34,7 +34,7 @@ diff -urN dorig/drivers/iio/adc/Makefile dw8/drivers/iio/adc/Makefile
 diff -urN dorig/drivers/iio/adc/mt6397-auxadc.c dw8/drivers/iio/adc/mt6397-auxadc.c
 --- dorig/drivers/iio/adc/mt6397-auxadc.c	1969-12-31 18:00:00.000000000 -0600
 +++ dw8/drivers/iio/adc/mt6397-auxadc.c	2026-08-29 23:40:23.252841829 -0500
-@@ -0,0 +1,230 @@
+@@ -0,0 +1,328 @@
 +// SPDX-License-Identifier: GPL-2.0-only
 +/*
 + * MediaTek MT6397 PMIC AUXADC driver
@@ -52,7 +52,6 @@ diff -urN dorig/drivers/iio/adc/mt6397-auxadc.c dw8/drivers/iio/adc/mt6397-auxad
 +#include <linux/bitfield.h>
 +#include <linux/delay.h>
 +#include <linux/iio/iio.h>
-+#include <linux/math.h>
 +#include <linux/mfd/mt6397/core.h>
 +#include <linux/mod_devicetable.h>
 +#include <linux/module.h>
@@ -85,10 +84,52 @@ diff -urN dorig/drivers/iio/adc/mt6397-auxadc.c dw8/drivers/iio/adc/mt6397-auxad
 + */
 +#define MT6397_AUXADC_VBAT_DIVIDER	4
 +
++/*
++ * The PMIC also carries a hardware fuel gauge, a separate block from the
++ * auxiliary ADC but behind the same regmap. Only its current output is used
++ * here: it is what lets a voltage-only gauge subtract I*R and look up the
++ * rested voltage instead of the loaded one. Its charge accumulator, which is
++ * what the vendor's CONFIG_SOC_BY_HW_FG gauge integrates, is deliberately not
++ * touched -- see ~/suez-work/MT6397-FUELGAUGE-DESIGN.md.
++ */
++#define MT6397_TOP_CKPDN		0x0102
++#define MT6397_TOP_CKPDN_FGADC_CK	(BIT(6) | BIT(5))
++
++#define MT6397_FGADC_CON0		0x0618
++#define MT6397_FGADC_CON0_MODE		GENMASK(7, 0)
++#define MT6397_FGADC_CON0_MODE_ON	0x29
++#define MT6397_FGADC_CON0_MODE_SETUP	0x28
++#define MT6397_FGADC_CON0_LATCHED	BIT(10)
++#define MT6397_FGADC_CON0_CMD		GENMASK(15, 8)
++#define MT6397_FGADC_CON0_CMD_IDLE	0x00
++#define MT6397_FGADC_CON0_CMD_LATCH	0x02
++#define MT6397_FGADC_CON0_CMD_CLEAR	0x08
++#define MT6397_FGADC_CON0_CMD_RESET	0x71
++
++#define MT6397_FGADC_CON8		0x0628
++
++/*
++ * One LSB is 158.122 uA when the board uses a 20 mOhm sense resistor, and
++ * scales inversely with the resistor actually fitted. suez fits 10 mOhm
++ * (r_fg_value in the vendor's mt_bm_data.c), so one LSB is 316.244 uA.
++ */
++#define MT6397_FGADC_NA_PER_LSB_20MOHM	158122
++#define MT6397_FGADC_SENSE_MOHM		10
++
 +struct mt6397_auxadc {
 +	struct regmap *regmap;
 +	struct mutex lock;	/* serialises the select/start/poll sequence */
 +};
++
++#define MT6397_AUXADC_CURRENT_CHANNEL(_idx)				\
++	{								\
++		.type = IIO_CURRENT,					\
++		.indexed = 1,						\
++		.channel = (_idx),					\
++		.address = (_idx),					\
++		.info_mask_separate = BIT(IIO_CHAN_INFO_RAW) |		\
++				      BIT(IIO_CHAN_INFO_SCALE),		\
++	}
 +
 +#define MT6397_AUXADC_CHANNEL(_idx, _hwchan)				\
 +	{								\
@@ -109,27 +150,16 @@ diff -urN dorig/drivers/iio/adc/mt6397-auxadc.c dw8/drivers/iio/adc/mt6397-auxad
 + */
 +static const struct iio_chan_spec mt6397_auxadc_channels[] = {
 +	MT6397_AUXADC_CHANNEL(0, 0),
++	MT6397_AUXADC_CURRENT_CHANNEL(1),
 +};
 +
-+/*
-+ * A single conversion is far too noisy to drive a fuel gauge. Measured on
-+ * hardware with the pack resting, back-to-back reads swing over roughly 16
-+ * LSB (~75 mV), and because the discharge curve is nearly flat in the middle
-+ * of the range -- about 1.5 mV per percent -- that lands as an 11-point swing
-+ * in reported state of charge, jumping by as much as 10 points between
-+ * consecutive reads. The vendor kernel never uses a bare conversion either:
-+ * every battery read goes through PMIC_IMM_GetOneChannelValue() with
-+ * ADC_SAMPLE_TIMES (5) and is averaged. Take more than that -- a conversion
-+ * costs well under a millisecond and nothing reads this more than a few times
-+ * a minute -- which cuts the spread by about a factor of four.
-+ */
-+#define MT6397_AUXADC_SAMPLES		16
-+
-+static int mt6397_auxadc_read_once(struct mt6397_auxadc *adc,
-+				   unsigned int hwchan, int *val)
++static int mt6397_auxadc_read_channel(struct mt6397_auxadc *adc,
++				      unsigned int hwchan, int *val)
 +{
 +	unsigned int reg;
 +	int ret;
++
++	guard(mutex)(&adc->lock);
 +
 +	ret = regmap_update_bits(adc->regmap, MT6397_AUXADC_CON1,
 +				 MT6397_AUXADC_CON1_CHSEL,
@@ -162,30 +192,82 @@ diff -urN dorig/drivers/iio/adc/mt6397-auxadc.c dw8/drivers/iio/adc/mt6397-auxad
 +	return 0;
 +}
 +
-+static int mt6397_auxadc_read_channel(struct mt6397_auxadc *adc,
-+				      unsigned int hwchan, int *val)
++static int mt6397_fgadc_enable(struct mt6397_auxadc *adc)
 +{
-+	unsigned int sum = 0;
-+	int i, ret, sample;
++	int ret;
 +
-+	/*
-+	 * Held across the whole burst, not per conversion: the channel select
-+	 * and the result register are shared state, so another channel's read
-+	 * interleaving here would have us average someone else's samples.
-+	 */
++	/* The gauge runs off the RTC's 32 kHz clock; ungate it first. */
++	ret = regmap_update_bits(adc->regmap, MT6397_TOP_CKPDN,
++				 MT6397_TOP_CKPDN_FGADC_CK, 0);
++	if (ret)
++		return ret;
++
++	/* Current mode, auto-calibration, 32 kHz source -- then enable. */
++	ret = regmap_update_bits(adc->regmap, MT6397_FGADC_CON0,
++				 MT6397_FGADC_CON0_MODE,
++				 MT6397_FGADC_CON0_MODE_SETUP);
++	if (ret)
++		return ret;
++
++	ret = regmap_update_bits(adc->regmap, MT6397_FGADC_CON0,
++				 MT6397_FGADC_CON0_MODE,
++				 MT6397_FGADC_CON0_MODE_ON);
++	if (ret)
++		return ret;
++
++	return regmap_update_bits(adc->regmap, MT6397_FGADC_CON0,
++				  MT6397_FGADC_CON0_CMD,
++				  FIELD_PREP(MT6397_FGADC_CON0_CMD,
++					     MT6397_FGADC_CON0_CMD_RESET));
++}
++
++static int mt6397_fgadc_cmd(struct mt6397_auxadc *adc, unsigned int cmd)
++{
++	return regmap_update_bits(adc->regmap, MT6397_FGADC_CON0,
++				  MT6397_FGADC_CON0_CMD,
++				  FIELD_PREP(MT6397_FGADC_CON0_CMD, cmd));
++}
++
++static int mt6397_fgadc_read_current(struct mt6397_auxadc *adc, int *val)
++{
++	unsigned int reg;
++	int ret;
++
 +	guard(mutex)(&adc->lock);
 +
-+	for (i = 0; i < MT6397_AUXADC_SAMPLES; i++) {
-+		ret = mt6397_auxadc_read_once(adc, hwchan, &sample);
-+		if (ret)
-+			return ret;
++	ret = mt6397_fgadc_cmd(adc, MT6397_FGADC_CON0_CMD_LATCH);
++	if (ret)
++		return ret;
 +
-+		sum += sample;
-+	}
++	ret = regmap_read_poll_timeout(adc->regmap, MT6397_FGADC_CON0, reg,
++				       reg & MT6397_FGADC_CON0_LATCHED,
++				       100, MT6397_AUXADC_TIMEOUT_US);
++	if (ret)
++		return ret;
 +
-+	*val = DIV_ROUND_CLOSEST(sum, MT6397_AUXADC_SAMPLES);
++	ret = regmap_read(adc->regmap, MT6397_FGADC_CON8, &reg);
++	if (ret)
++		return ret;
 +
-+	return 0;
++	/*
++	 * Not two's complement: the gauge reports a magnitude with the sign
++	 * folded in as 65535 - raw, which is what the vendor unpicks too.
++	 * Report it signed and positive-into-the-battery, so a consumer can
++	 * subtract I*R from the terminal voltage without knowing any of this.
++	 */
++	*val = reg > 32767 ? -(65535 - (int)reg) : (int)reg;
++
++	ret = mt6397_fgadc_cmd(adc, MT6397_FGADC_CON0_CMD_CLEAR);
++	if (ret)
++		return ret;
++
++	ret = regmap_read_poll_timeout(adc->regmap, MT6397_FGADC_CON0, reg,
++				       !(reg & MT6397_FGADC_CON0_LATCHED),
++				       100, MT6397_AUXADC_TIMEOUT_US);
++	if (ret)
++		return ret;
++
++	return mt6397_fgadc_cmd(adc, MT6397_FGADC_CON0_CMD_IDLE);
 +}
 +
 +static int mt6397_auxadc_read_raw(struct iio_dev *indio_dev,
@@ -197,13 +279,25 @@ diff -urN dorig/drivers/iio/adc/mt6397-auxadc.c dw8/drivers/iio/adc/mt6397-auxad
 +
 +	switch (mask) {
 +	case IIO_CHAN_INFO_RAW:
-+		ret = mt6397_auxadc_read_channel(adc, chan->address, val);
++		if (chan->type == IIO_CURRENT)
++			ret = mt6397_fgadc_read_current(adc, val);
++		else
++			ret = mt6397_auxadc_read_channel(adc, chan->address, val);
 +		if (ret)
 +			return ret;
 +
 +		return IIO_VAL_INT;
 +
 +	case IIO_CHAN_INFO_SCALE:
++		if (chan->type == IIO_CURRENT) {
++			/* milliamps per LSB, scaled for the fitted resistor */
++			*val = MT6397_FGADC_NA_PER_LSB_20MOHM * 20 /
++			       MT6397_FGADC_SENSE_MOHM;
++			*val2 = 1000000;
++
++			return IIO_VAL_FRACTIONAL;
++		}
++
 +		/* millivolts per LSB, as a fraction to avoid rounding here */
 +		*val = MT6397_AUXADC_FULL_SCALE_MV * MT6397_AUXADC_VBAT_DIVIDER;
 +		*val2 = MT6397_AUXADC_PRECISION;
@@ -237,6 +331,10 @@ diff -urN dorig/drivers/iio/adc/mt6397-auxadc.c dw8/drivers/iio/adc/mt6397-auxad
 +	ret = devm_mutex_init(dev, &adc->lock);
 +	if (ret)
 +		return ret;
++
++	ret = mt6397_fgadc_enable(adc);
++	if (ret)
++		return dev_err_probe(dev, ret, "failed to start the fuel gauge\n");
 +
 +	indio_dev->name = "mt6397-auxadc";
 +	indio_dev->info = &mt6397_auxadc_info;

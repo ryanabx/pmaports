@@ -11,7 +11,7 @@ diff -urN a/arch/arm64/boot/dts/mediatek/Makefile b/arch/arm64/boot/dts/mediatek
  dtb-$(CONFIG_ARCH_MEDIATEK) += mt8173-elm-hana-rev7.dtb
 --- a/arch/arm64/boot/dts/mediatek/mt8173-amazon-suez.dts
 +++ b/arch/arm64/boot/dts/mediatek/mt8173-amazon-suez.dts
-@@ -0,0 +1,1324 @@
+@@ -0,0 +1,1333 @@
 +// SPDX-License-Identifier: (GPL-2.0 OR MIT)
 +/*
 + * Copyright (c) 2026 Ryan Brue <ryanbrue.dev@gmail.com>
@@ -149,6 +149,15 @@ diff -urN a/arch/arm64/boot/dts/mediatek/Makefile b/arch/arm64/boot/dts/mediatek
 +		voltage-min-design-microvolt = <3410000>;
 +		voltage-max-design-microvolt = <4340000>;
 +		charge-full-design-microamp-hours = <6413000>;
++		/*
++		 * Measured on hardware, not taken from a datasheet: unplugging
++		 * the charger moved the terminal voltage 82.8 mV across a
++		 * 965.9 mA change in current, which is 86 mOhm for the pack
++		 * plus its wiring. The vendor's own 25 C resistance profile
++		 * sits at 65-70 for the cell alone, so the extra is harness
++		 * and connector, as expected.
++		 */
++		factory-internal-resistance-micro-ohms = <86000>;
 +		ocv-capacity-celsius = <25>;
 +		ocv-capacity-table-0 = <4340000 100>,
 +				       <4267000 95>,
@@ -175,8 +184,8 @@ diff -urN a/arch/arm64/boot/dts/mediatek/Makefile b/arch/arm64/boot/dts/mediatek
 +
 +	adc-battery {
 +		compatible = "adc-battery";
-+		io-channels = <&pmic_auxadc 0>;
-+		io-channel-names = "voltage";
++		io-channels = <&pmic_auxadc 0>, <&pmic_auxadc 1>;
++		io-channel-names = "voltage", "current";
 +		monitored-battery = <&battery>;
 +		/*
 +		 * Without this, power_supply_am_i_supplied() finds no
