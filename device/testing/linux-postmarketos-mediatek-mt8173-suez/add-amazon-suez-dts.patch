@@ -12,7 +12,7 @@ diff --git a/arch/arm64/boot/dts/mediatek/Makefile b/arch/arm64/boot/dts/mediate
 diff --git a/arch/arm64/boot/dts/mediatek/mt8173-amazon-suez.dts b/arch/arm64/boot/dts/mediatek/mt8173-amazon-suez.dts
 --- a/arch/arm64/boot/dts/mediatek/mt8173-amazon-suez.dts
 +++ b/arch/arm64/boot/dts/mediatek/mt8173-amazon-suez.dts
-@@ -0,0 +1,419 @@
+@@ -0,0 +1,462 @@
 +// SPDX-License-Identifier: (GPL-2.0 OR MIT)
 +/*
 + * Copyright (c) 2026 Ryan Brue <ryanbrue.dev@gmail.com>
@@ -22,6 +22,7 @@ diff --git a/arch/arm64/boot/dts/mediatek/mt8173-amazon-suez.dts b/arch/arm64/bo
 +
 +/dts-v1/;
 +#include <dt-bindings/gpio/gpio.h>
++#include <dt-bindings/input/linux-event-codes.h>
 +#include "mt8173.dtsi"
 +
 +/ {
@@ -149,9 +150,43 @@ diff --git a/arch/arm64/boot/dts/mediatek/mt8173-amazon-suez.dts b/arch/arm64/bo
 +&pwrap {
 +	pmic: pmic {
 +		compatible = "mediatek,mt6397";
-+		interrupts-extended = <&pio 11 IRQ_TYPE_LEVEL_HIGH>;
++		/*
++		 * EINT 5, not the 11 that mt8173-elm and mt8173-evb use. All three
++		 * suez board revisions (hvt/evt/dvt) route the PMIC interrupt to
++		 * EINT 5 in the vendor DTB. With 11 the parent line never fires --
++		 * /proc/interrupts shows mt6397-pmic on mt-eint 11 stuck at 0 -- so
++		 * no PMIC child interrupt is ever delivered, which costs the power
++		 * key and the RTC alarm.
++		 */
++		interrupts-extended = <&pio 5 IRQ_TYPE_LEVEL_HIGH>;
 +		interrupt-controller;
 +		#interrupt-cells = <2>;
++
++		mt6397rtc: rtc {
++			compatible = "mediatek,mt6397-rtc";
++		};
++
++		mt6397clk: mt6397clock {
++			compatible = "mediatek,mt6397-clk";
++			#clock-cells = <1>;
++		};
++
++		mt6397pin: pinctrl {
++			compatible = "mediatek,mt6397-pinctrl";
++			gpio-controller;
++			#gpio-cells = <2>;
++		};
++
++		mt6397keys: mt6397keys {
++			compatible = "mediatek,mt6397-keys";
++			mediatek,long-press-mode = <1>;
++			power-off-time-sec = <0>;
++
++			power {
++				linux,keycodes = <KEY_POWER>;
++				wakeup-source;
++			};
++		};
 +
 +		regulators {
 +			compatible = "mediatek,mt6397-regulator";
@@ -431,4 +466,12 @@ diff --git a/arch/arm64/boot/dts/mediatek/mt8173-amazon-suez.dts b/arch/arm64/bo
 +	dr_mode = "peripheral";
 +	maximum-speed = "high-speed";
 +	status = "okay";
++};
++
++&cpu0 {
++	proc-supply = <&mt6397_vpca15_reg>;
++};
++
++&cpu1 {
++	proc-supply = <&mt6397_vpca15_reg>;
 +};
