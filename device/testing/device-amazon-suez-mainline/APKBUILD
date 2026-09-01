@@ -3,7 +3,7 @@ maintainer="Ryan Brue <ryanbrue.dev@gmail.com>"
 pkgname=device-amazon-suez-mainline
 pkgdesc="Amazon Fire HD 10 (2017) (mainline)"
 pkgver=1
-pkgrel=5
+pkgrel=6
 url="https://postmarketos.org"
 license="MIT"
 arch="aarch64"
@@ -18,6 +18,9 @@ source="
 	deviceinfo
 	kernel-cmdline.conf
 	modules-initfs
+	suez-bcb-arm.sh
+	suez-bcb-disarm
+	suez-bcb-disarm.service
 "
 
 build() {
@@ -26,10 +29,37 @@ build() {
 
 package() {
 	devicepkg_package $startdir $pkgname
+
+	# Mask nftables. This kernel is deliberately built without IPv6, so
+	# NF_TABLES_INET -- which selects NF_TABLES_IPV6 -- does not exist, and
+	# the shipped rule set cannot load its "table inet" rules:
+	#   nft add table inet t  ->  Error: Could not process rule: Not supported
+	# A firewall buys little on a USB-only link, so the unit is masked here
+	# rather than spending the image budget on IPv6. The mask lives in /etc
+	# on purpose: /usr/lib/systemd/system/nftables.service belongs to the
+	# nftables package and putting a symlink there would be a file conflict.
+	install -d "$pkgdir"/etc/systemd/system
+	ln -s /dev/null "$pkgdir"/etc/systemd/system/nftables.service
+
+	# Recovery fallback: the initramfs hook arms LK's bootloader control
+	# block, and the service clears it once the boot has succeeded. See the
+	# comments in those files.
+	install -Dm755 "$srcdir"/suez-bcb-arm.sh \
+		"$pkgdir"/usr/share/mkinitfs/hooks/00-suez-bcb-arm.sh
+	install -Dm755 "$srcdir"/suez-bcb-disarm \
+		"$pkgdir"/usr/sbin/suez-bcb-disarm
+	install -Dm644 "$srcdir"/suez-bcb-disarm.service \
+		"$pkgdir"/usr/lib/systemd/system/suez-bcb-disarm.service
+	install -d "$pkgdir"/usr/lib/systemd/system/multi-user.target.wants
+	ln -s ../suez-bcb-disarm.service \
+		"$pkgdir"/usr/lib/systemd/system/multi-user.target.wants/suez-bcb-disarm.service
 }
 
 sha512sums="
 a1c7602bfd1eb0b431c1e96d592dfaf5da7e5498c3adfad756b6d73fe37b7889ea6c6d0fb681727796a3c95cbd247040d764ba6f477354a43cf8836887ecbedd  deviceinfo
-c635bf5f008e66713d021a9a7820ac434193471d7e6d26cc1594741b41cb6f79d80cf6810a98fe95137a589c5a52807904203d8bcbf3dab5f7637a01b1684fa7  kernel-cmdline.conf
+3ee14222402ea8f7aa42712559a76fa87baafbe0b74052ee56ade4257775cf0efd9c841ed3cd7bfefbf3ddb7ee915fc6e0621ab9a6a36b6c5fd3cc844cd7de85  kernel-cmdline.conf
 d89fa6205d2ec177514a6e47877f27c7c69745d30994e36597ac6940c114a71868940d7050ba67dc5a260dc338ca5d789c521e35c37d7f2d3645762ab02101a9  modules-initfs
+fbdb7d4e8dbd03258dca7b1147130865513cf45599bd9f83e253079d1dfe009c890198adc2bbb14773d0d20822fe13898bbc2f9e1a0e5ce4b6acfbd4ea64eca2  suez-bcb-arm.sh
+33b6cca3c1c822781f5a8da665d60843239152344b7d585081eb531adb30933631487c8f422893e0a2e274307c7537c97284016634370620a41badccb3a4efd9  suez-bcb-disarm
+aaf34e1a660df1fe4782b8a130ab7cd9477c39eb559f48f3ee78aa01673666491087d9f0ed6403b33fafddf61411f5a1efa0ba101c86934df0fdae24c712f3c5  suez-bcb-disarm.service
 "
