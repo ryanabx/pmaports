@@ -1,0 +1,200 @@
+--- a/sound/soc/mediatek/mt8173/mt8173-afe-pcm.c
++++ b/sound/soc/mediatek/mt8173/mt8173-afe-pcm.c
+@@ -63,6 +63,14 @@
+ #define AFE_ADDA_TOP_CON0	0x0120
+ #define AFE_ADDA2_TOP_CON0	0x0600
+ 
++#define AFE_ADDA_DL_SRC2_CON0	0x0108
++#define AFE_ADDA_DL_SRC2_CON1	0x010c
++#define AFE_ADDA_UL_SRC_CON0	0x0114
++#define AFE_ADDA_UL_DL_CON0	0x0124
++#define AFE_ADDA_NEWIF_CFG1	0x013c
++#define AFE_ADDA_PREDIS_CON0	0x0260
++#define AFE_ADDA_PREDIS_CON1	0x0264
++
+ #define AFE_HDMI_OUT_CON0	0x0370
+ 
+ #define AFE_IRQ_MCU_CON		0x03a0
+@@ -80,6 +88,9 @@
+ #define AFE_IRQ_STATUS_BITS	0xff
+ 
+ /* AUDIO_TOP_CON0 (0x0000) */
++#define AUD_TCON0_PDN_DAC_PREDIS	(0x1 << 26)
++#define AUD_TCON0_PDN_DAC		(0x1 << 25)
++#define AUD_TCON0_PDN_ADC		(0x1 << 24)
+ #define AUD_TCON0_PDN_SPDF		(0x1 << 21)
+ #define AUD_TCON0_PDN_HDMI		(0x1 << 20)
+ #define AUD_TCON0_PDN_24M		(0x1 << 9)
+@@ -237,6 +248,118 @@
+ 	regmap_update_bits(afe->regmap, AFE_I2S_CON1, 0x1, enable);
+ }
+ 
++/*
++ * The DL_SRC2 sample rate field uses a contiguous encoding, unlike the
++ * sparse one of the I2S CON registers.
++ */
++static int mt8173_afe_adda_dl_rate(unsigned int rate)
++{
++	switch (rate) {
++	case 8000: return 0;
++	case 11025: return 1;
++	case 12000: return 2;
++	case 16000: return 3;
++	case 22050: return 4;
++	case 24000: return 5;
++	case 32000: return 6;
++	case 44100: return 7;
++	case 48000: return 8;
++	}
++	return -EINVAL;
++}
++
++static int mt8173_afe_adda_startup(struct snd_pcm_substream *substream,
++				   struct snd_soc_dai *dai)
++{
++	struct mtk_base_afe *afe = snd_soc_dai_get_drvdata(dai);
++
++	if (snd_soc_dai_active(dai))
++		return 0;
++
++	regmap_update_bits(afe->regmap, AUDIO_TOP_CON0,
++			   AUD_TCON0_PDN_DAC_PREDIS | AUD_TCON0_PDN_DAC |
++			   AUD_TCON0_PDN_ADC, 0);
++	return 0;
++}
++
++static void mt8173_afe_adda_shutdown(struct snd_pcm_substream *substream,
++				     struct snd_soc_dai *dai)
++{
++	struct mtk_base_afe *afe = snd_soc_dai_get_drvdata(dai);
++
++	if (snd_soc_dai_active(dai))
++		return;
++
++	regmap_update_bits(afe->regmap, AFE_ADDA_DL_SRC2_CON0, 0x1, 0);
++	regmap_update_bits(afe->regmap, AFE_I2S_CON1, 0x1, 0);
++	regmap_update_bits(afe->regmap, AFE_ADDA_UL_SRC_CON0, 0x1, 0);
++	regmap_update_bits(afe->regmap, AFE_ADDA_UL_DL_CON0, 0x1, 0);
++	regmap_update_bits(afe->regmap, AUDIO_TOP_CON0,
++			   AUD_TCON0_PDN_DAC_PREDIS | AUD_TCON0_PDN_DAC |
++			   AUD_TCON0_PDN_ADC,
++			   AUD_TCON0_PDN_DAC_PREDIS | AUD_TCON0_PDN_DAC |
++			   AUD_TCON0_PDN_ADC);
++}
++
++static int mt8173_afe_adda_prepare(struct snd_pcm_substream *substream,
++				   struct snd_soc_dai *dai)
++{
++	struct mtk_base_afe *afe = snd_soc_dai_get_drvdata(dai);
++	unsigned int rate = substream->runtime->rate;
++
++	if (substream->stream == SNDRV_PCM_STREAM_PLAYBACK) {
++		int dl_rate = mt8173_afe_adda_dl_rate(rate);
++		int fs = mt8173_afe_i2s_fs(rate);
++		unsigned int con0;
++
++		if (dl_rate < 0 || fs < 0)
++			return -EINVAL;
++
++		/* no pre-distortion */
++		regmap_write(afe->regmap, AFE_ADDA_PREDIS_CON0, 0);
++		regmap_write(afe->regmap, AFE_ADDA_PREDIS_CON1, 0);
++
++		/* downlink sample rate converter, -0.3 dB as the vendor does */
++		con0 = (dl_rate << 28) | (0x03 << 24) | (0x03 << 11) | (0x01 << 1);
++		if (rate == 8000 || rate == 16000)
++			con0 |= 0x01 << 5;	/* voice mode */
++		regmap_write(afe->regmap, AFE_ADDA_DL_SRC2_CON0, con0);
++		regmap_write(afe->regmap, AFE_ADDA_DL_SRC2_CON1, 0xf74f0000);
++
++		/* internal I2S towards the DAC: 16 bit, normal clock */
++		regmap_update_bits(afe->regmap, AFE_I2S_CON1,
++				   ~(u32)AFE_I2S_CON1_EN,
++				   AFE_I2S_CON1_RATE(fs) |
++				   AFE_I2S_CON1_FORMAT_I2S);
++
++		regmap_update_bits(afe->regmap, AFE_ADDA_DL_SRC2_CON0, 0x1, 0x1);
++		regmap_update_bits(afe->regmap, AFE_I2S_CON1, 0x1, 0x1);
++	} else {
++		unsigned int voice_mode;
++
++		switch (rate) {
++		case 8000:  voice_mode = 0; break;
++		case 16000: voice_mode = 1; break;
++		case 32000: voice_mode = 2; break;
++		case 48000: voice_mode = 3; break;
++		default:
++			return -EINVAL;
++		}
++
++		/* I03/I04 from the internal ADC, i.e. the PMIC */
++		regmap_update_bits(afe->regmap, AFE_ADDA_TOP_CON0, 0x1, 0x0);
++		regmap_update_bits(afe->regmap, AFE_ADDA_UL_SRC_CON0,
++				   0x001e0000,
++				   ((voice_mode << 2) | voice_mode) << 17);
++		regmap_update_bits(afe->regmap, AFE_ADDA_NEWIF_CFG1,
++				   0xc00, ((voice_mode < 3) ? 1 : 3) << 10);
++		regmap_update_bits(afe->regmap, AFE_ADDA_UL_SRC_CON0, 0x1, 0x1);
++	}
++
++	regmap_update_bits(afe->regmap, AFE_ADDA_UL_DL_CON0, 0x1, 0x1);
++	return 0;
++}
++
+ static int mt8173_afe_dais_enable_clks(struct mtk_base_afe *afe,
+ 				       struct clk *m_ck, struct clk *b_ck)
+ {
+@@ -520,6 +643,12 @@
+ 	.prepare	= mt8173_afe_i2s_prepare,
+ };
+ 
++static const struct snd_soc_dai_ops mt8173_afe_adda_ops = {
++	.startup	= mt8173_afe_adda_startup,
++	.shutdown	= mt8173_afe_adda_shutdown,
++	.prepare	= mt8173_afe_adda_prepare,
++};
++
+ static const struct snd_soc_dai_ops mt8173_afe_hdmi_ops = {
+ 	.startup	= mt8173_afe_hdmi_startup,
+ 	.shutdown	= mt8173_afe_hdmi_shutdown,
+@@ -571,6 +700,25 @@
+ 		},
+ 		.ops = &mt8173_afe_i2s_ops,
+ 		.symmetric_rate = 1,
++	}, {
++		.name = "ADDA",
++		.id = MT8173_AFE_IO_PMIC,
++		.playback = {
++			.stream_name = "ADDA Playback",
++			.channels_min = 1,
++			.channels_max = 2,
++			.rates = SNDRV_PCM_RATE_8000_48000,
++			.formats = SNDRV_PCM_FMTBIT_S16_LE,
++		},
++		.capture = {
++			.stream_name = "ADDA Capture",
++			.channels_min = 1,
++			.channels_max = 2,
++			.rates = SNDRV_PCM_RATE_8000 | SNDRV_PCM_RATE_16000 |
++				 SNDRV_PCM_RATE_32000 | SNDRV_PCM_RATE_48000,
++			.formats = SNDRV_PCM_FMTBIT_S16_LE,
++		},
++		.ops = &mt8173_afe_adda_ops,
+ 	},
+ };
+ 
+@@ -650,10 +798,14 @@
+ 	{"I06", NULL, "DL1"},
+ 	{"I2S Playback", NULL, "O03"},
+ 	{"I2S Playback", NULL, "O04"},
++	{"ADDA Playback", NULL, "O03"},
++	{"ADDA Playback", NULL, "O04"},
+ 	{"VUL", NULL, "O09"},
+ 	{"VUL", NULL, "O10"},
+ 	{"I03", NULL, "I2S Capture"},
+ 	{"I04", NULL, "I2S Capture"},
++	{"I03", NULL, "ADDA Capture"},
++	{"I04", NULL, "ADDA Capture"},
+ 	{"I17", NULL, "I2S Capture"},
+ 	{"I18", NULL, "I2S Capture"},
+ 	{ "O03", "I05 Switch", "I05" },

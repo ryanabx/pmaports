@@ -12,7 +12,7 @@ diff --git a/arch/arm64/boot/dts/mediatek/Makefile b/arch/arm64/boot/dts/mediate
 diff --git a/arch/arm64/boot/dts/mediatek/mt8173-amazon-suez.dts b/arch/arm64/boot/dts/mediatek/mt8173-amazon-suez.dts
 --- a/arch/arm64/boot/dts/mediatek/mt8173-amazon-suez.dts
 +++ b/arch/arm64/boot/dts/mediatek/mt8173-amazon-suez.dts
-@@ -0,0 +1,1011 @@
+@@ -0,0 +1,1102 @@
 +// SPDX-License-Identifier: (GPL-2.0 OR MIT)
 +/*
 + * Copyright (c) 2026 Ryan Brue <ryanbrue.dev@gmail.com>
@@ -46,6 +46,16 @@ diff --git a/arch/arm64/boot/dts/mediatek/mt8173-amazon-suez.dts b/arch/arm64/bo
 +	version = "dvt";
 +
 +	aliases {
++		/*
++		 * Without these the MMC host indices come from probe order, so
++		 * enabling the SD slot renamed the eMMC from mmcblk0 to
++		 * mmcblk1. That is not cosmetic: every flashing instruction
++		 * for this device addresses boot_x as /dev/mmcblk0p11, and
++		 * with the SD controller holding index 0 that path points at
++		 * the card slot instead. Pin them.
++		 */
++		mmc0 = &mmc0;
++
 +		serial0 = &uart0;
 +	};
 +
@@ -115,6 +125,60 @@ diff --git a/arch/arm64/boot/dts/mediatek/mt8173-amazon-suez.dts b/arch/arm64/bo
 +	 * device-amazon-suez-mainline ships a HandleLidSwitch=ignore drop-in.
 +	 * Revisit both together if suspend is ever made to work.
 +	 */
++	/*
++	 * Battery gauge. There is no fuel gauge on this board: the BQ24297 is
++	 * a charger with no ADC, and the SoC AUXADC is wired to thermistors,
++	 * so the only measurement available is the pack voltage from the PMIC
++	 * AUXADC (see &pmic_auxadc). That makes this a voltage-based estimate
++	 * with no coulomb counting -- it drifts under load and recovers at
++	 * rest, which is the best that can be done without the MediaTek
++	 * battery-meter model the vendor uses.
++	 *
++	 * The curve is the vendor's battery_profile_t2 (25 C) for the ATL
++	 * pack, from suez_bat_setting.dtsi, converted from its
++	 * <depth_of_discharge mV> form to <microvolt capacity_percent> and
++	 * sampled every 5%. Like the panel, suez shipped with two cell
++	 * vendors: battery_atl_setting and battery_dsy_setting. Their curves
++	 * differ by a mean of 8 mV and at most 58 mV across the shared depths,
++	 * so one table serves both to within a couple of percent, and the
++	 * prototype profile is identical to the ATL one.
++	 */
++	battery: battery {
++		compatible = "simple-battery";
++		voltage-min-design-microvolt = <3410000>;
++		voltage-max-design-microvolt = <4340000>;
++		charge-full-design-microamp-hours = <6413000>;
++		ocv-capacity-celsius = <25>;
++		ocv-capacity-table-0 = <4340000 100>,
++				       <4267000 95>,
++				       <4209000 90>,
++				       <4153000 85>,
++				       <4101000 80>,
++				       <4063000 75>,
++				       <3989000 70>,
++				       <3965000 65>,
++				       <3927000 60>,
++				       <3886000 55>,
++				       <3847000 50>,
++				       <3823000 45>,
++				       <3805000 40>,
++				       <3791000 35>,
++				       <3780000 30>,
++				       <3765000 25>,
++				       <3746000 20>,
++				       <3725000 15>,
++				       <3694000 10>,
++				       <3684000 5>,
++				       <3410000 0>;
++	};
++
++	adc-battery {
++		compatible = "adc-battery";
++		io-channels = <&pmic_auxadc 0>;
++		io-channel-names = "voltage";
++		monitored-battery = <&battery>;
++	};
++
 +	lid-switch {
 +		compatible = "gpio-keys";
 +		pinctrl-names = "default";
@@ -210,6 +274,33 @@ diff --git a/arch/arm64/boot/dts/mediatek/mt8173-amazon-suez.dts b/arch/arm64/bo
 +		mt6397clk: mt6397clock {
 +			compatible = "mediatek,mt6397-clk";
 +			#clock-cells = <1>;
++		};
++
++		/*
++		 * The PMIC's auxiliary ADC. It is the only way to read the
++		 * battery voltage on this board: the SoC AUXADC channels are
++		 * board thermistors (the vendor's cust_adc.dtsi describes only
++		 * temperature0/1 plus an RF channel), and the BQ24297 is a
++		 * charger with no ADC, which is why bq24190-battery reports
++		 * neither voltage_now nor capacity and upower logs "nan".
++		 *
++		 * Register layout taken from the vendor kernel
++		 * (drivers/misc/mediatek/power/mt8173/pmic_auxadc.c plus the
++		 * generated accessors in upmu_sw.h/upmu_hw.h): CON1 at 0x0544
++		 * carries CHSEL in bits 10:7 and START in bit 0, and channel
++		 * 0's 10-bit result plus its ready bit live in ADC0 at 0x0514.
++		 * Channel 0 is V_BAT, scaled by R_BAT_SENSE = 4 over a 1.2 V,
++		 * 1024-step conversion.
++		 *
++		 * Sanity check before any of this was written: the bootloader
++		 * leaves a stale channel-0 result of 0x34a in ADC0, readable
++		 * through the pwrap regmap in debugfs, and 842 * 4 * 1200 /
++		 * 1024 = 3947 mV -- a plausible pack voltage. It never changes,
++		 * which is what shows nothing in mainline was driving the ADC.
++		 */
++		pmic_auxadc: adc {
++			compatible = "mediatek,mt6397-auxadc";
++			#io-channel-cells = <1>;
 +		};
 +
 +		mt6397pin: pinctrl {
