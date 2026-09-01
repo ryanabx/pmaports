@@ -12,7 +12,7 @@ diff --git a/arch/arm64/boot/dts/mediatek/Makefile b/arch/arm64/boot/dts/mediate
 diff --git a/arch/arm64/boot/dts/mediatek/mt8173-amazon-suez.dts b/arch/arm64/boot/dts/mediatek/mt8173-amazon-suez.dts
 --- a/arch/arm64/boot/dts/mediatek/mt8173-amazon-suez.dts
 +++ b/arch/arm64/boot/dts/mediatek/mt8173-amazon-suez.dts
-@@ -0,0 +1,644 @@
+@@ -0,0 +1,818 @@
 +// SPDX-License-Identifier: (GPL-2.0 OR MIT)
 +/*
 + * Copyright (c) 2026 Ryan Brue <ryanbrue.dev@gmail.com>
@@ -656,4 +656,178 @@ diff --git a/arch/arm64/boot/dts/mediatek/mt8173-amazon-suez.dts b/arch/arm64/bo
 +	proc-supply = <&mt6311_vcpu_reg>;
 +	sram-supply = <&mt6397_vsramca7_reg>;
 +	enable-method = "mediatek,mt8173-smp";
++};
++
++/*
++ * Display.
++ *
++ * mt8173.dtsi ships dsi0 and dpi0 as status = "disabled", and mediatek-drm
++ * will not build a CRTC without them:
++ *
++ *   Not creating crtc 0 because component 14 is disabled or missing
++ *   Not creating crtc 0 because component 10 is disabled or missing
++ *   Need at least one OVL device
++ *
++ * Component 14 is DDP_COMPONENT_DSI0 and 10 is DDP_COMPONENT_DPI0; the rest of
++ * mt8173's main path (ovl0, color0, aal0, od0, rdma0, ufoe) is already enabled
++ * by the dtsi and binds. Only dsi0 is enabled here -- dpi0 feeds the HDMI
++ * bridge, which this board does not bring out.
++ *
++ * The simple-framebuffer in /chosen is deliberately left in place for now. It
++ * is what gives us /dev/fb0 today, and keeping it means a panel that fails to
++ * light does not also cost us the console we would need to debug it. Drop it
++ * once mediatek-drm is proven, since its fbdev emulation supersedes it.
++ */
++
++/ {
++	/*
++	 * The backlight's enable pin hangs off the PMIC's own GPIO 14 (vendor
++	 * gpio_en = <&pio6397 14 0>). lp855x wants an enable *regulator*
++	 * rather than a GPIO, so wrap the pin in a fixed regulator.
++	 */
++	backlight_enable: regulator-backlight-enable {
++		compatible = "regulator-fixed";
++		regulator-name = "backlight_enable";
++		gpio = <&mt6397pin 14 GPIO_ACTIVE_HIGH>;
++		enable-active-high;
++	};
++};
++
++&i2c4 {
++	/*
++	 * TI LP8557 backlight. Every value here is from the vendor's
++	 * &lp8557_bl node: register-based control (mode = <1>), dev-ctrl 0x47
++	 * (LP8557_COMB2_CONFIG | LP8557_PWM_FILTER | LP8557_DISABLE_LEDS), and
++	 * the five EEPROM registers it programs at init.
++	 *
++	 * LK already lights the backlight, so this mostly takes over a running
++	 * part. What it buys is brightness control and a defined state across
++	 * a DPMS cycle.
++	 */
++	status = "okay";
++	clock-frequency = <400000>;
++
++	backlight_lcd: backlight@2c {
++		compatible = "ti,lp8557";
++		reg = <0x2c>;
++		enable-supply = <&backlight_enable>;
++
++		dev-ctrl = /bits/ 8 <0x47>;
++		init-brt = /bits/ 8 <0x64>;
++
++		/* 4 V OV, 4 output LED strings enabled */
++		rom-14h {
++			rom-addr = /bits/ 8 <0x14>;
++			rom-val = /bits/ 8 <0x0f>;
++		};
++		/* boost frequency 1 MHz */
++		rom-13h {
++			rom-addr = /bits/ 8 <0x13>;
++			rom-val = /bits/ 8 <0x01>;
++		};
++		/* 19.5 kHz */
++		rom-12h {
++			rom-addr = /bits/ 8 <0x12>;
++			rom-val = /bits/ 8 <0x2b>;
++		};
++		/* light smoothing, 100 ms */
++		rom-15h {
++			rom-addr = /bits/ 8 <0x15>;
++			rom-val = /bits/ 8 <0x42>;
++		};
++		/* max boost voltage 28 V, adaptive */
++		rom-16h {
++			rom-addr = /bits/ 8 <0x16>;
++			rom-val = /bits/ 8 <0xe0>;
++		};
++	};
++};
++
++/*
++ * The DSI D-PHY. mt8173.dtsi ships it disabled, and it is also the "hs" clock
++ * provider for dsi0:
++ *
++ *   clocks = <&mmsys CLK_MM_DSI0_ENGINE>, <&mmsys CLK_MM_DSI0_DIGITAL>,
++ *            <&mipi_tx0>;
++ *   clock-names = "engine", "digital", "hs";
++ *
++ * so leaving it disabled costs the clock, not just the PHY, and mtk-dsi fails
++ * its probe outright:
++ *
++ *   mtk-dsi 1401b000.dsi: error -ENOENT: Failed to get hs clock
++ *   mtk-dsi 1401b000.dsi: probe with driver mtk-dsi failed with error -2
++ *
++ * mt8173-elm enables it the same way, with nothing but a status.
++ */
++&mipi_tx0 {
++	status = "okay";
++};
++
++/*
++ * The display PWM. Nothing on this board uses it -- the LP8557 backlight is
++ * driven over I2C in register mode, and the vendor left its PWM-based variant
++ * commented out -- but mediatek-drm still needs the node to exist.
++ *
++ * mt8173's main display path is
++ *   OVL0 -> COLOR0 -> AAL0 -> OD0 -> RDMA0 -> UFOE -> DSI0 -> PWM0
++ * and mtk_ddp_path_available() requires a device node for *every* component in
++ * it. With pwm0 disabled the whole path is unavailable, so the DSI is not in
++ * any path mediatek-drm knows about and its bind fails:
++ *
++ *   [drm] Failed to find comp in ddp table, ret = -22
++ *   mediatek-drm: failed to bind 1401b000.dsi: -22
++ *
++ * OD0 and UFOE need no driver, so they never show up in the component match
++ * list; only their nodes matter, and mt8173.dtsi already enables those.
++ */
++&pwm0 {
++	status = "okay";
++};
++
++&dsi0 {
++	status = "okay";
++	#address-cells = <1>;
++	#size-cells = <0>;
++
++	panel@0 {
++		compatible = "novatek,nt51021";
++		reg = <0>;
++
++		/* vendor &lcm: reg-lcm-supply = <&mt6397_vgp6_reg>, 3V3_LCM_VCC33 */
++		power-supply = <&mt6397_vgp6_reg>;
++
++		/*
++		 * Vendor gpio_lcm_rst_en = <&pio 105 0>, driven low to assert
++		 * reset and high to release it, i.e. active low.
++		 */
++		reset-gpios = <&pio 105 GPIO_ACTIVE_LOW>;
++
++		/*
++		 * Panel-vendor ID straps, in the order <id0>, <id1>: vendor
++		 * lcm_id0_gpio = <&pio 102 0>, lcm_id1_gpio = <&pio 103 0>.
++		 * The driver reads them to choose between the Innolux and BOE
++		 * register sets, exactly as the vendor LCM driver does. suez
++		 * shipped with both panels, so this cannot be settled by the
++		 * compatible string.
++		 *
++		 * These are otherwise-unused MSDC2 pads; nothing else in this
++		 * DTS claims pio 102-105.
++		 */
++		lcm-id-gpios = <&pio 102 GPIO_ACTIVE_HIGH>,
++			       <&pio 103 GPIO_ACTIVE_HIGH>;
++
++		backlight = <&backlight_lcd>;
++
++		port {
++			panel_in: endpoint {
++				remote-endpoint = <&dsi0_out>;
++			};
++		};
++	};
++
++	port {
++		dsi0_out: endpoint {
++			remote-endpoint = <&panel_in>;
++		};
++	};
 +};

@@ -1,0 +1,460 @@
+diff -urN porig/drivers/gpu/drm/panel/Kconfig pnew/drivers/gpu/drm/panel/Kconfig
+--- porig/drivers/gpu/drm/panel/Kconfig	1970-01-01 00:00:00.000000000 +0000
++++ pnew/drivers/gpu/drm/panel/Kconfig	1970-01-01 00:00:00.000000000 +0000
+@@ -635,6 +635,17 @@
+ 	  Say Y here if you want to enable support for the panels built
+ 	  around the Novatek NT39016 display controller.
+ 
++config DRM_PANEL_NOVATEK_NT51021
++	tristate "Novatek NT51021 1200x1920 DSI video mode panel"
++	depends on OF
++	depends on DRM_MIPI_DSI
++	depends on BACKLIGHT_CLASS_DEVICE
++	help
++	  Say Y here if you want to enable support for the Novatek NT51021
++	  1200x1920 DSI video mode panel, as found in the Amazon Fire HD 10
++	  (2017). Both the Innolux and BOE variants are supported; they are
++	  told apart at runtime from the board's panel ID straps.
++
+ config DRM_PANEL_OLIMEX_LCD_OLINUXINO
+ 	tristate "Olimex LCD-OLinuXino panel"
+ 	depends on OF
+diff -urN porig/drivers/gpu/drm/panel/Makefile pnew/drivers/gpu/drm/panel/Makefile
+--- porig/drivers/gpu/drm/panel/Makefile	1970-01-01 00:00:00.000000000 +0000
++++ pnew/drivers/gpu/drm/panel/Makefile	1970-01-01 00:00:00.000000000 +0000
+@@ -62,6 +62,7 @@
+ obj-$(CONFIG_DRM_PANEL_NOVATEK_NT37700F) += panel-novatek-nt37700f.o
+ obj-$(CONFIG_DRM_PANEL_NOVATEK_NT37801) += panel-novatek-nt37801.o
+ obj-$(CONFIG_DRM_PANEL_NOVATEK_NT39016) += panel-novatek-nt39016.o
++obj-$(CONFIG_DRM_PANEL_NOVATEK_NT51021) += panel-novatek-nt51021.o
+ obj-$(CONFIG_DRM_PANEL_MANTIX_MLAF057WE51) += panel-mantix-mlaf057we51.o
+ obj-$(CONFIG_DRM_PANEL_OLIMEX_LCD_OLINUXINO) += panel-olimex-lcd-olinuxino.o
+ obj-$(CONFIG_DRM_PANEL_ORISETECH_OTA5601A) += panel-orisetech-ota5601a.o
+diff -urN porig/drivers/gpu/drm/panel/panel-novatek-nt51021.c pnew/drivers/gpu/drm/panel/panel-novatek-nt51021.c
+--- porig/drivers/gpu/drm/panel/panel-novatek-nt51021.c	1970-01-01 00:00:00.000000000 +0000
++++ pnew/drivers/gpu/drm/panel/panel-novatek-nt51021.c	1970-01-01 00:00:00.000000000 +0000
+@@ -0,0 +1,424 @@
++// SPDX-License-Identifier: GPL-2.0-only
++/*
++ * Novatek NT51021 1200x1920 DSI video-mode panel
++ *
++ * Found in the Amazon Fire HD 10 (2017, "suez"). Derived from the vendor
++ * LCM driver in the Amazon 3.18 tree,
++ * drivers/misc/mediatek/lcm/nt51021_wuxga_dsi_vdo/.
++ *
++ * The board ships with one of two glass vendors -- Innolux or BOE -- which
++ * need different register setups. They are told apart by two ID straps, and
++ * the vendor driver reads them at every init rather than trusting a compatible
++ * string, so this driver does the same: get the sequence wrong and the panel
++ * stays dark, which is not something a device tree should have to promise.
++ *
++ * Note on the command interface: this panel can take its control commands
++ * either over I2C or in-band over MIPI, and on the shipping ("dvt") boards it
++ * does NOT default to MIPI. Writing 0xa5 to register 0x8f forces commands to
++ * be accepted over DSI, and writing 0x00 hands the interface back. Every
++ * command this driver sends therefore has to sit inside such a window --
++ * including sleep in/out and display on/off, which is why they are not simply
++ * issued from enable()/disable() the way most panel drivers do it.
++ */
++
++#include <linux/delay.h>
++#include <linux/gpio/consumer.h>
++#include <linux/module.h>
++#include <linux/of.h>
++#include <linux/regulator/consumer.h>
++
++#include <drm/drm_mipi_dsi.h>
++#include <drm/drm_modes.h>
++#include <drm/drm_panel.h>
++#include <drm/drm_probe_helper.h>
++
++#include <video/mipi_display.h>
++
++/* Register 0x8f selects where the panel listens for commands. */
++#define NT51021_CMD_IF			0x8f
++#define NT51021_CMD_IF_FORCE_MIPI	0xa5
++#define NT51021_CMD_IF_RELEASE		0x00
++
++struct nt51021_cmd {
++	u8 reg;
++	u8 val;
++	u16 delay_ms;
++};
++
++/*
++ * Innolux. Taken verbatim from the vendor's init_lcm_registers() INX branch,
++ * minus the command-window writes, which this driver manages itself.
++ */
++static const struct nt51021_cmd nt51021_init_inx[] = {
++	{ 0x01, 0x00, 20 },	/* software reset */
++	{ 0x83, 0x00, 0 },	/* page select */
++	{ 0x84, 0x00, 0 },
++	{ 0x8c, 0x80, 0 },	/* GOP setting */
++	{ 0xc7, 0x50, 0 },	/* STV & RST falling timing */
++	{ 0xc5, 0x50, 0 },	/* GOP clock falling location */
++	{ 0x85, 0x04, 0 },	/* test mode 1 */
++	{ 0x86, 0x08, 0 },	/* test mode 2 */
++	{ 0xa9, 0x20, 0 },	/* enable TP_SYNC */
++	{ 0x83, 0xaa, 0 },	/* page select */
++	{ 0x84, 0x11, 0 },
++	{ 0x9c, 0x10, 0 },	/* test mode 3 */
++	{ 0xa9, 0x4b, 0 },	/* MIPI Rx drive strength, 85% */
++};
++
++/* BOE. Vendor's BOE branch, same treatment. */
++static const struct nt51021_cmd nt51021_init_boe[] = {
++	{ 0x01, 0x00, 20 },	/* software reset */
++	{ 0x83, 0x00, 0 },	/* page select */
++	{ 0x84, 0x00, 0 },
++	{ 0x8c, 0x80, 0 },	/* GOP setting */
++	{ 0xcd, 0x6c, 0 },	/* 3 dummy */
++	{ 0xc0, 0x8b, 0 },	/* GCH */
++	{ 0xc8, 0xf0, 0 },	/* GCH */
++	{ 0x97, 0x00, 0 },	/* resistor setting, 100 ohm */
++	{ 0x8b, 0x10, 0 },
++	{ 0xa9, 0x20, 0 },	/* enable TP_SYNC */
++	{ 0x83, 0xaa, 0 },	/* page select */
++	{ 0x84, 0x11, 0 },
++	{ 0xa9, 0x4b, 0 },	/* MIPI Rx drive strength, 85% */
++	{ 0x85, 0x04, 0 },	/* test mode 1 */
++	{ 0x86, 0x08, 0 },	/* test mode 2 */
++	{ 0x9c, 0x10, 0 },	/* test mode 3 */
++};
++
++struct nt51021_variant {
++	const char *name;
++	const struct nt51021_cmd *cmds;
++	unsigned int num_cmds;
++};
++
++/*
++ * Indexed by the ID straps, as the vendor computes them:
++ *   id = id1 | (id0 << 1)
++ * Only 0 (Innolux) and 1 (BOE) are populated; the vendor logs
++ * "Not supported yet" for the other two and leaves the panel uninitialised.
++ */
++static const struct nt51021_variant nt51021_variants[] = {
++	[0] = { "Innolux", nt51021_init_inx, ARRAY_SIZE(nt51021_init_inx) },
++	[1] = { "BOE",     nt51021_init_boe, ARRAY_SIZE(nt51021_init_boe) },
++};
++
++struct nt51021 {
++	struct drm_panel panel;
++	struct mipi_dsi_device *dsi;
++	struct regulator *supply;
++	struct gpio_desc *reset_gpio;
++	const struct nt51021_variant *variant;
++};
++
++static inline struct nt51021 *to_nt51021(struct drm_panel *panel)
++{
++	return container_of(panel, struct nt51021, panel);
++}
++
++/*
++ * A plain "write this value to that register" DCS write. The
++ * mipi_dsi_dcs_write_seq_multi() macro cannot be used for these: it stashes its
++ * payload in a static const array, so every byte has to be a compile-time
++ * constant, and both the register and the value here come from a table.
++ */
++static void nt51021_write(struct mipi_dsi_multi_context *ctx, u8 reg, u8 val)
++{
++	const u8 d[] = { reg, val };
++
++	mipi_dsi_dcs_write_buffer_multi(ctx, d, sizeof(d));
++}
++
++/*
++ * Open or close the in-band command window. Outside it the panel ignores DSI
++ * commands entirely, so every caller that wants to be heard must wrap its
++ * writes in a pair of these.
++ */
++static void nt51021_cmd_window(struct mipi_dsi_multi_context *ctx, bool open)
++{
++	nt51021_write(ctx, NT51021_CMD_IF,
++		      open ? NT51021_CMD_IF_FORCE_MIPI : NT51021_CMD_IF_RELEASE);
++	if (open)
++		mipi_dsi_msleep(ctx, 1);
++}
++
++static int nt51021_prepare(struct drm_panel *panel)
++{
++	struct nt51021 *ctx = to_nt51021(panel);
++	struct mipi_dsi_multi_context dsi_ctx = { .dsi = ctx->dsi };
++	unsigned int i;
++	int ret;
++
++	ret = regulator_enable(ctx->supply);
++	if (ret)
++		return ret;
++
++	/*
++	 * Vendor timing: reset held low for 20 ms, then 5 ms of settling before
++	 * the first command. The GPIO is active low in the device tree, so
++	 * "1" here means asserted.
++	 */
++	gpiod_set_value_cansleep(ctx->reset_gpio, 1);
++	msleep(20);
++	gpiod_set_value_cansleep(ctx->reset_gpio, 0);
++	msleep(5);
++
++	nt51021_cmd_window(&dsi_ctx, true);
++
++	for (i = 0; i < ctx->variant->num_cmds; i++) {
++		const struct nt51021_cmd *cmd = &ctx->variant->cmds[i];
++
++		nt51021_write(&dsi_ctx, cmd->reg, cmd->val);
++		if (cmd->delay_ms)
++			mipi_dsi_msleep(&dsi_ctx, cmd->delay_ms);
++	}
++
++	/*
++	 * The vendor sends Sleep Out here for BOE but not for Innolux, which
++	 * evidently comes out of its software reset already awake. Sending it
++	 * for both is harmless -- it is a no-op on an awake panel -- and means
++	 * the two variants leave prepare() in the same state.
++	 */
++	mipi_dsi_dcs_exit_sleep_mode_multi(&dsi_ctx);
++	mipi_dsi_msleep(&dsi_ctx, 120);
++
++	nt51021_cmd_window(&dsi_ctx, false);
++	mipi_dsi_msleep(&dsi_ctx, 5);
++
++	if (dsi_ctx.accum_err) {
++		gpiod_set_value_cansleep(ctx->reset_gpio, 1);
++		regulator_disable(ctx->supply);
++	}
++
++	return dsi_ctx.accum_err;
++}
++
++static int nt51021_enable(struct drm_panel *panel)
++{
++	struct nt51021 *ctx = to_nt51021(panel);
++	struct mipi_dsi_multi_context dsi_ctx = { .dsi = ctx->dsi };
++
++	nt51021_cmd_window(&dsi_ctx, true);
++	mipi_dsi_dcs_set_display_on_multi(&dsi_ctx);
++	nt51021_cmd_window(&dsi_ctx, false);
++	mipi_dsi_msleep(&dsi_ctx, 20);
++
++	return dsi_ctx.accum_err;
++}
++
++static int nt51021_disable(struct drm_panel *panel)
++{
++	struct nt51021 *ctx = to_nt51021(panel);
++	struct mipi_dsi_multi_context dsi_ctx = { .dsi = ctx->dsi };
++
++	nt51021_cmd_window(&dsi_ctx, true);
++	mipi_dsi_dcs_set_display_off_multi(&dsi_ctx);
++	nt51021_cmd_window(&dsi_ctx, false);
++
++	return dsi_ctx.accum_err;
++}
++
++static int nt51021_unprepare(struct drm_panel *panel)
++{
++	struct nt51021 *ctx = to_nt51021(panel);
++	struct mipi_dsi_multi_context dsi_ctx = { .dsi = ctx->dsi };
++
++	/* Vendor lcm_suspend(): force MIPI, Sleep In, 50 ms. */
++	nt51021_cmd_window(&dsi_ctx, true);
++	mipi_dsi_dcs_enter_sleep_mode_multi(&dsi_ctx);
++	mipi_dsi_msleep(&dsi_ctx, 50);
++
++	gpiod_set_value_cansleep(ctx->reset_gpio, 1);
++	regulator_disable(ctx->supply);
++
++	return dsi_ctx.accum_err;
++}
++
++/*
++ * Timings from the vendor's lcm_get_params(): 1200x1920, hsync 1 / hbp 32 /
++ * hfp 110, vsync 1 / vbp 14 / vfp 11. That gives htotal 1343 and vtotal 1946.
++ *
++ * The pixel clock is chosen to land on the 60.25 Hz that the bootloader itself
++ * targets -- it passes fps=6025 on the kernel command line -- rather than on
++ * the 62.5 Hz implied by the vendor's PLL_CLOCK = 490 MHz, which carries the
++ * usual MediaTek margin. 1343 * 1946 * 60.25 = 157.46 MHz.
++ */
++static const struct drm_display_mode nt51021_mode = {
++	.clock = 157462,
++	.hdisplay = 1200,
++	/*
++	 * The vendor's hsync width is 1, and mtk_dsi cannot express that:
++	 *
++	 *   horizontal_sync_active_byte = vm->hsync_len * bpp - 10
++	 *
++	 * is -7 for hsync_len 1 at 24bpp, and the u32 it is stored in wraps to
++	 * 0xfffffff9. The DSI then waits out a four-billion-byte sync period,
++	 * never finishes a line, and so never raises start-of-frame -- which
++	 * also stalls the display mutex, since that is armed from DSI0's SOF.
++	 * The whole pipeline sits configured and idle and the panel stays black.
++	 *
++	 * Widen hsync to 8 and take those 7 pixels back out of the back porch,
++	 * so htotal, the pixel clock and the refresh rate are all unchanged.
++	 * The back porch register is unaffected too: it is computed from
++	 * (hback_porch + hsync_len), and that sum is still 33. In sync-event
++	 * mode -- which this panel uses -- the sync width is not transmitted as
++	 * a pulse anyway, so only the line total really matters here.
++	 */
++	.hsync_start = 1200 + 110,
++	.hsync_end = 1200 + 110 + 8,
++	.htotal = 1200 + 110 + 8 + 25,
++	.vdisplay = 1920,
++	.vsync_start = 1920 + 11,
++	.vsync_end = 1920 + 11 + 1,
++	.vtotal = 1920 + 11 + 1 + 14,
++	.width_mm = 136,
++	.height_mm = 221,
++	.type = DRM_MODE_TYPE_DRIVER | DRM_MODE_TYPE_PREFERRED,
++};
++
++static int nt51021_get_modes(struct drm_panel *panel,
++			     struct drm_connector *connector)
++{
++	return drm_connector_helper_get_modes_fixed(connector, &nt51021_mode);
++}
++
++static const struct drm_panel_funcs nt51021_panel_funcs = {
++	.prepare = nt51021_prepare,
++	.enable = nt51021_enable,
++	.disable = nt51021_disable,
++	.unprepare = nt51021_unprepare,
++	.get_modes = nt51021_get_modes,
++};
++
++/*
++ * Read the two ID straps to pick the register set. The vendor reads them on
++ * every init; they are plain inputs on otherwise unused MSDC2 pads.
++ */
++static const struct nt51021_variant *nt51021_read_variant(struct device *dev)
++{
++	struct gpio_descs *ids;
++	unsigned int id;
++	int ret;
++	DECLARE_BITMAP(values, BITS_PER_TYPE(unsigned long));
++
++	ids = devm_gpiod_get_array_optional(dev, "lcm-id", GPIOD_IN);
++	if (IS_ERR(ids))
++		return ERR_CAST(ids);
++
++	if (!ids) {
++		dev_info(dev, "no ID straps described, assuming %s\n",
++			 nt51021_variants[0].name);
++		return &nt51021_variants[0];
++	}
++
++	if (ids->ndescs != 2) {
++		dev_err(dev, "expected 2 ID straps, got %u\n", ids->ndescs);
++		return ERR_PTR(-EINVAL);
++	}
++
++	ret = gpiod_get_array_value_cansleep(ids->ndescs, ids->desc,
++					     ids->info, values);
++	if (ret)
++		return ERR_PTR(ret);
++
++	/* Device tree order is <id0>, <id1>; the vendor's id is id1 | id0 << 1. */
++	id = (test_bit(0, values) << 1) | test_bit(1, values);
++
++	if (id >= ARRAY_SIZE(nt51021_variants) || !nt51021_variants[id].cmds) {
++		dev_err(dev, "unsupported panel ID %u\n", id);
++		return ERR_PTR(-ENODEV);
++	}
++
++	dev_info(dev, "panel ID %u: %s\n", id, nt51021_variants[id].name);
++
++	return &nt51021_variants[id];
++}
++
++static int nt51021_probe(struct mipi_dsi_device *dsi)
++{
++	struct device *dev = &dsi->dev;
++	struct nt51021 *ctx;
++	int ret;
++
++	ctx = devm_drm_panel_alloc(dev, struct nt51021, panel,
++				   &nt51021_panel_funcs,
++				   DRM_MODE_CONNECTOR_DSI);
++	if (IS_ERR(ctx))
++		return PTR_ERR(ctx);
++
++	ctx->supply = devm_regulator_get(dev, "power");
++	if (IS_ERR(ctx->supply))
++		return dev_err_probe(dev, PTR_ERR(ctx->supply),
++				     "failed to get power supply\n");
++
++	/* Active low in the device tree, so OUT_HIGH leaves reset asserted. */
++	ctx->reset_gpio = devm_gpiod_get(dev, "reset", GPIOD_OUT_HIGH);
++	if (IS_ERR(ctx->reset_gpio))
++		return dev_err_probe(dev, PTR_ERR(ctx->reset_gpio),
++				     "failed to get reset GPIO\n");
++
++	ctx->variant = nt51021_read_variant(dev);
++	if (IS_ERR(ctx->variant))
++		return dev_err_probe(dev, PTR_ERR(ctx->variant),
++				     "failed to identify the panel\n");
++
++	ctx->dsi = dsi;
++	mipi_dsi_set_drvdata(dsi, ctx);
++
++	dsi->lanes = 4;
++	dsi->format = MIPI_DSI_FMT_RGB888;
++	/*
++	 * Video mode with sync events rather than sync pulses
++	 * (vendor SYNC_EVENT_VDO_MODE), and a continuously running HS clock
++	 * (vendor cont_clock = 1), so MIPI_DSI_CLOCK_NON_CONTINUOUS is
++	 * deliberately absent. Commands go out in LP.
++	 */
++	dsi->mode_flags = MIPI_DSI_MODE_VIDEO | MIPI_DSI_MODE_LPM;
++
++	ret = drm_panel_of_backlight(&ctx->panel);
++	if (ret)
++		return dev_err_probe(dev, ret, "failed to get backlight\n");
++
++	/* The DSI host must be running before we can send the init sequence. */
++	ctx->panel.prepare_prev_first = true;
++
++	drm_panel_add(&ctx->panel);
++
++	ret = mipi_dsi_attach(dsi);
++	if (ret < 0) {
++		drm_panel_remove(&ctx->panel);
++		return dev_err_probe(dev, ret, "failed to attach to DSI host\n");
++	}
++
++	return 0;
++}
++
++static void nt51021_remove(struct mipi_dsi_device *dsi)
++{
++	struct nt51021 *ctx = mipi_dsi_get_drvdata(dsi);
++	int ret;
++
++	ret = mipi_dsi_detach(dsi);
++	if (ret < 0)
++		dev_err(&dsi->dev, "failed to detach from DSI host: %d\n", ret);
++
++	drm_panel_remove(&ctx->panel);
++}
++
++static const struct of_device_id nt51021_of_match[] = {
++	{ .compatible = "novatek,nt51021" },
++	{ }
++};
++MODULE_DEVICE_TABLE(of, nt51021_of_match);
++
++static struct mipi_dsi_driver nt51021_driver = {
++	.probe = nt51021_probe,
++	.remove = nt51021_remove,
++	.driver = {
++		.name = "panel-novatek-nt51021",
++		.of_match_table = nt51021_of_match,
++	},
++};
++module_mipi_dsi_driver(nt51021_driver);
++
++MODULE_DESCRIPTION("Novatek NT51021 1200x1920 DSI panel driver");
++MODULE_LICENSE("GPL");

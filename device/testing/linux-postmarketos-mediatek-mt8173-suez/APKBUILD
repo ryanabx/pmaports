@@ -11,7 +11,7 @@
 maintainer="Ryan Brue <ryanbrue.dev@gmail.com>"
 pkgname=linux-postmarketos-mediatek-mt8173-suez
 pkgver=7.1.8
-pkgrel=5
+pkgrel=6
 pkgdesc="Mainline kernel fork for the Amazon Fire HD 10 (2017)"
 arch="aarch64"
 _carch="arm64"
@@ -77,7 +77,7 @@ source="
 	0003-display-blank.patch
 	add-amazon-suez-dts.patch
 	mt8173-smp-mtcmos.patch
-	debug-paint-framebuffer.patch
+	panel-novatek-nt51021.patch
 "
 builddir="$srcdir/linux-${_kernver//_/-}"
 
@@ -109,10 +109,10 @@ package() {
 
 sha512sums="
 e17057478fd498fd4d83c4b6d3712fdfc3c6ae1d077114ea74ee41186cbd75add292f5e5f810fdf41242fd506a476d34447392b1c8194b5e8a6af1a59ac48a74  linux-7.1.8.tar.xz
-682f6bdca2344514d788185d4b0bf22c8004bf59bb7a102cbf1319b90f4128dd9caf9c35e0f799a08b9a9f1fd14f4a1e08c2090ba09498c8d764a3b737a8299b  config-postmarketos-mediatek-mt8173-suez.aarch64
+f4552aa7802ea20252401b665b5b28d60e7f42fdff2f82e3b2eeaf32d3c524ce24f843f0e5459b75942792cde5cd2a0074c60e2a4e39a4e8ce421c55fc34e446  config-postmarketos-mediatek-mt8173-suez.aarch64
 901780c4c468ebf8b6af7c27530fafb0439dfae889208c35f22aa7447902078d147db69a1c8e2115cd13f51c641eef878d9335b7527dc7fa2240cd617e045aab  0001-resolve_btfids-preserve-parameter-names-when-process.patch
 aedbf42178f26a0b38b0deee02cbf24a7d3cfaf90cdcf30da12ff1cc334be1e14eada0d924b0082830812d16eebd432230a1476542d23238acd9da527973facf  0003-display-blank.patch
-f8092715c0fe14718ad397fbde5e49fbc84a973f40f93251cf0b1d43cecefa829936f8df7b6ea8e91df24989f091b66aff76885fc16bec47b2daf0271463b27f  add-amazon-suez-dts.patch
+d0f7dc06dda17e22412b4e089997ac883385f3e75405a2304ef2a22f0d6465f22d045a3c0460a9c5c53acef1e86e9b3a33ce3db94833e07e9fd72432f609f168  add-amazon-suez-dts.patch
 1aec3bb495b818c89429f5f6b520697f1f8739fc5b7ca894424418de43eac031a7b61fb1b4352d849476a7d461d43c8af0d46987cb28524673e58241a9926696  mt8173-smp-mtcmos.patch
-a7eeaf2b58a0851a4e1591a6d91c717ff091cccbb4a3e56dcc866d9c665013c472b500ad82b7162afbaf774fb67115cd05472fa722c0853d9156b89327a12bdf  debug-paint-framebuffer.patch
+8c0b4a4663dfe8b38c7fb3f03a3d0a8cc60a6c2448ca531cb3b1d98ebac5149042b425d3cb79fbdb44f7147eb1101958a5891cdb93e78ba2ae02597654a981b9  panel-novatek-nt51021.patch
 "
