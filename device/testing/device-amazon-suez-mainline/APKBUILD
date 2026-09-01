@@ -3,7 +3,7 @@ maintainer="Ryan Brue <ryanbrue.dev@gmail.com>"
 pkgname=device-amazon-suez-mainline
 pkgdesc="Amazon Fire HD 10 (2017) (mainline)"
 pkgver=1
-pkgrel=15
+pkgrel=16
 url="https://postmarketos.org"
 license="MIT"
 arch="aarch64"
@@ -20,6 +20,7 @@ depends="
 makedepends="devicepkg-dev"
 source="
 	61-powervr-mutter-ignore.rules
+	99-suez-charge-voltage.rules
 	amazon-suez-gpu.service
 	deviceinfo
 	kernel-cmdline.conf
@@ -28,6 +29,8 @@ source="
 	suez-bcb-arm.sh
 	suez-bcb-disarm
 	suez-bcb-disarm.service
+	suez-charger-limit
+	suez-charger-limit.service
 	suez-hardlockup.service
 	suez-lid.conf
 	suez-pstore-blk
@@ -77,6 +80,20 @@ package() {
 	# PulseAudio's profile prober rejects the whole card over it.
 	install -Dm644 "$srcdir"/ucm-mt8173-mt6391.conf 		"$pkgdir"/usr/share/alsa/ucm2/conf.d/mt8173-mt6391/mt8173-mt6391.conf
 	install -Dm644 "$srcdir"/ucm-HiFi.conf 		"$pkgdir"/usr/share/alsa/ucm2/conf.d/mt8173-mt6391/HiFi.conf
+
+	# Set the charger's input current limit from the USB gadget state --
+	# nothing else on this board can classify the supply. See the script.
+	install -Dm755 "$srcdir"/suez-charger-limit \
+		"$pkgdir"/usr/sbin/suez-charger-limit
+	install -Dm644 "$srcdir"/suez-charger-limit.service \
+		"$pkgdir"/usr/lib/systemd/system/suez-charger-limit.service
+	ln -s ../suez-charger-limit.service \
+		"$pkgdir"/usr/lib/systemd/system/multi-user.target.wants/suez-charger-limit.service
+
+	# Charge the battery to its rated voltage rather than the charger
+	# chip's default; the rule file explains why this is not done in DT.
+	install -Dm644 "$srcdir"/99-suez-charge-voltage.rules \
+		"$pkgdir"/usr/lib/udev/rules.d/99-suez-charge-voltage.rules
 
 	# Keep mutter away from the render-only PowerVR card node; see the
 	# comments in the rule file.
@@ -134,6 +151,7 @@ package() {
 
 sha512sums="
 24175a01baf284dfbb2393745f88ec8610c0e0fc828d65b50194cbed7e0013005d6584d6412dfbcc043d3882e6a8c5dec20449e0464b1fd8ec5f532ddb25a099  61-powervr-mutter-ignore.rules
+7c0bc0904e64d096c2218264352ef0788afbebb633616c58fafbd186805a06959bf8a160ca9768a1b11b1e57d15e0886f85bdfbc44382d034e8d3984e550f829  99-suez-charge-voltage.rules
 acbd142eb5a789d740ecfffed67f65e827fadc29f47e04bf4084e97152381ffc897f6f12b62fafc28ba8e4d12cacecdcc8b4c0b421fde9ce1261cf5c4889f043  amazon-suez-gpu.service
 a1c7602bfd1eb0b431c1e96d592dfaf5da7e5498c3adfad756b6d73fe37b7889ea6c6d0fb681727796a3c95cbd247040d764ba6f477354a43cf8836887ecbedd  deviceinfo
 5bb871570c94633d5a53107bcf9e2aa1285328a16a53b80b99c41761c84eeb9ca0af2cc78f9f4ecd75fdbb350b46397b10c0a7e43e5c109213adaa4f1e551b74  kernel-cmdline.conf
@@ -142,6 +160,8 @@ d89fa6205d2ec177514a6e47877f27c7c69745d30994e36597ac6940c114a71868940d7050ba67dc
 fbdb7d4e8dbd03258dca7b1147130865513cf45599bd9f83e253079d1dfe009c890198adc2bbb14773d0d20822fe13898bbc2f9e1a0e5ce4b6acfbd4ea64eca2  suez-bcb-arm.sh
 33b6cca3c1c822781f5a8da665d60843239152344b7d585081eb531adb30933631487c8f422893e0a2e274307c7537c97284016634370620a41badccb3a4efd9  suez-bcb-disarm
 aaf34e1a660df1fe4782b8a130ab7cd9477c39eb559f48f3ee78aa01673666491087d9f0ed6403b33fafddf61411f5a1efa0ba101c86934df0fdae24c712f3c5  suez-bcb-disarm.service
+a36d73275d8bbd45365b0a28cd7f1d2ddcfe43842c05c36320d7213dd89629b8169281723db7687c74d9b2325e00b33678345ca03e7de0fa54a159519ca949fd  suez-charger-limit
+3d6fe65bf0ddbdcdcb59a11d5df77ab9d2c477af59bcf0980cf697c6031ceec26599a79712b9147c9648b284eb27031dd58b75684a9898f7d87a11cf9044c6f4  suez-charger-limit.service
 23a31b720d49046880090b671164dd06c7ec662246dbe4580938ef5f0c9b58b3c0dc5b1688b7110c76c3c1d7b4196497ff2b55149dd4b4aa479eeae4924d3c0a  suez-hardlockup.service
 68a831dbb5204455cc58a9719635c4675f50779548d9cf5584def601b25af7e31de5bcc7b7540b38ec586a257e265bffa426959199e9554fa80d7cb968f81091  suez-lid.conf
 8814fc2c8418110c39e62e26a6afb5a06c71ec4d79919fc0ef51cca899da833d75a6a411f4158893e36bf760ccba506b94cb68a892b5541544bb01716ea6b0c2  suez-pstore-blk
