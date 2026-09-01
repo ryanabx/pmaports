@@ -12,7 +12,7 @@ diff --git a/arch/arm64/boot/dts/mediatek/Makefile b/arch/arm64/boot/dts/mediate
 diff --git a/arch/arm64/boot/dts/mediatek/mt8173-amazon-suez.dts b/arch/arm64/boot/dts/mediatek/mt8173-amazon-suez.dts
 --- a/arch/arm64/boot/dts/mediatek/mt8173-amazon-suez.dts
 +++ b/arch/arm64/boot/dts/mediatek/mt8173-amazon-suez.dts
-@@ -0,0 +1,1404 @@
+@@ -0,0 +1,1454 @@
 +// SPDX-License-Identifier: (GPL-2.0 OR MIT)
 +/*
 + * Copyright (c) 2026 Ryan Brue <ryanbrue.dev@gmail.com>
@@ -187,7 +187,15 @@ diff --git a/arch/arm64/boot/dts/mediatek/mt8173-amazon-suez.dts b/arch/arm64/bo
 +	sound {
 +		compatible = "mediatek,mt8173-mt6391";
 +		mediatek,audio-codec = <&mt6397codec>;
++		/*
++		 * Capture comes from the RT5514 over I2S2, not from the MT6397.
++		 * The AFE already routes "I2S Capture" -> I03/I04 -> O09/O10 ->
++		 * VUL; this adds the back end that lets that leg power up.
++		 */
++		mediatek,capture-codec = <&rt5514>;
 +		mediatek,platform = <&afe>;
++		pinctrl-names = "default";
++		pinctrl-0 = <&audio_pins_default>;
 +	};
 +
 +	/*
@@ -683,6 +691,32 @@ diff --git a/arch/arm64/boot/dts/mediatek/mt8173-amazon-suez.dts b/arch/arm64/bo
 +		touchscreen-size-x = <1200>;
 +		touchscreen-size-y = <1920>;
 +	};
++
++	/*
++	 * The RT5514 "smart microphone" DSP. The two internal PDM microphones
++	 * are wired to it, not to the MT6397 -- which is why capturing through
++	 * the PMIC's own ADDA returns a constant rather than audio -- and it
++	 * presents them to the SoC over I2S2.
++	 *
++	 * From suez_dvt.dts, which gives it two buses:
++	 *
++	 *   rt5514: audio-codec@57 { compatible = "realtek,rt5514";
++	 *                            reg = <0x57>;
++	 *                            interrupts = <0 IRQ_TYPE_LEVEL_HIGH>; }
++	 *   rt5514_spi: audio-codec@0 { spi-max-frequency = <18000000>; }
++	 *
++	 * Only the i2c half is described here. The SPI half exists solely to
++	 * load and drive the on-chip DSP for always-on hotword detection;
++	 * plain I2S capture needs neither, so porting it is a separate job.
++	 * Verified fitted on this unit: 0x57 ACKs on i2c-0.
++	 */
++	rt5514: audio-codec@57 {
++		compatible = "realtek,rt5514";
++		reg = <0x57>;
++		interrupt-parent = <&pio>;
++		interrupts = <0 IRQ_TYPE_LEVEL_HIGH>;
++		#sound-dai-cells = <0>;
++	};
 +};
 +
 +&i2c1 {
@@ -873,6 +907,22 @@ diff --git a/arch/arm64/boot/dts/mediatek/mt8173-amazon-suez.dts b/arch/arm64/bo
 +};
 +
 +&pio {
++	/*
++	 * I2S2, which is how the RT5514 delivers the internal microphones.
++	 * The pins are the I2S0 group muxed to their I2S2 functions, exactly
++	 * as suez_dvt.dts's audio_pins_default does. MCK is included because
++	 * the RT5514 takes its 12.288 MHz master clock from the SoC.
++	 */
++	audio_pins_default: audio-default-pins {
++		pins-i2s2 {
++			pinmux = <MT8173_PIN_128_I2S0_LRCK__FUNC_I2S2_WS>,
++				 <MT8173_PIN_129_I2S0_BCK__FUNC_I2S2_BCK>,
++				 <MT8173_PIN_130_I2S0_MCK__FUNC_I2S2_MCK>,
++				 <MT8173_PIN_132_I2S0_DATA1__FUNC_I2S2_DI_2>;
++			bias-pull-down;
++		};
++	};
++
 +	mmc1_pins_default: mmc1-default-pins {
 +		pins-cmd-dat {
 +			pinmux = <MT8173_PIN_73_MSDC1_DAT0__FUNC_MSDC1_DAT0>,

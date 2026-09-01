@@ -32,7 +32,7 @@ diff --git a/sound/soc/mediatek/mt8173/Makefile b/sound/soc/mediatek/mt8173/Make
 diff --git a/sound/soc/mediatek/mt8173/mt8173-mt6391.c b/sound/soc/mediatek/mt8173/mt8173-mt6391.c
 --- a/sound/soc/mediatek/mt8173/mt8173-mt6391.c
 +++ b/sound/soc/mediatek/mt8173/mt8173-mt6391.c
-@@ -0,0 +1,136 @@
+@@ -0,0 +1,266 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/*
 + * mt8173-mt6391.c  --  MT8173 machine driver for boards using the
@@ -52,6 +52,7 @@ diff --git a/sound/soc/mediatek/mt8173/mt8173-mt6391.c b/sound/soc/mediatek/mt81
 +	DAI_LINK_PLAYBACK,
 +	DAI_LINK_CAPTURE,
 +	DAI_LINK_CODEC,
++	DAI_LINK_RT5514,
 +};
 +
 +SND_SOC_DAILINK_DEFS(playback,
@@ -68,6 +69,102 @@ diff --git a/sound/soc/mediatek/mt8173/mt8173-mt6391.c b/sound/soc/mediatek/mt81
 +	DAILINK_COMP_ARRAY(COMP_CPU("ADDA")),
 +	DAILINK_COMP_ARRAY(COMP_CODEC(NULL, "mt6397-codec-aif1")),
 +	DAILINK_COMP_ARRAY(COMP_EMPTY()));
++
++SND_SOC_DAILINK_DEFS(rt5514_codec,
++	DAILINK_COMP_ARRAY(COMP_CPU("I2S")),
++	DAILINK_COMP_ARRAY(COMP_CODEC(NULL, "rt5514-aif1")),
++	DAILINK_COMP_ARRAY(COMP_EMPTY()));
++
++/*
++ * The internal microphones are PDM parts wired to an RT5514, which presents
++ * them to the SoC over I2S -- nothing is connected to the MT6397's own mic
++ * inputs, which is why capture through the ADDA returns a constant. The AFE
++ * already routes "I2S Capture" -> I03/I04 -> O09/O10 -> VUL, so all that was
++ * missing was a back end to power that leg.
++ *
++ * Clocking follows mt8173-rt5650-rt5514.c: PLL from the 12.288 MHz MCLK, then
++ * sysclk from the PLL at 512fs.
++ */
++#define MT8173_RT5514_MCLK	12288000
++
++static int mt8173_rt5514_hw_params(struct snd_pcm_substream *substream,
++				   struct snd_pcm_hw_params *params)
++{
++	struct snd_soc_pcm_runtime *rtd = snd_soc_substream_to_rtd(substream);
++	struct snd_soc_dai *codec_dai;
++	unsigned int rate = params_rate(params);
++	int i, ret;
++
++	for_each_rtd_codec_dais(rtd, i, codec_dai) {
++		ret = snd_soc_dai_set_pll(codec_dai, 0, 0, MT8173_RT5514_MCLK,
++					  rate * 512);
++		if (ret)
++			return ret;
++		ret = snd_soc_dai_set_sysclk(codec_dai, 1, rate * 512,
++					     SND_SOC_CLOCK_IN);
++		if (ret)
++			return ret;
++	}
++	return 0;
++}
++
++static const struct snd_soc_ops mt8173_rt5514_ops = {
++	.hw_params = mt8173_rt5514_hw_params,
++};
++
++/*
++ * The RT5514's DMIC1L/DMIC1R are input widgets with no source of their own, so
++ * DAPM will not power the capture chain unless something upstream of them is
++ * marked connected. Upstream's mt8173-rt5650-rt5514.c does this with an
++ * "Int Mic" widget; the same is needed here or the whole leg -- DMIC1L ->
++ * Stereo1 ADC MIX -> AIF1TX -> I2S Capture -> I03 -> O09 -> VUL -- stays off
++ * and capture returns silence.
++ *
++ * These live in the link's .init rather than on the card so they are only
++ * registered when the RT5514 link is, since a board without one has no DMIC1L
++ * widget to route to and card registration would fail.
++ */
++static const struct snd_soc_dapm_widget mt8173_rt5514_widgets[] = {
++	SND_SOC_DAPM_MIC("Int Mic", NULL),
++};
++
++static const struct snd_soc_dapm_route mt8173_rt5514_routes[] = {
++	{ "DMIC1L", NULL, "Int Mic" },
++	{ "DMIC1R", NULL, "Int Mic" },
++};
++
++static int mt8173_rt5514_init(struct snd_soc_pcm_runtime *rtd)
++{
++	struct snd_soc_card *card = rtd->card;
++	int ret;
++
++	ret = snd_soc_dapm_new_controls(card->dapm, mt8173_rt5514_widgets,
++					ARRAY_SIZE(mt8173_rt5514_widgets));
++	if (ret)
++		return ret;
++
++	ret = snd_soc_dapm_add_routes(card->dapm, mt8173_rt5514_routes,
++				      ARRAY_SIZE(mt8173_rt5514_routes));
++	if (ret)
++		return ret;
++
++	/*
++	 * "Int Mic" is a DAPM pin, and a pin that nothing enables stays off --
++	 * which leaves DMIC1L off even though DMIC CLK, Stereo1 ADC MIXL,
++	 * AIF1TX and PLL1 all come up, and capture returns silence. Measured
++	 * exactly that on 7.2.2-r5.
++	 *
++	 * Upstream exposes a SOC_DAPM_PIN_SWITCH so userspace can toggle it,
++	 * but these microphones are soldered to the board and there is no
++	 * reason for anything to turn them off, so enable the pin here and
++	 * spare UCM a control it would only ever set to on.
++	 */
++	ret = snd_soc_dapm_enable_pin(card->dapm, "Int Mic");
++	if (ret)
++		return ret;
++
++	return snd_soc_dapm_sync(card->dapm);
++}
 +
 +static struct snd_soc_dai_link mt8173_mt6391_dais[] = {
 +	/* Front End DAI links */
@@ -93,6 +190,21 @@ diff --git a/sound/soc/mediatek/mt8173/mt8173-mt6391.c b/sound/soc/mediatek/mt81
 +		.no_pcm = 1,
 +		SND_SOC_DAILINK_REG(codec),
 +	},
++	/*
++	 * Kept LAST so probe can simply shorten num_links when the board has
++	 * no RT5514 -- see mt8173_mt6391_dev_probe().
++	 */
++	[DAI_LINK_RT5514] = {
++		.name = "RT5514 Codec",
++		.no_pcm = 1,
++		.dai_fmt = SND_SOC_DAIFMT_I2S | SND_SOC_DAIFMT_NB_NF |
++			   SND_SOC_DAIFMT_CBC_CFC,
++		.ops = &mt8173_rt5514_ops,
++		.init = mt8173_rt5514_init,
++		.capture_only = 1,
++		.ignore_pmdown_time = 1,
++		SND_SOC_DAILINK_REG(rt5514_codec),
++	},
 +};
 +
 +static struct snd_soc_card mt8173_mt6391_card = {
@@ -105,7 +217,7 @@ diff --git a/sound/soc/mediatek/mt8173/mt8173-mt6391.c b/sound/soc/mediatek/mt81
 +static int mt8173_mt6391_dev_probe(struct platform_device *pdev)
 +{
 +	struct snd_soc_card *card = &mt8173_mt6391_card;
-+	struct device_node *codec_node, *platform_node;
++	struct device_node *codec_node, *platform_node, *capture_node;
 +	struct snd_soc_dai_link *dai_link;
 +	int ret, i;
 +
@@ -137,10 +249,28 @@ diff --git a/sound/soc/mediatek/mt8173/mt8173-mt6391.c b/sound/soc/mediatek/mt81
 +	 * are set".
 +	 */
 +	mt8173_mt6391_dais[DAI_LINK_CODEC].codecs[0].of_node = codec_node;
++
++	/*
++	 * The RT5514 capture back end is optional. A board without one drops
++	 * the last link instead of failing to register, so playback is
++	 * unaffected either way -- which is why DAI_LINK_RT5514 is last.
++	 */
++	capture_node = of_parse_phandle(pdev->dev.of_node,
++					"mediatek,capture-codec", 0);
++	if (capture_node) {
++		mt8173_mt6391_dais[DAI_LINK_RT5514].codecs[0].of_node =
++			capture_node;
++	} else {
++		dev_info(&pdev->dev,
++			 "no 'mediatek,capture-codec'; capture back end disabled\\n");
++		card->num_links = DAI_LINK_RT5514;
++	}
++
 +	card->dev = &pdev->dev;
 +
 +	ret = devm_snd_soc_register_card(&pdev->dev, card);
 +
++	of_node_put(capture_node);
 +	of_node_put(codec_node);
 +
 +put_platform_node:
