@@ -26,6 +26,7 @@ Tested-by: YoungJoon Lee <getfeus@gmail.com>
 
 diff --git a/Documentation/devicetree/bindings/gpu/img,powervr-rogue.yaml b/Documentation/devicetree/bindings/gpu/img,powervr-rogue.yaml
 index a6bccb600a57..e9218e0f363d 100644
+diff --git a/Documentation/devicetree/bindings/gpu/img,powervr-rogue.yaml b/Documentation/devicetree/bindings/gpu/img,powervr-rogue.yaml
 --- a/Documentation/devicetree/bindings/gpu/img,powervr-rogue.yaml
 +++ b/Documentation/devicetree/bindings/gpu/img,powervr-rogue.yaml
 @@ -16,6 +16,7 @@ properties:

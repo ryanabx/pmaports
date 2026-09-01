@@ -1,0 +1,38 @@
+# Maintainer: Ryan Brue <ryan.brue@enovationcontrols.com>
+pkgname=firmware-mediatek-mt6630
+pkgver=1.0.0
+pkgrel=0
+pkgdesc="Firmware for the MediaTek MT6630 WiFi/BT/GPS/FM combo chip (Amazon Fire HD 10 2017)"
+url="https://github.com/chaosmaster/android_vendor_amazon_suez"
+arch="aarch64"
+license="proprietary"
+options="!check !strip !archcheck !tracedeps pmb:cross-native"
+
+# LineageOS-community vendor blobs for amazon-suez, extracted from Fire OS.
+# Two firmware sets exist in the repo; vendor/firmware/ is the newer build
+# (2018-06-26, E3-only) and is what stock installs last, so it wins here.
+# The chip on suez is an MT6630 E3 (GEN_HVR 0x8A11): only the e3 patch pair
+# is loadable, but the e1/e2 patches ride along for other board revisions.
+_commit="d6f7a5a2798ab161709e6733a077a9942edd4d94"
+source="$pkgname-$_commit.tar.gz::$url/archive/$_commit.tar.gz"
+
+builddir="$srcdir/android_vendor_amazon_suez-$_commit"
+
+package() {
+	local fw="$pkgdir"/usr/lib/firmware/mediatek/mt6630
+	# older 2017-06-22 build: complete set including e1/e2
+	install -Dm644 proprietary/vendor/etc/firmware/mt6630_patch_e1_hdr.bin -t "$fw"
+	install -Dm644 proprietary/vendor/etc/firmware/mt6630_patch_e2_hdr.bin -t "$fw"
+	# newer 2018-06-26 build: e3 pair, RAM code, configs
+	install -Dm644 proprietary/vendor/firmware/mt6630_patch_e3_0_hdr.bin -t "$fw"
+	install -Dm644 proprietary/vendor/firmware/mt6630_patch_e3_1_hdr.bin -t "$fw"
+	install -Dm644 proprietary/vendor/firmware/WIFI_RAM_CODE_MT6630 -t "$fw"
+	install -Dm644 proprietary/vendor/firmware/WMT.cfg -t "$fw"
+	# WMT_SOC.cfg only exists in the older set
+	install -Dm644 proprietary/vendor/etc/firmware/WMT_SOC.cfg -t "$fw"
+	install -Dm644 proprietary/vendor/firmware/mt6630_ant_m1.cfg -t "$fw"
+}
+
+sha512sums="
+0ca276416342a16d17b72f3afec58fdb05d00d5ad98e4163dd443b69c71c4f8c76ecd4b79c6d2cde8c2930484c0f954d45de630935aea42bbbd798244d177121  firmware-mediatek-mt6630-d6f7a5a2798ab161709e6733a077a9942edd4d94.tar.gz
+"

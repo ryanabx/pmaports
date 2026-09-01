@@ -28,6 +28,7 @@ Tested-by: YoungJoon Lee <getfeus@gmail.com>
 diff --git a/Documentation/devicetree/bindings/clock/mediatek,mt8173-mfgtop.yaml b/Documentation/devicetree/bindings/clock/mediatek,mt8173-mfgtop.yaml
 new file mode 100644
 index 000000000000..03db1ee9e594
+diff --git a/dev/null b/dev/null
 --- a/dev/null
 +++ b/Documentation/devicetree/bindings/clock/mediatek,mt8173-mfgtop.yaml
 @@ -0,0 +1,70 @@
@@ -103,6 +104,7 @@ index 000000000000..03db1ee9e594
 +        };
 diff --git a/include/dt-bindings/clock/mt8173-clk.h b/include/dt-bindings/clock/mt8173-clk.h
 index 3d00c98b9654..89e982f771db 100644
+diff --git a/include/dt-bindings/clock/mt8173-clk.h b/include/dt-bindings/clock/mt8173-clk.h
 --- a/include/dt-bindings/clock/mt8173-clk.h
 +++ b/include/dt-bindings/clock/mt8173-clk.h
 @@ -243,6 +243,13 @@

@@ -29,6 +29,7 @@ Tested-by: YoungJoon Lee <getfeus@gmail.com>
 
 diff --git a/arch/arm64/boot/dts/mediatek/mt8173.dtsi b/arch/arm64/boot/dts/mediatek/mt8173.dtsi
 index 78c2ccd5be13..556e806b7787 100644
+diff --git a/arch/arm64/boot/dts/mediatek/mt8173.dtsi b/arch/arm64/boot/dts/mediatek/mt8173.dtsi
 --- a/arch/arm64/boot/dts/mediatek/mt8173.dtsi
 +++ b/arch/arm64/boot/dts/mediatek/mt8173.dtsi
 @@ -505,7 +505,7 @@ power-domain@MT8173_POWER_DOMAIN_USB {

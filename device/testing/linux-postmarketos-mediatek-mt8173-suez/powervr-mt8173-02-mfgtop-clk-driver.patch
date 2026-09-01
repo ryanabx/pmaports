@@ -45,6 +45,7 @@ Changes since v2:
 
 diff --git a/drivers/clk/mediatek/Kconfig b/drivers/clk/mediatek/Kconfig
 index 2c09fd729bab..8eea3766a910 100644
+diff --git a/drivers/clk/mediatek/Kconfig b/drivers/clk/mediatek/Kconfig
 --- a/drivers/clk/mediatek/Kconfig
 +++ b/drivers/clk/mediatek/Kconfig
 @@ -537,6 +537,16 @@ config COMMON_CLK_MT8173_IMGSYS
@@ -66,6 +67,7 @@ index 2c09fd729bab..8eea3766a910 100644
         depends on COMMON_CLK_MT8173
 diff --git a/drivers/clk/mediatek/Makefile b/drivers/clk/mediatek/Makefile
 index d8736a060dbd..892a54eeb281 100644
+diff --git a/drivers/clk/mediatek/Makefile b/drivers/clk/mediatek/Makefile
 --- a/drivers/clk/mediatek/Makefile
 +++ b/drivers/clk/mediatek/Makefile
 @@ -82,6 +82,7 @@ obj-$(CONFIG_COMMON_CLK_MT8167_VDECSYS) += clk-mt8167-vdec.o
@@ -79,6 +81,7 @@ index d8736a060dbd..892a54eeb281 100644
 diff --git a/drivers/clk/mediatek/clk-mt8173-mfgtop.c b/drivers/clk/mediatek/clk-mt8173-mfgtop.c
 new file mode 100644
 index 000000000000..5669ca9954dc
+diff --git a/dev/null b/dev/null
 --- a/dev/null
 +++ b/drivers/clk/mediatek/clk-mt8173-mfgtop.c
 @@ -0,0 +1,242 @@

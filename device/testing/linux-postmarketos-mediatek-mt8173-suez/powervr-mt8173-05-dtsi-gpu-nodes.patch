@@ -27,6 +27,7 @@ Tested-by: YoungJoon Lee <getfeus@gmail.com>
 
 diff --git a/arch/arm64/boot/dts/mediatek/mt8173.dtsi b/arch/arm64/boot/dts/mediatek/mt8173.dtsi
 index 556e806b7787..169ba4fd183e 100644
+diff --git a/arch/arm64/boot/dts/mediatek/mt8173.dtsi b/arch/arm64/boot/dts/mediatek/mt8173.dtsi
 --- a/arch/arm64/boot/dts/mediatek/mt8173.dtsi
 +++ b/arch/arm64/boot/dts/mediatek/mt8173.dtsi
 @@ -1002,6 +1002,37 @@ u2port1: usb-phy@11291000 {
