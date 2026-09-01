@@ -12,7 +12,7 @@ diff --git a/arch/arm64/boot/dts/mediatek/Makefile b/arch/arm64/boot/dts/mediate
 diff --git a/arch/arm64/boot/dts/mediatek/mt8173-amazon-suez.dts b/arch/arm64/boot/dts/mediatek/mt8173-amazon-suez.dts
 --- a/arch/arm64/boot/dts/mediatek/mt8173-amazon-suez.dts
 +++ b/arch/arm64/boot/dts/mediatek/mt8173-amazon-suez.dts
-@@ -0,0 +1,875 @@
+@@ -0,0 +1,891 @@
 +// SPDX-License-Identifier: (GPL-2.0 OR MIT)
 +/*
 + * Copyright (c) 2026 Ryan Brue <ryanbrue.dev@gmail.com>
@@ -734,6 +734,22 @@ diff --git a/arch/arm64/boot/dts/mediatek/mt8173-amazon-suez.dts b/arch/arm64/bo
 +		mount-matrix = "0", "-1", "0",
 +			       "-1", "0", "0",
 +			       "0", "0", "-1";
++	};
++};
++
++&i2c3 {
++	status = "okay";
++
++	/*
++	 * TI BQ24297 charger. The vendor compatible "ti,bq24297" is also
++	 * exactly what mainline's bq24190_charger matches on, so this node is
++	 * the vendor's, minus its MTK-specific properties.
++	 */
++	charger@6b {
++		compatible = "ti,bq24297";
++		reg = <0x6b>;
++		interrupt-parent = <&pio>;
++		interrupts = <9 IRQ_TYPE_EDGE_FALLING>;
 +	};
 +};
 +
