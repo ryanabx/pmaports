@@ -59,7 +59,7 @@
 +#endif
 --- a/drivers/misc/mt6630-wmt.c
 +++ b/drivers/misc/mt6630-wmt.c
-@@ -0,0 +1,964 @@
+@@ -0,0 +1,1035 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/*
 + * WMT control-plane driver for the MediaTek MT6630 combo chip on SDIO.
@@ -1005,6 +1005,74 @@
 +	sdio_release_host(func);
 +}
 +
++/* ---- power management ----
++ *
++ * Both SDIO function drivers need .suspend and .resume, and both ask for
++ * MMC_PM_KEEP_POWER. Those are two separate requirements:
++ *
++ *  - mmc_sdio_pre_suspend() walks every present function and gives up on the
++ *    whole card unless each one's driver has both callbacks. For a
++ *    non-removable card "gives up" is only a dev_warn ("missing suspend/resume
++ *    ops for non-removable SDIO card"), so it looks harmless -- but the card
++ *    is then carried into suspend with nothing having quiesced it.
++ *
++ *  - Without MMC_PM_KEEP_POWER, mmc_sdio_suspend() calls mmc_power_off(),
++ *    which runs the pwrseq and drops PMU_EN and RST. That is a full chip power
++ *    cycle. The ROM patches and the WLAN firmware live in the chip's RAM and
++ *    are gone; mmc_sdio_resume() then re-runs mmc_sdio_reinit_card(), so the
++ *    function enables and block sizes set up at probe are gone too. Every
++ *    transfer afterwards fails -EINVAL ("CTDR write of 24 failed: -22"), the
++ *    Bluetooth commands time out, and ieee80211_reconfig() gives up with
++ *    "wiphy_resume returns -22". Neither radio recovers without a reboot.
++ *
++ * Keeping the chip powered is honest on this board rather than wishful: its
++ * supply is not switchable. The vendor's &mmc3 has no vmmc-supply at all, and
++ * its connectivity-combo node leaves gpio_combo_ldo_en_pin and
++ * gpio_combo_pmuv28_en_pin commented out, so the only software power control
++ * that exists anywhere is the pwrseq's PMU_EN and RST -- precisely what
++ * MMC_PM_KEEP_POWER stops the core from touching. The flag is only accepted if
++ * host->pm_caps allows it, which is what keep-power-in-suspend in the mmc3
++ * node is for.
++ *
++ * mmc_sdio_resume() clears host->pm_flags on its way out, so this has to be
++ * re-requested on every suspend, not once at probe.
++ */
++static int mt6630_wmt_suspend(struct device *dev)
++{
++	struct sdio_func *func = dev_to_sdio_func(dev);
++	int ret;
++
++	ret = sdio_set_host_pm_flags(func, MMC_PM_KEEP_POWER);
++	if (ret) {
++		/* Failing the suspend is the right response. Proceeding would
++		 * power-cycle the chip behind both drivers' backs and leave
++		 * Bluetooth and Wi-Fi dead until the next reboot, which is a
++		 * far worse outcome than not suspending. */
++		dev_err(dev,
++			"cannot keep the MT6630 powered across suspend (%d); is keep-power-in-suspend missing from the mmc node?\n",
++			ret);
++		return ret;
++	}
++
++	/* Nothing else to do. The chip keeps its firmware and its registers,
++	 * and the mmc core sets mmc_card_set_suspended() and cancels
++	 * host->sdio_irq_work, so the chained interrupt cannot run while the
++	 * controller is clock-gated. The Bluetooth core quiesces hdev through
++	 * its own PM notifier, before any function driver's .suspend. */
++	return 0;
++}
++
++static int mt6630_wmt_resume(struct device *dev)
++{
++	/* mmc_sdio_resume() clears the suspended flag and wakes the SDIO irq
++	 * thread; msdc_restore_reg() re-arms the controller's SDIO interrupt.
++	 * The chip never stopped, so there is nothing here to restore. */
++	return 0;
++}
++
++static DEFINE_SIMPLE_DEV_PM_OPS(mt6630_wmt_pm_ops,
++				mt6630_wmt_suspend, mt6630_wmt_resume);
++
 +static const struct sdio_device_id mt6630_wmt_ids[] = {
 +	{ SDIO_DEVICE(SDIO_VENDOR_ID_MEDIATEK, MT6630_SDIO_DEVICE_ID) },
 +	{ /* end */ },
@@ -1016,6 +1084,9 @@
 +	.id_table	= mt6630_wmt_ids,
 +	.probe		= mt6630_wmt_probe,
 +	.remove		= mt6630_wmt_remove,
++	.drv		= {
++		.pm	= pm_sleep_ptr(&mt6630_wmt_pm_ops),
++	},
 +};
 +module_sdio_driver(mt6630_wmt_driver);
 +
@@ -1026,7 +1097,7 @@
 +MODULE_LICENSE("GPL");
 --- a/drivers/misc/mt6630-wlan.c
 +++ b/drivers/misc/mt6630-wlan.c
-@@ -0,0 +1,1928 @@
+@@ -0,0 +1,1997 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/*
 + * WLAN driver for the MediaTek MT6630 combo chip, SDIO function 1.
@@ -2937,6 +3008,72 @@
 +	ieee80211_free_hw(wl->hw);
 +}
 +
++/* ---- power management ----
++ *
++ * The MMC_PM_KEEP_POWER request is the load-bearing part, and the long
++ * explanation of why lives next to the same call in mt6630-wmt.c: without it
++ * the mmc core power-cycles the chip through the pwrseq, the runtime-downloaded
++ * firmware is gone, and everything after resume fails -EINVAL. Both function
++ * drivers ask, because either one may be the only one bound.
++ */
++static int mt6630_wlan_suspend(struct device *dev)
++{
++	struct sdio_func *func = dev_to_sdio_func(dev);
++	struct mt6630_wlan *wl = sdio_get_drvdata(func);
++	int ret;
++
++	ret = sdio_set_host_pm_flags(func, MMC_PM_KEEP_POWER);
++	if (ret) {
++		dev_err(dev,
++			"cannot keep the MT6630 powered across suspend (%d); is keep-power-in-suspend missing from the mmc node?\n",
++			ret);
++		return ret;
++	}
++
++	/* Stop everything of ours that can reach the bus.
++	 *
++	 * mmc_card_suspended() gates SDIO *interrupt* delivery only, not
++	 * ordinary transfers, and a kthread is not frozen along with userspace.
++	 * So in polled mode the RX thread would go on issuing CMD53s into a
++	 * controller that msdc_runtime_suspend() has already clock-gated. In
++	 * interrupt mode it is parked already and RX arrives through the
++	 * chained handler, which the core does stop.
++	 *
++	 * mac80211 has quiesced by the time we get here -- the wiphy device is
++	 * a child of this one, so wiphy_suspend() ran first and took the
++	 * interface down -- so these cancels are only for work already queued.
++	 */
++	if (!READ_ONCE(wl->irq_active))
++		kthread_park(wl->rx_thread);
++	cancel_work_sync(&wl->tx_work);
++	cancel_delayed_work_sync(&wl->scan_timeout);
++	/* Waits out a mode switch that is mid-flight; one merely queued is
++	 * dropped, which resume re-queues below. */
++	cancel_work_sync(&wl->irq_mode_work);
++
++	return 0;
++}
++
++static int mt6630_wlan_resume(struct device *dev)
++{
++	struct sdio_func *func = dev_to_sdio_func(dev);
++	struct mt6630_wlan *wl = sdio_get_drvdata(func);
++
++	if (!READ_ONCE(wl->irq_active))
++		kthread_unpark(wl->rx_thread);
++
++	/* Re-run a mode switch that suspend cancelled. The work reconciles
++	 * against wl->irq_active and returns immediately if there is nothing
++	 * to do, so this is free in the normal case. */
++	if (READ_ONCE(irq_rx) != READ_ONCE(wl->irq_active))
++		schedule_work(&wl->irq_mode_work);
++
++	return 0;
++}
++
++static DEFINE_SIMPLE_DEV_PM_OPS(mt6630_wlan_pm_ops,
++				mt6630_wlan_suspend, mt6630_wlan_resume);
++
 +static const struct sdio_device_id mt6630_wlan_ids[] = {
 +	{ SDIO_DEVICE(SDIO_VENDOR_ID_MEDIATEK, MT6630_SDIO_DEVICE_ID) },
 +	{ /* end */ },
@@ -2948,6 +3085,9 @@
 +	.id_table	= mt6630_wlan_ids,
 +	.probe		= mt6630_wlan_probe,
 +	.remove		= mt6630_wlan_remove,
++	.drv		= {
++		.pm	= pm_sleep_ptr(&mt6630_wlan_pm_ops),
++	},
 +};
 +module_sdio_driver(mt6630_wlan_driver);
 +

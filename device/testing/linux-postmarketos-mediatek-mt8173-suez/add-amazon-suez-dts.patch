@@ -12,7 +12,7 @@ diff --git a/arch/arm64/boot/dts/mediatek/Makefile b/arch/arm64/boot/dts/mediate
 diff --git a/arch/arm64/boot/dts/mediatek/mt8173-amazon-suez.dts b/arch/arm64/boot/dts/mediatek/mt8173-amazon-suez.dts
 --- a/arch/arm64/boot/dts/mediatek/mt8173-amazon-suez.dts
 +++ b/arch/arm64/boot/dts/mediatek/mt8173-amazon-suez.dts
-@@ -0,0 +1,1551 @@
+@@ -0,0 +1,1573 @@
 +// SPDX-License-Identifier: (GPL-2.0 OR MIT)
 +/*
 + * Copyright (c) 2026 Ryan Brue <ryanbrue.dev@gmail.com>
@@ -999,6 +999,28 @@ diff --git a/arch/arm64/boot/dts/mediatek/mt8173-amazon-suez.dts b/arch/arm64/bo
 +	 * mmc core's CCCR-INTx poll fallback never fired the handler */
 +	cap-sdio-irq;
 +	non-removable;
++
++	/*
++	 * Do not power the chip down for system suspend. mmc_sdio_suspend()
++	 * calls mmc_power_off() unless MMC_PM_KEEP_POWER is set, and here that
++	 * runs the pwrseq below and drops PMU_EN and RST -- a full power cycle
++	 * of a chip whose ROM patches and WLAN firmware are downloaded to its
++	 * RAM at probe. Both function drivers request the flag in their
++	 * .suspend, and sdio_set_host_pm_flags() rejects it unless
++	 * host->pm_caps allows it, which is what this property sets.
++	 *
++	 * It is not a fiction on this board: nothing can switch the MT6630's
++	 * supply. The vendor's &mmc3 has no vmmc-supply at all, and its
++	 * connectivity-combo node leaves gpio_combo_ldo_en_pin and
++	 * gpio_combo_pmuv28_en_pin commented out, so PMU_EN and RST are the
++	 * only power control that exists.
++	 */
++	keep-power-in-suspend;
++
++	/*
++	 * A fixed always-on regulator, because the core needs an ocr mask to
++	 * initialise the card and there is no switchable supply to name.
++	 */
 +	vmmc-supply = <&wifi_fixed_3v3>;
 +	mmc-pwrseq = <&wifi_pwrseq>;
 +};
