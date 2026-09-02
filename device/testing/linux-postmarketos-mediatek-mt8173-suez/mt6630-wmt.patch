@@ -1097,7 +1097,7 @@
 +MODULE_LICENSE("GPL");
 --- a/drivers/misc/mt6630-wlan.c
 +++ b/drivers/misc/mt6630-wlan.c
-@@ -0,0 +1,2024 @@
+@@ -0,0 +1,2070 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/*
 + * WLAN driver for the MediaTek MT6630 combo chip, SDIO function 1.
@@ -1362,6 +1362,7 @@
 +	struct work_struct tx_work;
 +
 +	u8 ch_token;			/* channel privilege request id */
++	struct completion scan_done;
 +	struct completion ch_grant;
 +
 +	/* interrupt-mode RX (runtime-toggleable) */
@@ -1784,6 +1785,10 @@
 +			wl->scanning = false;
 +			ieee80211_scan_completed(wl->hw, &info);
 +		}
++		/* Outside the flag test on purpose: the cancel path below
++		 * waits on this, and it must be woken even for a scan it has
++		 * already finished accounting for. */
++		complete(&wl->scan_done);
 +		break;
 +	case EVENT_ID_CH_PRIVILEGE:
 +		/* grant: {bss, token, status, chan, ...}, status 0 = ok */
@@ -2768,8 +2773,48 @@
 +		return;
 +	cancel_delayed_work_sync(&wl->scan_timeout);
 +
-+	mt6630_wlan_cmd(wl, CMD_ID_SCAN_CANCEL, true, cmd, sizeof(cmd),
-+			0, NULL, 0);
++	/* Do NOT send CMD_ID_SCAN_CANCEL. It wedges the firmware.
++	 *
++	 * Isolated on one boot with NetworkManager and wpa_supplicant stopped,
++	 * so nothing could scan behind the test's back:
++	 *
++	 *   ip link set wlan0 down; sleep 3; up  -- no scan running -> 108 BSS
++	 *   the same down/up 1 s into a scan                        ->   0 BSS
++	 *
++	 * Once wedged, every later scan ends in "scan done never arrived", a
++	 * rejoin gets "no channel grant", and only a reboot recovers the chip
++	 * -- which takes Bluetooth with it, since both are the same firmware.
++	 *
++	 * It is the cancel itself, not the teardown that follows it. Two builds
++	 * established that:
++	 *
++	 *  - waiting 1 s for a SCAN_DONE after the cancel logged "fw did not
++	 *    acknowledge the scan cancel" every time. The vendor knows the
++	 *    firmware does not answer: its scnFsmMsgAbort() (gen3
++	 *    mgmt/scan_fsm.c) sends the cancel and then *fabricates* the
++	 *    scan-done with scnFsmGenerateScanDoneMsg(SCAN_STATUS_CANCELLED).
++	 *  - waiting 8 s for the natural SCAN_DONE instead still gave "scan
++	 *    still running 8 s after the cancel", for a sweep that finishes in
++	 *    3-5 s when left alone -- so the engine was already dead before any
++	 *    teardown command could reach it.
++	 *
++	 * An explicit abort wedging this firmware is a pattern we have hit
++	 * before, in the channel-privilege path.
++	 *
++	 * So just wait for the SCAN_DONE the firmware sends on its own, bounded
++	 * under the driver's 10 s scan_timeout. The event handler above
++	 * completes the scan towards mac80211 when it arrives, so the common
++	 * path does not need to do it here. mac80211 asks drivers to cancel
++	 * "if possible" and only requires the scan be finished with
++	 * ieee80211_scan_completed(), so waiting out a sweep is within the
++	 * contract; in practice it returns in ~0.2 s because the sweep is
++	 * already nearly done by the time anything tears the interface down.
++	 */
++	reinit_completion(&wl->scan_done);
++	if (!wait_for_completion_timeout(&wl->scan_done,
++					 msecs_to_jiffies(8000)))
++		dev_warn(&wl->func->dev,
++			 "scan did not finish within 8 s\n");
 +
 +	/* Belt and braces: if the firmware never answered, mac80211 is still
 +	 * waiting and would stay -EBUSY for every future scan. */
@@ -2884,6 +2929,7 @@
 +	mutex_init(&wl->cmd_lock);
 +	spin_lock_init(&wl->resp_lock);
 +	init_completion(&wl->resp_done);
++	init_completion(&wl->scan_done);
 +	init_completion(&wl->ch_grant);
 +	init_completion(&wl->tx_done);
 +	skb_queue_head_init(&wl->tx_skbs);
