@@ -98,7 +98,7 @@ diff --git a/sound/soc/codecs/mt6391.h b/sound/soc/codecs/mt6391.h
 diff --git a/sound/soc/codecs/mt6391.c b/sound/soc/codecs/mt6391.c
 --- a/sound/soc/codecs/mt6391.c
 +++ b/sound/soc/codecs/mt6391.c
-@@ -0,0 +1,2903 @@
+@@ -0,0 +1,2940 @@
 +/* Copyright (c) 2011-2013, The Linux Foundation. All rights reserved.
 + *
 + * This program is free software; you can redistribute it and/or modify
@@ -678,6 +678,39 @@ diff --git a/sound/soc/codecs/mt6391.c b/sound/soc/codecs/mt6391.c
 +	default:
 +		break;
 +	}
++}
++
++/*
++ * Program the downlink SRC with the rate it is about to be fed.
++ * mt6391_turn_on_dac() writes these same two fields as part of its power-up
++ * sequence; this is them on their own, for when the rate changes under a DAC
++ * that is already running.
++ */
++static void mt6391_set_dl_rate(struct mt6391_priv *codec_data, uint32_t rate)
++{
++	uint32_t mode = mt6391_get_dl_input_mode(rate);
++
++	mt6391_set_reg(codec_data, MT6397_AFE_PMIC_NEWIF_CFG0, mode << 12, 0xf000);
++	mt6391_set_reg(codec_data, MT6397_AFE_DL_SRC2_CON0_H, mode << 12, 0xf000);
++}
++
++/*
++ * Record the downlink rate, and push it straight to the SRC if the DAC is
++ * already running. Both callers can arrive after the output amp has been
++ * switched on: userspace applies DAC_Freq_Switch and Speaker_Amp_Switch in
++ * whatever order its UCM profile lists them, and a stream can open at a rate
++ * no control ever mentioned. An SRC left on a stale rate is silent rather than
++ * merely mistuned, so the rate has to be applied here and not just recorded.
++ */
++static void mt6391_set_dac_rate(struct mt6391_priv *codec_data, uint32_t rate)
++{
++	mutex_lock(&codec_data->ctrl_mutex);
++	if (codec_data->sample_rate[MT6391_ADDA_DAC] != rate) {
++		codec_data->sample_rate[MT6391_ADDA_DAC] = rate;
++		if (mt6391_get_dl_status(codec_data))
++			mt6391_set_dl_rate(codec_data, rate);
++	}
++	mutex_unlock(&codec_data->ctrl_mutex);
 +}
 +
 +static void mt6391_turn_on_dac(struct mt6391_priv *codec_data)
@@ -2376,25 +2409,29 @@ diff --git a/sound/soc/codecs/mt6391.c b/sound/soc/codecs/mt6391.c
 +{
 +	struct snd_soc_component *component = snd_kcontrol_chip(kcontrol);
 +	struct mt6391_priv *codec_data = snd_soc_component_get_drvdata(component);
++	uint32_t rate = 0;
 +
 +	if (ucontrol->value.integer.value[0] == DAC_FREQ_48000)
-+		codec_data->sample_rate[MT6391_ADDA_DAC] = 48000;
++		rate = 48000;
 +	else if (ucontrol->value.integer.value[0] == DAC_FREQ_44100)
-+		codec_data->sample_rate[MT6391_ADDA_DAC] = 44100;
++		rate = 44100;
 +	else if (ucontrol->value.integer.value[0] == DAC_FREQ_32000)
-+		codec_data->sample_rate[MT6391_ADDA_DAC] = 32000;
++		rate = 32000;
 +	else if (ucontrol->value.integer.value[0] == DAC_FREQ_24000)
-+		codec_data->sample_rate[MT6391_ADDA_DAC] = 24000;
++		rate = 24000;
 +	else if (ucontrol->value.integer.value[0] == DAC_FREQ_22050)
-+		codec_data->sample_rate[MT6391_ADDA_DAC] = 22050;
++		rate = 22050;
 +	else if (ucontrol->value.integer.value[0] == DAC_FREQ_16000)
-+		codec_data->sample_rate[MT6391_ADDA_DAC] = 16000;
++		rate = 16000;
 +	else if (ucontrol->value.integer.value[0] == DAC_FREQ_12000)
-+		codec_data->sample_rate[MT6391_ADDA_DAC] = 12000;
++		rate = 12000;
 +	else if (ucontrol->value.integer.value[0] == DAC_FREQ_11025)
-+		codec_data->sample_rate[MT6391_ADDA_DAC] = 11025;
++		rate = 11025;
 +	else if (ucontrol->value.integer.value[0] == DAC_FREQ_8000)
-+		codec_data->sample_rate[MT6391_ADDA_DAC] = 8000;
++		rate = 8000;
++
++	if (rate)
++		mt6391_set_dac_rate(codec_data, rate);
 +
 +	return 0;
 +}
@@ -2765,7 +2802,7 @@ diff --git a/sound/soc/codecs/mt6391.c b/sound/soc/codecs/mt6391.c
 +		codec_data->sample_rate[MT6391_ADDA_ADC] = runtime->rate;
 +	} else if (substream->stream == SNDRV_PCM_STREAM_PLAYBACK) {
 +		pr_debug("%s playback rate = %d\n", __func__, runtime->rate);
-+		codec_data->sample_rate[MT6391_ADDA_DAC] = runtime->rate;
++		mt6391_set_dac_rate(codec_data, runtime->rate);
 +	}
 +	return 0;
 +}
