@@ -3,7 +3,7 @@ maintainer="Ryan Brue <ryanbrue.dev@gmail.com>"
 pkgname=device-amazon-suez-mainline
 pkgdesc="Amazon Fire HD 10 (2017) (mainline)"
 pkgver=1
-pkgrel=40
+pkgrel=41
 url="https://postmarketos.org"
 license="MIT"
 arch="aarch64"
@@ -19,7 +19,6 @@ depends="
 "
 makedepends="devicepkg-dev"
 source="
-	60-suez-power-button.gschema.override
 	61-powervr-mutter-ignore.rules
 	99-suez-charge-voltage.rules
 	amazon-suez-gpu.service
@@ -33,8 +32,6 @@ source="
 	suez-charger-limit
 	suez-charger-limit.service
 	suez-hardlockup.service
-	suez-lid.conf
-	suez-no-idle-suspend.conf
 	suez-pstore-blk
 	suez-pstore-blk.service
 	suez-stability.conf
@@ -99,8 +96,6 @@ package() {
 
 	# Stop the power key asking for a suspend this board cannot do; the
 	# override file carries the measurement.
-	install -Dm644 "$srcdir"/60-suez-power-button.gschema.override \
-		"$pkgdir"/usr/share/glib-2.0/schemas/60-suez-power-button.gschema.override
 
 	# Keep mutter away from the render-only PowerVR card node; see the
 	# comments in the rule file.
@@ -115,36 +110,61 @@ package() {
 	ln -s ../amazon-suez-gpu.service \
 		"$pkgdir"/usr/lib/systemd/system/graphical.target.wants/amazon-suez-gpu.service
 
-	# Keep systemd-logind from suspending when the folio cover closes; see
-	# the comments in the file.
-	install -Dm644 "$srcdir"/suez-lid.conf \
-		"$pkgdir"/usr/lib/systemd/logind.conf.d/99-suez-lid.conf
-
-	# ...and keep everything ELSE from suspending either. A failed s2idle on
-	# this board leaves the MT6630 dead -- no Wi-Fi, no Bluetooth -- until a
-	# reboot, and the lid is not the only way in: gnome-shell's power manager
-	# asked on its own after 900 s of idle. The file has the measurement.
-	install -Dm644 "$srcdir"/suez-no-idle-suspend.conf \
-		"$pkgdir"/usr/lib/systemd/logind.conf.d/99-suez-no-idle-suspend.conf
-
-	# Mask the sleep targets. This is the part that actually takes effect:
-	# logind's SleepOperation= was tried in r35 and measured ineffective on
-	# systemd 261.2 (CanSuspend still answered "yes"); with these masks it
-	# answers "no". Same idiom, and same directory, as the nftables.service
-	# mask this package already ships below -- masking belongs in
-	# /etc/systemd/system, NOT /usr/lib/systemd/system, because systemd's own
-	# package owns the unit files there and shipping symlinks over them is a
-	# file conflict.
+	# SUSPEND POLICY
 	#
-	# NOTE: as of kernel 7.2.2-r12 suspend-to-RAM WORKS on this board. These
-	# masks are no longer here because suspend fails -- they are here because a
-	# successful suspend still leaves the MT6630 Wi-Fi/BT chip dead until the
-	# next reboot, for want of PM ops on its two SDIO functions. Do not lift
-	# them on the strength of "but suspend works now"; the full rationale and
-	# the exact condition for removing them are in suez-no-idle-suspend.conf.
+	# Suspend-to-RAM works on this board and every known blocker is fixed and
+	# measured, so nothing here blocks it any more. The history matters,
+	# because for a long time three files in this package existed only to
+	# prevent suspend, and they were removed one condition at a time:
+	#
+	#   * no suspend state at all -- the firmware is PSCI 0.2 and
+	#     SYSTEM_SUSPEND is PSCI 1.0. Fixed by the SPM suspend driver in
+	#     kernel 7.2.2; /sys/power/mem_sleep now reads "s2idle [deep]".
+	#   * mtk_vpu aborted every attempt with -EIO. Fixed by disabling the VPU
+	#     and its four consumers in the board dts (7.2.2-r12).
+	#   * a successful suspend killed the MT6630 until reboot, for want of PM
+	#     ops on its two SDIO functions. Fixed in 7.2.2-r14
+	#     (MMC_PM_KEEP_POWER + keep-power-in-suspend).
+	#   * the GPU wedged after a resume, and could hang the suspend outright.
+	#     Fixed in 7.2.2-r20 -- mfgtop's genpd power_on was calling the clk
+	#     API on a gate its own device provides, which is -EACCES at _noirq.
+	#
+	# Verified on hardware after all of that: the power key wakes the board
+	# from a real suspend ("woke by EINT, raw_sta = 0x40" after 11.2 s, with
+	# the RTC backstop at 90 s and the SPM timer at 200 s, so nothing else
+	# could have done it), the panel comes back, and Wi-Fi, Bluetooth and the
+	# GPU all survive.
+	#
+	# So the lid, the power key and the idle timeout are all left at their
+	# upstream defaults now -- suspend on close, suspend on tap, and
+	# gnome-shell's own idle handling -- which is why 99-suez-lid.conf and
+	# 99-suez-no-idle-suspend.conf are gone, and why the power-button-action
+	# override is gone (GNOME's default for it is already 'suspend').
+	#
+	# HIBERNATION STAYS MASKED, and that is not a matter of taste. The only
+	# swap on this device is 2.6 GB of zram, and there is no resume= on the
+	# kernel cmdline, so there is nowhere to write a hibernation image and no
+	# way to find it again. /sys/power/disk offers only "[shutdown] reboot
+	# suspend test_resume". An unmasked hibernate.target would hand users an
+	# action that cannot work.
+	#
+	# Masking belongs in /etc/systemd/system, NOT /usr/lib/systemd/system,
+	# because systemd's own package owns the unit files there and shipping
+	# symlinks over them is a file conflict. Same idiom as the
+	# nftables.service mask below.
+	#
+	# If you ever need to block system sleep again, mask the targets -- do not
+	# reach for logind's SleepOperation=. It looks like exactly the right knob
+	# and it is a real key, but on systemd 261.2 an empty SleepOperation= does
+	# NOT gate suspend: r35 shipped that and CanSuspend still answered "yes".
+	# Verify any change with, and only with:
+	#   busctl call org.freedesktop.login1 /org/freedesktop/login1 \
+	#          org.freedesktop.login1.Manager CanSuspend
+	# Checking `systemctl suspend` over SSH proves nothing, because sshd holds
+	# a block inhibitor ("Active PAM session") and the call is refused for that
+	# reason instead.
 	install -d "$pkgdir"/etc/systemd/system
-	for _t in sleep.target suspend.target hibernate.target hybrid-sleep.target \
-	          suspend-then-hibernate.target; do
+	for _t in hibernate.target hybrid-sleep.target suspend-then-hibernate.target; do
 		ln -sf /dev/null "$pkgdir"/etc/systemd/system/"$_t"
 	done
 
@@ -185,7 +205,6 @@ package() {
 }
 
 sha512sums="
-3c70894835f8a7cd09d1eb0d2f2f17e49bfebdc26b93eaa0ff7e44941c81bf588a33401f07f8e6cd685b67b7214d1cb3bc4146f69b20364b01c3b9dd276c2701  60-suez-power-button.gschema.override
 24175a01baf284dfbb2393745f88ec8610c0e0fc828d65b50194cbed7e0013005d6584d6412dfbcc043d3882e6a8c5dec20449e0464b1fd8ec5f532ddb25a099  61-powervr-mutter-ignore.rules
 7c0bc0904e64d096c2218264352ef0788afbebb633616c58fafbd186805a06959bf8a160ca9768a1b11b1e57d15e0886f85bdfbc44382d034e8d3984e550f829  99-suez-charge-voltage.rules
 acbd142eb5a789d740ecfffed67f65e827fadc29f47e04bf4084e97152381ffc897f6f12b62fafc28ba8e4d12cacecdcc8b4c0b421fde9ce1261cf5c4889f043  amazon-suez-gpu.service
@@ -199,8 +218,6 @@ aaf34e1a660df1fe4782b8a130ab7cd9477c39eb559f48f3ee78aa01673666491087d9f0ed6403b3
 a36d73275d8bbd45365b0a28cd7f1d2ddcfe43842c05c36320d7213dd89629b8169281723db7687c74d9b2325e00b33678345ca03e7de0fa54a159519ca949fd  suez-charger-limit
 3d6fe65bf0ddbdcdcb59a11d5df77ab9d2c477af59bcf0980cf697c6031ceec26599a79712b9147c9648b284eb27031dd58b75684a9898f7d87a11cf9044c6f4  suez-charger-limit.service
 23a31b720d49046880090b671164dd06c7ec662246dbe4580938ef5f0c9b58b3c0dc5b1688b7110c76c3c1d7b4196497ff2b55149dd4b4aa479eeae4924d3c0a  suez-hardlockup.service
-68a831dbb5204455cc58a9719635c4675f50779548d9cf5584def601b25af7e31de5bcc7b7540b38ec586a257e265bffa426959199e9554fa80d7cb968f81091  suez-lid.conf
-7285263c263a278acd017e84e818c9756b77196ed5b9a05c46d2ee77a2dd71e3a0493c70acc5cc24dad9f1789705b4e4b9c21d86951732996925b2dcf6c1e0d2  suez-no-idle-suspend.conf
 8814fc2c8418110c39e62e26a6afb5a06c71ec4d79919fc0ef51cca899da833d75a6a411f4158893e36bf760ccba506b94cb68a892b5541544bb01716ea6b0c2  suez-pstore-blk
 5641f47975b388bef6e83b6062b885357539df30a2bb893391e5088df67fe3e6720c618cb67fef53c6eb6617bf2c0ba5bdd5d714b855c797a0a99a63f34ec4d8  suez-pstore-blk.service
 35c47540da0f6adc6afecfa5ac1d2b2d10beef5cba655078fe7076c7a61af289ba586d0072cf88f4b918d0d07e1abbb98a7f00e362da38686e3767a5875199da  suez-stability.conf
