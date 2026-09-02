@@ -36,22 +36,27 @@ SETTLE=8          # seconds to wait for a host to enumerate before deciding
 c=/sys/class/power_supply/bq24190-charger
 [ -d "$c" ] || exit 0
 
-# Track what was last asked for rather than comparing against the readback:
-# the chip quantises, so a readback need not equal the request, and comparing
-# them would rewrite the register on every pass forever.
-last=
 vbus_since=0
+last_pass=0
 while :; do
+	now=$(cut -d' ' -f1 /proc/uptime | cut -d. -f1)
+
+	# /proc/uptime counts time spent suspended, so a jump far larger than
+	# the two-second sleep at the bottom of this loop means the system has
+	# just resumed. Restart the settle window: the USB gadget needs a
+	# moment to re-enumerate, and until it has, a host is indistinguishable
+	# from a dumb charger and would wrongly be granted charger current.
+	if [ "$last_pass" != 0 ] && [ $((now - last_pass)) -gt 6 ]; then
+		vbus_since=$now
+	fi
+	last_pass=$now
+
 	if [ "$(cat $c/online 2>/dev/null)" != "1" ]; then
-		# The chip resets its own limit when VBUS returns, so forget what
-		# was set and let it be applied again on the next attach.
-		last=
 		vbus_since=0
 		sleep 2
 		continue
 	fi
 
-	now=$(cut -d' ' -f1 /proc/uptime | cut -d. -f1)
 	[ "$vbus_since" = 0 ] && vbus_since=$now
 
 	state=""
@@ -65,8 +70,27 @@ while :; do
 		want=$CHARGER_UA
 	fi
 
-	if [ "$want" != "$last" ]; then
-		echo "$want" > $c/input_current_limit 2>/dev/null && last=$want
+	# Compare against the chip rather than against what was last asked
+	# for. The chip loses this setting on its own in more than one way:
+	# whenever VBUS re-attaches, and on every system suspend, because
+	# bq24190_pm_suspend() register-resets the part -- so remembering the
+	# last request would leave the tablet charging at the reset default
+	# (500 mA) for the rest of the session after its first suspend, which
+	# is exactly when it is most likely to be charging.
+	#
+	# Comparing is only safe because both values above are real rungs of
+	# the IINLIM ladder and the driver rounds a request DOWN to a rung, so
+	# a request for one lands exactly on it. Measured on hardware:
+	#
+	#     asked  500000 -> readback  500000
+	#     asked  900000 -> readback  900000
+	#     asked 1500000 -> readback 1500000
+	#     asked 1800000 -> readback 1500000   <- not a rung, never matches
+	#
+	# Anything not on the ladder would never equal its own readback and
+	# would be rewritten on every pass forever.
+	if [ "$(cat $c/input_current_limit 2>/dev/null)" != "$want" ]; then
+		echo "$want" > $c/input_current_limit 2>/dev/null
 	fi
 
 	sleep 2
