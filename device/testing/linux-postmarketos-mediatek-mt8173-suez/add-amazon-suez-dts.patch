@@ -12,7 +12,7 @@ diff --git a/arch/arm64/boot/dts/mediatek/Makefile b/arch/arm64/boot/dts/mediate
 diff --git a/arch/arm64/boot/dts/mediatek/mt8173-amazon-suez.dts b/arch/arm64/boot/dts/mediatek/mt8173-amazon-suez.dts
 --- a/arch/arm64/boot/dts/mediatek/mt8173-amazon-suez.dts
 +++ b/arch/arm64/boot/dts/mediatek/mt8173-amazon-suez.dts
-@@ -0,0 +1,1455 @@
+@@ -0,0 +1,1490 @@
 +// SPDX-License-Identifier: (GPL-2.0 OR MIT)
 +/*
 + * Copyright (c) 2026 Ryan Brue <ryanbrue.dev@gmail.com>
@@ -300,6 +300,41 @@ diff --git a/arch/arm64/boot/dts/mediatek/mt8173-amazon-suez.dts b/arch/arm64/bo
 +
 +&uart0 {
 +	status = "okay";
++};
++
++&scpsys {
++	/*
++	 * Suspend-to-RAM. This board's firmware is PSCI 0.2, which predates
++	 * SYSTEM_SUSPEND, so the kernel is never given platform_suspend_ops
++	 * and /sys/power/mem_sleep offers only s2idle. mtk-spm-suspend drives
++	 * the SPM from the kernel instead, the way the vendor kernel does.
++	 *
++	 * This is deliberately a board property rather than something in
++	 * mt8173.dtsi: mt8173-elm and mt8173-oak ship ARM Trusted Firmware,
++	 * where BL31 does this same work at EL3, and adding the node there
++	 * would put two suspend implementations on the same hardware.
++	 */
++	spm_suspend: spm-suspend {
++		compatible = "mediatek,mt8173-spm-suspend";
++
++		/* MP0_AXI_CONFIG, for ACINACTM around the WFI */
++		mediatek,mcucfg = <&mcucfg>;
++
++		/*
++		 * The rails feeding the still-powered CPU must not follow
++		 * SRCLKEN down while the SoC is asleep.
++		 */
++		mediatek,pmic = <&pmic>;
++
++		/*
++		 * fscp_ck is parked on the crystal for the duration, because
++		 * the SPM stops the PLL it normally runs from.
++		 */
++		clocks = <&topckgen CLK_TOP_SCP_SEL>,
++			 <&topckgen CLK_TOP_SYSPLL1_D2>,
++			 <&clk26m>;
++		clock-names = "scp_sel", "syspll1_d2", "clk26m";
++	};
 +};
 +
 +&pwrap {
