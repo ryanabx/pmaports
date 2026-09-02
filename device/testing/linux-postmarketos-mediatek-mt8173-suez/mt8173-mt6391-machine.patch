@@ -76,11 +76,18 @@ diff --git a/sound/soc/mediatek/mt8173/mt8173-mt6391.c b/sound/soc/mediatek/mt81
 +	DAILINK_COMP_ARRAY(COMP_EMPTY()));
 +
 +/*
-+ * The internal microphones are PDM parts wired to an RT5514, which presents
-+ * them to the SoC over I2S -- nothing is connected to the MT6397's own mic
-+ * inputs, which is why capture through the ADDA returns a constant. The AFE
-+ * already routes "I2S Capture" -> I03/I04 -> O09/O10 -> VUL, so all that was
-+ * missing was a back end to power that leg.
++ * The internal microphone is an analog part on the RT5514's AMICL input; the
++ * RT5514 digitises it and hands it to the SoC over I2S. Nothing is connected
++ * to the MT6397's own mic inputs, which is why capture through the ADDA
++ * returns a constant, and nothing is on the RT5514's PDM pins either -- both
++ * DMIC pairs leave the down filter fed by a constant, so only its +-1 LSB
++ * dither comes out and it scales with gain rather than with sound.
++ *
++ * The AFE carries the external I2S stream to I17/I18. mt8173-afe-pcm.c offers
++ * I03/I04 as a source for "I2S Capture" too, but on this SoC that pair is the
++ * internal ADC: selecting it captures exact digital zero forever even with the
++ * whole DAPM chain powered up and the RT5514 demonstrably driving its data
++ * pin. UCM has to pick I17/I18; this driver only has to power the leg.
 + *
 + * Clocking follows mt8173-rt5650-rt5514.c: PLL from the 12.288 MHz MCLK, then
 + * sysclk from the PLL at 512fs.
@@ -113,15 +120,13 @@ diff --git a/sound/soc/mediatek/mt8173/mt8173-mt6391.c b/sound/soc/mediatek/mt81
 +};
 +
 +/*
-+ * The RT5514's DMIC1L/DMIC1R are input widgets with no source of their own, so
-+ * DAPM will not power the capture chain unless something upstream of them is
-+ * marked connected. Upstream's mt8173-rt5650-rt5514.c does this with an
-+ * "Int Mic" widget; the same is needed here or the whole leg -- DMIC1L ->
-+ * Stereo1 ADC MIX -> AIF1TX -> I2S Capture -> I03 -> O09 -> VUL -- stays off
-+ * and capture returns silence.
++ * "Int Mic" gives the microphone a name to route from, following the idiom in
++ * mt8173-rt5650-rt5514.c. Only the left half is wired: AMICR has the same
++ * noise floor as AMICL but shows no acoustic response at any boost setting,
++ * so that half is unpopulated and capture is mono.
 + *
 + * These live in the link's .init rather than on the card so they are only
-+ * registered when the RT5514 link is, since a board without one has no DMIC1L
++ * registered when the RT5514 link is, since a board without one has no AMICL
 + * widget to route to and card registration would fail.
 + */
 +static const struct snd_soc_dapm_widget mt8173_rt5514_widgets[] = {
@@ -129,8 +134,7 @@ diff --git a/sound/soc/mediatek/mt8173/mt8173-mt6391.c b/sound/soc/mediatek/mt81
 +};
 +
 +static const struct snd_soc_dapm_route mt8173_rt5514_routes[] = {
-+	{ "DMIC1L", NULL, "Int Mic" },
-+	{ "DMIC1R", NULL, "Int Mic" },
++	{ "AMICL", NULL, "Int Mic" },
 +};
 +
 +static int mt8173_rt5514_init(struct snd_soc_pcm_runtime *rtd)
@@ -149,15 +153,11 @@ diff --git a/sound/soc/mediatek/mt8173/mt8173-mt6391.c b/sound/soc/mediatek/mt81
 +		return ret;
 +
 +	/*
-+	 * "Int Mic" is a DAPM pin, and a pin that nothing enables stays off --
-+	 * which leaves DMIC1L off even though DMIC CLK, Stereo1 ADC MIXL,
-+	 * AIF1TX and PLL1 all come up, and capture returns silence. Measured
-+	 * exactly that on 7.2.2-r5.
-+	 *
++	 * "Int Mic" is a DAPM pin, and a pin that nothing enables stays off.
 +	 * Upstream exposes a SOC_DAPM_PIN_SWITCH so userspace can toggle it,
-+	 * but these microphones are soldered to the board and there is no
-+	 * reason for anything to turn them off, so enable the pin here and
-+	 * spare UCM a control it would only ever set to on.
++	 * but this microphone is soldered to the board and there is no reason
++	 * for anything to turn it off, so enable the pin here and spare UCM a
++	 * control it would only ever set to on.
 +	 */
 +	ret = snd_soc_dapm_enable_pin(card->dapm, "Int Mic");
 +	if (ret)

@@ -12,7 +12,7 @@ diff --git a/arch/arm64/boot/dts/mediatek/Makefile b/arch/arm64/boot/dts/mediate
 diff --git a/arch/arm64/boot/dts/mediatek/mt8173-amazon-suez.dts b/arch/arm64/boot/dts/mediatek/mt8173-amazon-suez.dts
 --- a/arch/arm64/boot/dts/mediatek/mt8173-amazon-suez.dts
 +++ b/arch/arm64/boot/dts/mediatek/mt8173-amazon-suez.dts
-@@ -0,0 +1,1454 @@
+@@ -0,0 +1,1455 @@
 +// SPDX-License-Identifier: (GPL-2.0 OR MIT)
 +/*
 + * Copyright (c) 2026 Ryan Brue <ryanbrue.dev@gmail.com>
@@ -189,8 +189,8 @@ diff --git a/arch/arm64/boot/dts/mediatek/mt8173-amazon-suez.dts b/arch/arm64/bo
 +		mediatek,audio-codec = <&mt6397codec>;
 +		/*
 +		 * Capture comes from the RT5514 over I2S2, not from the MT6397.
-+		 * The AFE already routes "I2S Capture" -> I03/I04 -> O09/O10 ->
-+		 * VUL; this adds the back end that lets that leg power up.
++		 * The AFE carries that stream to I17/I18 -> O09/O10 -> VUL;
++		 * this adds the back end that lets that leg power up.
 +		 */
 +		mediatek,capture-codec = <&rt5514>;
 +		mediatek,platform = <&afe>;
@@ -693,10 +693,11 @@ diff --git a/arch/arm64/boot/dts/mediatek/mt8173-amazon-suez.dts b/arch/arm64/bo
 +	};
 +
 +	/*
-+	 * The RT5514 "smart microphone" DSP. The two internal PDM microphones
-+	 * are wired to it, not to the MT6397 -- which is why capturing through
-+	 * the PMIC's own ADDA returns a constant rather than audio -- and it
-+	 * presents them to the SoC over I2S2.
++	 * The RT5514 "smart microphone" DSP. The internal microphone is an
++	 * analog part on its AMICL input, not on the MT6397 -- which is why
++	 * capturing through the PMIC's own ADDA returns a constant rather than
++	 * audio -- and the RT5514 hands it to the SoC over I2S2. Its PDM pins
++	 * are unused: both DMIC pairs read as a constant.
 +	 *
 +	 * From suez_dvt.dts, which gives it two buses:
 +	 *
