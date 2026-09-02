@@ -1,0 +1,140 @@
+From: Ryan Brue <ryanbrue.dev@gmail.com>
+Subject: clk: mediatek: mt8173-mfgtop: do not use the clk API from power_on
+
+clk_mt8173_mfgtop_power_on() calls clk_prepare_enable() on the mfg_26m gate that
+this same driver provides. That is a layering inversion which cannot work:
+clk_core_prepare() calls clk_pm_runtime_get() on the clock provider -- this
+driver's own device -- and genpd power transitions run at _noirq time, where
+runtime PM is disabled and pm_runtime_resume_and_get() returns -EACCES.
+
+Measured on mt8173 (amazon-suez) during resume from suspend-to-RAM, immediately
+after the secondary CPUs come back up:
+
+  clk-mt8173-mfgtop 13fff000.clock-controller: 26 MHz clock enable failed: -13
+
+The failure is not survivable, because genpd_sync_power_on() ignores what
+power_on() returns and marks the domain on regardless. The clock is then left
+ungated-but-unprepared, and the next power_off() underflows its refcount:
+
+  mfg_26m already disabled
+  mfg_26m already unprepared
+  WARNING: drivers/clk/clk.c:1048 at clk_core_unprepare
+  Workqueue: pm genpd_power_off_work_fn
+    clk_unprepare / clk_mt8173_mfgtop_power_off / _genpd_power_off
+
+Gate the bit with a direct regmap write instead. The vendor driver
+(mtk_mfgsys.c) does exactly this -- it gates all four MFG CG bits with a raw
+register write and never routes its own power sequencing through the clk
+framework. mfg_26m stays registered as a clock for any consumer that wants it;
+nothing currently does.
+
+Signed-off-by: Ryan Brue <ryanbrue.dev@gmail.com>
+--- a/drivers/clk/mediatek/clk-mt8173-mfgtop.c
++++ b/drivers/clk/mediatek/clk-mt8173-mfgtop.c
+@@ -30,6 +30,11 @@
+ 	.set_ofs = 0x0004,
+ };
+ 
++/* The 26 MHz gate, addressed directly rather than through the clk framework.
++ * See the comment in clk_mt8173_mfgtop_power_on().
++ */
++#define MFG_CG_26M	BIT(3)
++
+ #define GATE_MFG(_id, _name, _parent, _shift, _flags)	\
+ 	GATE_MTK_FLAGS(_id, _name, _parent, &mfg_cg_regs, _shift, &mtk_clk_gate_ops_setclr, _flags)
+ 
+@@ -46,7 +51,6 @@
+ 	struct regmap *regmap;
+ 	struct generic_pm_domain genpd;
+ 	struct of_phandle_args parent_pd, child_pd;
+-	struct clk *clk_26m;
+ };
+ 
+ /* Delay count in clock cycles */
+@@ -66,12 +70,33 @@
+ static int clk_mt8173_mfgtop_power_on(struct generic_pm_domain *domain)
+ {
+ 	struct mt8173_mfgtop_data *data = container_of(domain, struct mt8173_mfgtop_data, genpd);
+-	int ret;
+ 
+-	/* drives internal power management */
+-	ret = clk_prepare_enable(data->clk_26m);
+-	if (ret)
+-		return ret;
++	/*
++	 * Ungate the 26 MHz clock, which drives the block's internal power
++	 * management. This writes the gate's CG register directly instead of
++	 * calling clk_prepare_enable() on the mfg_26m gate that this same
++	 * driver provides, because that is a layering inversion that cannot
++	 * work: clk_core_prepare() calls clk_pm_runtime_get() on the clock's
++	 * provider -- us -- and genpd power transitions run at _noirq time,
++	 * where runtime PM is disabled and pm_runtime_resume_and_get() returns
++	 * -EACCES.
++	 *
++	 * That failure is not survivable either, because genpd_sync_power_on()
++	 * ignores what power_on() returns and marks the domain on regardless.
++	 * The clock is then left ungated-but-unprepared, and the next
++	 * power_off() underflows its refcount:
++	 *
++	 *   clk-mt8173-mfgtop: 26 MHz clock enable failed: -13
++	 *   mfg_26m already disabled
++	 *   mfg_26m already unprepared
++	 *   WARNING: clk_core_unprepare, Workqueue: pm genpd_power_off_work_fn
++	 *
++	 * The vendor driver gates all four MFG CG bits with a raw register
++	 * write for the same reason, and never routes its own power sequencing
++	 * through the clk framework. mfg_26m stays registered as a clock for
++	 * anyone who wants it; nothing else currently consumes it.
++	 */
++	regmap_write(data->regmap, mfg_cg_regs.clr_ofs, MFG_CG_26M);
+ 
+ 	/* Power on/off delays for various signals */
+ 	regmap_write(data->regmap, MFG_ACTIVE_POWER_CON0,
+@@ -102,8 +127,10 @@
+ 	/* Magic numbers related to core switch sequence and delays */
+ 	regmap_write(data->regmap, 0xec, 0);
+ 
+-	/* drives internal power management */
+-	clk_disable_unprepare(data->clk_26m);
++	/* drives internal power management; see power_on() for why this is a
++	 * raw register write and not clk_disable_unprepare()
++	 */
++	regmap_write(data->regmap, mfg_cg_regs.set_ofs, MFG_CG_26M);
+ 
+ 	return 0;
+ }
+@@ -155,16 +182,10 @@
+ 		goto put_pm_runtime;
+ 	}
+ 
+-	data->clk_26m = clk_hw_get_clk(data->clk_data->hws[CLK_MFG_26M], "26m");
+-	if (IS_ERR(data->clk_26m)) {
+-		ret = dev_err_probe(dev, PTR_ERR(data->clk_26m), "Failed to get 26 MHz clock\n");
+-		goto unregister_clks;
+-	}
+-
+ 	ret = of_clk_add_hw_provider(node, of_clk_hw_onecell_get, data->clk_data);
+ 	if (ret) {
+ 		dev_err_probe(dev, ret, "Failed to add clk OF provider\n");
+-		goto put_26m_clk;
++		goto unregister_clks;
+ 	}
+ 
+ 	data->genpd.name = "mfg-top";
+@@ -197,8 +218,6 @@
+ 	pm_genpd_remove(&data->genpd);
+ del_clk_provider:
+ 	of_clk_del_provider(node);
+-put_26m_clk:
+-	clk_put(data->clk_26m);
+ unregister_clks:
+ 	mtk_clk_unregister_gates(mfg_clks, ARRAY_SIZE(mfg_clks), data->clk_data);
+ put_pm_runtime:
+@@ -217,7 +236,6 @@
+ 	of_genpd_del_provider(node);
+ 	pm_genpd_remove(&data->genpd);
+ 	of_clk_del_provider(node);
+-	clk_put(data->clk_26m);
+ 	mtk_clk_unregister_gates(mfg_clks, ARRAY_SIZE(mfg_clks), data->clk_data);
+ 	of_node_put(data->parent_pd.np);
+ }
