@@ -1,0 +1,29 @@
+# The power key on this board asks for a suspend that can never happen.
+#
+# gnome-shell's power manager maps the key to power-button-action, whose
+# default is 'suspend'. Mainline registers no suspend ops at all here --
+# Amazon's firmware is PSCI 0.2 and SYSTEM_SUSPEND is a PSCI 1.0 function, so
+# psci_init_system_suspend() never calls suspend_set_ops() and /sys/power/
+# mem_sleep offers only [s2idle]. On top of that this package masks the sleep
+# targets outright, because the device-suspend phase kills the MT6630 until a
+# reboot (see suez-no-idle-suspend.conf).
+#
+# So the request is refused -- but GDM has already done its pre-suspend step of
+# switching to the greeter by then, which drops the user to the login screen,
+# with a flash of the framebuffer console during the compositor handover, and
+# nothing suspended. Measured 2026-09-01:
+#
+#   logind: Power key pressed short.
+#   gnome-shell: POWERMANAGER: doing system action 'suspend' (reason 'power key released')
+#   gnome-shell: POWERMANAGER: session active changed: false
+#   logind: New session 'c233' of user 'gdm-greeter' with class 'greeter'
+#
+# 'interactive' gives the key the power menu instead. Note the schema has no
+# 'blank' value -- the enum is nothing/suspend/hibernate/interactive -- so
+# "turn the screen off" is not available here without new code.
+#
+# An override rather than a dconf default so it applies to the GDM greeter as
+# well as the user session. It only changes the default, which is safe because
+# the key is not set in either dconf database.
+[org.gnome.settings-daemon.plugins.power]
+power-button-action='interactive'

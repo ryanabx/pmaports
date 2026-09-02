@@ -3,7 +3,7 @@ maintainer="Ryan Brue <ryanbrue.dev@gmail.com>"
 pkgname=device-amazon-suez-mainline
 pkgdesc="Amazon Fire HD 10 (2017) (mainline)"
 pkgver=1
-pkgrel=38
+pkgrel=39
 url="https://postmarketos.org"
 license="MIT"
 arch="aarch64"
@@ -19,6 +19,7 @@ depends="
 "
 makedepends="devicepkg-dev"
 source="
+	60-suez-power-button.gschema.override
 	61-powervr-mutter-ignore.rules
 	99-suez-charge-voltage.rules
 	amazon-suez-gpu.service
@@ -96,6 +97,11 @@ package() {
 	install -Dm644 "$srcdir"/99-suez-charge-voltage.rules \
 		"$pkgdir"/usr/lib/udev/rules.d/99-suez-charge-voltage.rules
 
+	# Stop the power key asking for a suspend this board cannot do; the
+	# override file carries the measurement.
+	install -Dm644 "$srcdir"/60-suez-power-button.gschema.override \
+		"$pkgdir"/usr/share/glib-2.0/schemas/60-suez-power-button.gschema.override
+
 	# Keep mutter away from the render-only PowerVR card node; see the
 	# comments in the rule file.
 	install -Dm644 "$srcdir"/61-powervr-mutter-ignore.rules \
@@ -172,6 +178,7 @@ package() {
 }
 
 sha512sums="
+185d172f8180ea5ebf5026607d77c09776971d57495c5586df5ad447c651eba3c5bb259d3e3248f6921072ffbe5df567419f21c9d439e98b314008b90e73322a  60-suez-power-button.gschema.override
 24175a01baf284dfbb2393745f88ec8610c0e0fc828d65b50194cbed7e0013005d6584d6412dfbcc043d3882e6a8c5dec20449e0464b1fd8ec5f532ddb25a099  61-powervr-mutter-ignore.rules
 7c0bc0904e64d096c2218264352ef0788afbebb633616c58fafbd186805a06959bf8a160ca9768a1b11b1e57d15e0886f85bdfbc44382d034e8d3984e550f829  99-suez-charge-voltage.rules
 acbd142eb5a789d740ecfffed67f65e827fadc29f47e04bf4084e97152381ffc897f6f12b62fafc28ba8e4d12cacecdcc8b4c0b421fde9ce1261cf5c4889f043  amazon-suez-gpu.service
