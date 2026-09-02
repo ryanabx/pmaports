@@ -34,7 +34,7 @@ diff -urN a/drivers/soc/mediatek/Makefile b/drivers/soc/mediatek/Makefile
 diff -urN a/drivers/soc/mediatek/mtk-spm-suspend.c b/drivers/soc/mediatek/mtk-spm-suspend.c
 --- a/drivers/soc/mediatek/mtk-spm-suspend.c	1969-12-31 18:00:00.000000000 -0600
 +++ b/drivers/soc/mediatek/mtk-spm-suspend.c
-@@ -0,0 +1,985 @@
+@@ -0,0 +1,998 @@
 +// SPDX-License-Identifier: GPL-2.0-only
 +/*
 + * MediaTek MT8173 System Power Manager -- suspend to RAM.
@@ -454,12 +454,25 @@ diff -urN a/drivers/soc/mediatek/mtk-spm-suspend.c b/drivers/soc/mediatek/mtk-sp
 +MODULE_PARM_DESC(spm_flags, "SPM PCM flags; SPM_CPU_PDN_DIS|SPM_INFRA_PDN_DIS are forced on");
 +
 +/*
-+ * A backstop wakeup from the SPM's own timer, in seconds. The vendor arms one
-+ * too (SPM_PWAKE_EN, 600 s). Keeping it non-zero means a suspend that no other
-+ * wake source can end still returns, which is what makes this safe to iterate
-+ * on. Set to 0 once the wake sources are trusted.
++ * A backstop wakeup from the SPM's own timer, in seconds, and DISABLED by
++ * default. While the wake sources were unproven this defaulted to 30, so that a
++ * suspend nothing else could end still returned; that is what made the driver
++ * safe to iterate on. It is also a periodic wakeup, so shipping it enabled means
++ * every real suspend ends after 30 s whether the user asked or not -- measured
++ * on hardware as "woke by PCM_TIMER, slept 983219 ticks" (30.005 s) on a suspend
++ * the user expected to hold.
++ *
++ * The wake sources are now proven, which is the condition this was waiting on:
++ * the power key wakes the board from a real suspend-to-RAM ("woke by EINT,
++ * raw_sta = 0x40"), and so does an RTC alarm, both through the PMIC EINT. Two
++ * independent paths, so nothing needs a periodic timer to be rescuable.
++ *
++ * The vendor does arm one (SPM_PWAKE_EN, 600 s), but Android wakes periodically
++ * for its own housekeeping and we do not; a wakeup every ten minutes would give
++ * back much of what suspend is for. Non-zero remains one echo away for bringing
++ * up a new wake source.
 + */
-+static unsigned int pcm_timer_sec = 30;
++static unsigned int pcm_timer_sec;
 +module_param(pcm_timer_sec, uint, 0644);
 +MODULE_PARM_DESC(pcm_timer_sec, "SPM PCM backstop wakeup in seconds, 0 to disable");
 +
