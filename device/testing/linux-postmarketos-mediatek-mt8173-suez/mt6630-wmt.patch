@@ -1097,7 +1097,7 @@
 +MODULE_LICENSE("GPL");
 --- a/drivers/misc/mt6630-wlan.c
 +++ b/drivers/misc/mt6630-wlan.c
-@@ -0,0 +1,1997 @@
+@@ -0,0 +1,2024 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/*
 + * WLAN driver for the MediaTek MT6630 combo chip, SDIO function 1.
@@ -2437,6 +2437,25 @@
 +			       sizeof(cmd), 0, NULL, 0);
 +}
 +
++/* The counterpart, and the fw needs it: PM_BSS_CONNECTED makes the firmware
++ * treat the BSS as connected, which is what holds the channel once the 4 s
++ * JOIN privilege expires (see the comment in the assoc path). Nothing else
++ * ever releases that, so without this a later CH_PRIVILEGE request for the
++ * same channel is never granted and the radio cannot re-associate at all.
++ *
++ * The vendor sends it as the first action of aisFsmDisconnect() and of
++ * aisFsmRoamingDisconnectPrevAP() (gen3 mgmt/ais_fsm.c), i.e. on exactly the
++ * transitions handled below. Payload is CMD_INDICATE_PM_BSS_ABORT,
++ * { ucBssIndex, aucReserved[3] }.
++ */
++static int mt6630_wlan_pm_abort(struct mt6630_wlan *wl)
++{
++	u8 cmd[4] = { MT6630_BSS_IDX, 0, 0, 0 };
++
++	return mt6630_wlan_cmd(wl, CMD_ID_PM_BSS_ABORT, true, cmd,
++			       sizeof(cmd), 0, NULL, 0);
++}
++
 +/* Native-802.11 RX: without this the fw hands data frames up translated
 + * to 802.3 (vendor default), which mac80211 cannot take. */
 +static int mt6630_wlan_basic_config(struct mt6630_wlan *wl)
@@ -2578,6 +2597,11 @@
 +		mt6630_wlan_pm_connected(wl);
 +		wl->assoc = true;
 +	} else if (!vif->cfg.assoc && wl->assoc) {
++		/* Release the fw's connected-BSS state before tearing the
++		 * BSS down, which is the order the vendor uses. Without it
++		 * the fw keeps holding this channel and the next join gets
++		 * "no channel grant". */
++		mt6630_wlan_pm_abort(wl);
 +		mt6630_wlan_bss_info(wl, false, 0);
 +		wl->assoc = false;
 +	}
@@ -2739,13 +2763,16 @@
 +					  struct ieee80211_vif *vif)
 +{
 +	struct mt6630_wlan *wl = hw->priv;
-+	u8 cmd[4] = { 1, 0, 0, 0 };	/* seq, not-ext-channel */
 +
 +	if (!wl->scanning)
 +		return;
 +	cancel_delayed_work_sync(&wl->scan_timeout);
++
 +	mt6630_wlan_cmd(wl, CMD_ID_SCAN_CANCEL, true, cmd, sizeof(cmd),
 +			0, NULL, 0);
++
++	/* Belt and braces: if the firmware never answered, mac80211 is still
++	 * waiting and would stay -EBUSY for every future scan. */
 +	if (wl->scanning) {
 +		struct cfg80211_scan_info info = { .aborted = true };
 +
