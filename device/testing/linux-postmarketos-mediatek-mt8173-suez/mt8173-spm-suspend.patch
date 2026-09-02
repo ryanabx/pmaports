@@ -34,7 +34,7 @@ diff -urN a/drivers/soc/mediatek/Makefile b/drivers/soc/mediatek/Makefile
 diff -urN a/drivers/soc/mediatek/mtk-spm-suspend.c b/drivers/soc/mediatek/mtk-spm-suspend.c
 --- a/drivers/soc/mediatek/mtk-spm-suspend.c	1969-12-31 18:00:00.000000000 -0600
 +++ b/drivers/soc/mediatek/mtk-spm-suspend.c
-@@ -0,0 +1,978 @@
+@@ -0,0 +1,985 @@
 +// SPDX-License-Identifier: GPL-2.0-only
 +/*
 + * MediaTek MT8173 System Power Manager -- suspend to RAM.
@@ -430,15 +430,22 @@ diff -urN a/drivers/soc/mediatek/mtk-spm-suspend.c b/drivers/soc/mediatek/mtk-sp
 +};
 +
 +/*
-+ * The default pcm_flags. SPM_CPU_PDN_DIS is the whole design of this driver and
-+ * is not negotiable; SPM_INFRA_PDN_DIS follows from it. The rest match the
-+ * vendor's slp_spm_flags, plus SPM_DDRPHY_PDN_DIS, which the vendor leaves
-+ * clear -- keeping the DDR PHY up gives up most of the power saving but is the
-+ * conservative first step, and this is a writable parameter precisely so it can
-+ * be cleared at runtime and the difference measured without a reflash.
++ * The default pcm_flags, matching the vendor's slp_spm_flags exactly.
++ * SPM_CPU_PDN_DIS is the whole design of this driver and is not negotiable;
++ * SPM_INFRA_PDN_DIS follows from it.
++ *
++ * SPM_DDRPHY_PDN_DIS is deliberately *not* set. Setting it keeps the DDR PHY
++ * powered through the sleep, which gives up most of the saving; it was set
++ * while the resume path was still unproven, on the theory that bringing DRAM
++ * back out of self-refresh was the riskiest step. It is no longer unproven:
++ * five round trips with the PHY powered down have all resumed cleanly, each
++ * sleeping the requested time to within 5 ms by the SPM's own tick count
++ * (12.005 s, 8.005 s, and three more), and a sixth was cut short at 38 ms by a
++ * genuine EINT. The parameter stays writable so the old behaviour is one echo
++ * away if a board ever needs it.
 + */
 +#define SPM_FLAGS_DEFAULT \
-+	(SPM_CPU_PDN_DIS | SPM_INFRA_PDN_DIS | SPM_DDRPHY_PDN_DIS | \
++	(SPM_CPU_PDN_DIS | SPM_INFRA_PDN_DIS | \
 +	 SPM_DUALVCORE_PDN_DIS | SPM_PASR_DIS | SPM_DPD_DIS | \
 +	 SPM_CPU_DVS_DIS | SPM_SCREEN_OFF)
 +
