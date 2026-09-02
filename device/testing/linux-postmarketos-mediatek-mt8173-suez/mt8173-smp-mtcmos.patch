@@ -33,7 +33,7 @@ diff --git a/arch/arm64/kernel/Makefile b/arch/arm64/kernel/Makefile
 diff --git a/arch/arm64/kernel/smp_mtk.c b/arch/arm64/kernel/smp_mtk.c
 --- a/arch/arm64/kernel/smp_mtk.c
 +++ b/arch/arm64/kernel/smp_mtk.c
-@@ -0,0 +1,403 @@
+@@ -0,0 +1,539 @@
 +// SPDX-License-Identifier: GPL-2.0-only
 +/*
 + * MediaTek MT8173 secondary CPU bring-up.
@@ -128,6 +128,15 @@ diff --git a/arch/arm64/kernel/smp_mtk.c b/arch/arm64/kernel/smp_mtk.c
 +/* mcucfg */
 +#define CA15L_MISCDBG		0x20c
 +#define CA15L_ACINACTM		BIT(0)
++
++/*
++ * SPM_SLEEP_TIMER_STA reports each core's STANDBYWFI. The vendor waits on it
++ * before cutting a core's power, so a power-down can never land on a core that
++ * is still fetching.
++ */
++#define SPM_SLEEP_TIMER_STA	0x720
++#define CA7_STANDBYWFI(n)	BIT(16 + (n))
++#define CA15_STANDBYWFI(n)	BIT(20 + (n))
 +
 +/* The vendor spins forever on these; bound it instead. */
 +#define SPM_POLL_US		10000
@@ -289,6 +298,128 @@ diff --git a/arch/arm64/kernel/smp_mtk.c b/arch/arm64/kernel/smp_mtk.c
 +	return 0;
 +}
 +
++#ifdef CONFIG_HOTPLUG_CPU
++/*
++ * The power-down sequences, from spm_mtcmos_ctrl_cpu1() and
++ * spm_mtcmos_ctrl_cpu4() with state == STA_POWER_DOWN. They are the exact
++ * reverse of the power-up ones above, and they are not optional: this
++ * firmware's PSCI CPU_OFF parks the core but leaves the MTCMOS domain
++ * untouched, so without them a re-onlined core finds PWR_RST_B already
++ * asserted, never sees the rising edge that restarts it, and comes back as
++ *
++ *   CPUn: failed to come online
++ *   CPUn: failed in unknown state : 0x0
++ *
++ * which is the same symptom as having no MTCMOS support at all.
++ */
++static int mtk_ca7_cpu_off(unsigned int core)
++{
++	const struct mtk_cpu_pwr *p = &mt8173_ca7_pwr[core];
++	int ret;
++
++	reg_rmw(spm_base, p->pwr_con, 0, PWR_ISO);
++	reg_rmw(spm_base, p->pwr_con, 0, SRAM_CKISO);
++	reg_rmw(spm_base, p->pwr_con, SRAM_ISOINT_B, 0);
++	reg_rmw(spm_base, p->l1_pdn, 0, L1_PDN);
++
++	ret = spm_wait(p->l1_pdn, L1_PDN_ACK, L1_PDN_ACK);
++	if (ret)
++		return ret;
++
++	reg_rmw(spm_base, p->pwr_con, PWR_RST_B, 0);
++	reg_rmw(spm_base, p->pwr_con, 0, PWR_CLK_DIS);
++	reg_rmw(spm_base, p->pwr_con, PWR_ON, 0);
++	reg_rmw(spm_base, p->pwr_con, PWR_ON_2ND, 0);
++
++	ret = spm_wait(SPM_PWR_STATUS, p->status, 0);
++	if (!ret)
++		ret = spm_wait(SPM_PWR_STATUS_2ND, p->status, 0);
++
++	return ret;
++}
++
++/*
++ * Only the core is powered down, never the cluster. spm_mtcmos_ctrl_cpu4()
++ * goes on to call spm_mtcmos_ctrl_cpusys1() once the last A72 core is off,
++ * which additionally re-asserts the CA15 ADB bus protection, ACINACTM and the
++ * VCA15 supply isolation. Leaving CPUTOP powered only leaks; getting that
++ * teardown wrong strands the cluster, and the power-up path above already
++ * guards on CPUTOP so it stays correct either way.
++ */
++static int mtk_ca15_cpu_off(unsigned int core)
++{
++	u32 pwr_con = SPM_CA15_CPU_PWR_CON(core);
++	int ret;
++
++	reg_rmw(spm_base, pwr_con, 0, SRAM_CKISO);
++	reg_rmw(spm_base, SPM_CA15_L1_PWR_CON, 0, CA15_L1_PDN(core));
++
++	ret = spm_wait(SPM_CA15_L1_PWR_CON, CA15_L1_PDN_ACK(core),
++		       CA15_L1_PDN_ACK(core));
++	if (ret)
++		return ret;
++
++	reg_rmw(spm_base, pwr_con, 0, PWR_ISO);
++	reg_rmw(spm_base, pwr_con, PWR_ON, 0);
++	reg_rmw(spm_base, pwr_con, PWR_ON_2ND, 0);
++
++	ret = spm_wait(SPM_PWR_STATUS, CA15_CPU(core), 0);
++	if (!ret)
++		ret = spm_wait(SPM_PWR_STATUS_2ND, CA15_CPU(core), 0);
++	if (ret)
++		return ret;
++
++	reg_rmw(spm_base, pwr_con, PWR_RST_B, 0);
++
++	return 0;
++}
++
++static int mtk_cpu_power_off(unsigned int cpu)
++{
++	u64 mpidr = cpu_logical_map(cpu);
++	unsigned int aff0 = MPIDR_AFFINITY_LEVEL(mpidr, 0);
++	unsigned int aff1 = MPIDR_AFFINITY_LEVEL(mpidr, 1);
++	u32 wfi = aff1 ? CA15_STANDBYWFI(aff0) : CA7_STANDBYWFI(aff0);
++	unsigned long flags;
++	int ret;
++
++	if (aff0 >= MT8173_CORES_PER_CLUSTER || aff1 >= 2) {
++		pr_err("CPU%u: no MTCMOS sequence for mpidr %llx\n", cpu, mpidr);
++		return -EOPNOTSUPP;
++	}
++
++	if (!spm_base)
++		return -ENODEV;
++
++	/* unlock SPM register writes */
++	writel_relaxed((SPM_PROJECT_CODE << 16) | SPM_REGWR_EN,
++		       spm_base + SPM_POWERON_CONFIG_SET);
++
++	/*
++	 * PSCI has already reported the core OFF, so its STANDBYWFI is
++	 * expected to be asserted; the vendor checks anyway, and so do we,
++	 * because cutting power to a core that is still executing is not a
++	 * recoverable mistake.
++	 */
++	ret = spm_wait(SPM_SLEEP_TIMER_STA, wfi, wfi);
++	if (ret) {
++		pr_err("CPU%u: no STANDBYWFI; leaving its power domain on\n",
++		       cpu);
++		return ret;
++	}
++
++	spin_lock_irqsave(&spm_cpu_lock, flags);
++	ret = aff1 ? mtk_ca15_cpu_off(aff0) : mtk_ca7_cpu_off(aff0);
++	spin_unlock_irqrestore(&spm_cpu_lock, flags);
++
++	if (ret)
++		pr_err("CPU%u: timed out powering down the MTCMOS domain (%d)\n",
++		       cpu, ret);
++
++	return ret;
++}
++#endif /* CONFIG_HOTPLUG_CPU */
++
 +static int mtk_cpu_power_on(unsigned int cpu)
 +{
 +	u64 mpidr = cpu_logical_map(cpu);
@@ -393,16 +524,15 @@ diff --git a/arch/arm64/kernel/smp_mtk.c b/arch/arm64/kernel/smp_mtk.c
 +
 +#ifdef CONFIG_HOTPLUG_CPU
 +/*
-+ * Hotplug matters here for more than unplugging: the A72 rail is an i2c
-+ * regulator (MT6311) whose driver probes long after smp_init(), so those cores
-+ * cannot be brought up at boot -- there is no supply yet. Booting with
-+ * maxcpus=2 and onlining them once userspace is up is the only ordering that
-+ * gives them a powered rail.
++ * Going down is PSCI's job right up to the point where the core has stopped;
++ * powering its domain off afterwards is ours, exactly as on the way up, and
++ * for the same reason -- this firmware manages the core but not its MTCMOS.
++ * mt_psci.c does the same pairing: cpu_psci_ops.cpu_kill() followed by
++ * spm_mtcmos_ctrl_cpu(cpu, STA_POWER_DOWN, 1).
 + *
-+ * Everything is delegated to PSCI. The MTCMOS domain is deliberately left
-+ * powered on the way down: the power-down sequences are transcribed but
-+ * unproven, and leaking a little power is a far better failure mode than
-+ * wedging a core mid-teardown.
++ * The power-down runs from cpu_kill(), not cpu_die(): cpu_die() executes on
++ * the core that is being taken down and does not return, so it cannot be the
++ * thing that cuts its own power.
 + */
 +static bool mtk_cpu_can_disable(unsigned int cpu)
 +{
@@ -421,7 +551,13 @@ diff --git a/arch/arm64/kernel/smp_mtk.c b/arch/arm64/kernel/smp_mtk.c
 +
 +static int mtk_cpu_kill(unsigned int cpu)
 +{
-+	return cpu_psci_ops.cpu_kill(cpu);
++	int ret;
++
++	ret = cpu_psci_ops.cpu_kill(cpu);
++	if (ret)
++		return ret;
++
++	return mtk_cpu_power_off(cpu);
 +}
 +#endif
 +
