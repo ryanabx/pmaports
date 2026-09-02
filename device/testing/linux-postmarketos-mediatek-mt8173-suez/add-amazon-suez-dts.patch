@@ -12,7 +12,7 @@ diff --git a/arch/arm64/boot/dts/mediatek/Makefile b/arch/arm64/boot/dts/mediate
 diff --git a/arch/arm64/boot/dts/mediatek/mt8173-amazon-suez.dts b/arch/arm64/boot/dts/mediatek/mt8173-amazon-suez.dts
 --- a/arch/arm64/boot/dts/mediatek/mt8173-amazon-suez.dts
 +++ b/arch/arm64/boot/dts/mediatek/mt8173-amazon-suez.dts
-@@ -0,0 +1,1490 @@
+@@ -0,0 +1,1551 @@
 +// SPDX-License-Identifier: (GPL-2.0 OR MIT)
 +/*
 + * Copyright (c) 2026 Ryan Brue <ryanbrue.dev@gmail.com>
@@ -651,6 +651,67 @@ diff --git a/arch/arm64/boot/dts/mediatek/mt8173-amazon-suez.dts b/arch/arm64/bo
 + */
 +&mfg_async {
 +	domain-supply = <&mt6397_vgpu_reg>;
++};
++
++/*
++ * The video processor and everything downstream of it, switched off.
++ *
++ * mt8173.dtsi enables the VPU for every board, but it does not work here.
++ * mtk_vpu loads both firmware images into the TCMs, writes VPU_RESET, and the
++ * coprocessor never signals back, on every single boot:
++ *
++ *   mtk_vpu 10020000.vpu: 4GB mode 0
++ *   mtk_vpu 10020000.vpu: wait vpu initialization timeout!
++ *   mtk-mdp 14001000.rdma: vpu_load_firmware failed -62
++ *
++ * Two things that look like the cause are not. It is not the
++ * secos-reserved-memory / vpu-dma-mem@b7000000 overlap the kernel warns about
++ * at boot: mtk_vpu only calls of_reserved_mem_device_init() when enable_4GB is
++ * set, this board has ~1.9 GB and logs "4GB mode 0", so that region is never
++ * attached and the extend memories come from the ordinary DMA allocator. Nor
++ * is it a missing firmware blob -- there is no "Direct firmware load failed",
++ * and both load_requested_vpu() calls succeed. The real cause is unknown.
++ *
++ * The vendor kernel settles whether it is worth chasing: it has no VPU driver,
++ * no VPU node in suez_dvt.dts and no VPU symbol in suez_defconfig. This block
++ * was never brought up on the shipping software either, so there is no working
++ * configuration to work backwards from.
++ *
++ * Leaving it enabled is not merely untidy, it breaks suspend. mtk_vpu_suspend()
++ * waits for a processor that never ran, times out, and returns -EIO:
++ *
++ *   mtk_vpu 10020000.vpu: vpu idle timeout
++ *   platform_pm_suspend(): mtk_vpu_suspend+0x0/0x120 returns -5
++ *
++ * which aborts every suspend attempt on the board.
++ *
++ * The four consumers go with it. Each one resolves the mediatek,vpu phandle
++ * through vpu_get_plat_device(), which does of_find_device_by_node() and
++ * WARN_ON()s when that returns NULL -- and a disabled node has no platform
++ * device. Disabling the VPU alone would therefore replace one timeout with four
++ * backtraces, from drivers that already fail their probes today. Turning them
++ * off also releases the mtk-power-controller, which otherwise reports
++ * "sync_state() pending due to 16020000.vcodec" (and 18002000, and 19002000)
++ * forever and never gets to disable its unused domains.
++ */
++&vpu {
++	status = "disabled";
++};
++
++&vcodec_dec {
++	status = "disabled";
++};
++
++&vcodec_enc_avc {
++	status = "disabled";
++};
++
++&vcodec_enc_vp8 {
++	status = "disabled";
++};
++
++&mdp_rdma0 {
++	status = "disabled";
 +};
 +
 +&i2c0 {
