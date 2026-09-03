@@ -1,0 +1,102 @@
+From: Ryan Brue <ryanbrue.dev@gmail.com>
+Subject: power: supply: bq24190_charger: do not reset the registers across system suspend
+
+bq24190_pm_suspend() calls bq24190_register_reset(), which returns every
+register on the chip to its power-on default, and bq24190_pm_resume() does it
+again before re-applying the probe-time configuration. Between them they
+throw away every setting the chip was given, twice per sleep, and on mt8173
+(amazon-suez) that has now caused three distinct bugs:
+
+ 1. The reset re-arms the chip's 40 s i2c watchdog, which bq24190_set_config()
+    deliberately turned off at probe. Nothing pets it while the system is
+    asleep, so it expires, raises WATCHDOG_FAULT and pulses INT -- and
+    bq24190_probe() armed that interrupt as a system wake source
+    unconditionally, so the machine wakes up. Then pm_resume() resets and
+    reconfigures, so by the time anyone looks the watchdog reads 0 again and
+    the wake has no visible cause. Measured with the SoC's own sleep counter,
+    asking for 100 s:
+
+	state write rc=0, uptime 831.78 -> 874.40
+	woke by EINT, slept 1399426 ticks, raw_sta = 0x40      (= 42.7 s)
+
+    with exactly one line of /proc/interrupts moving across the sleep:
+
+	25:  +3   mt-eint  9  Edge  bq24190-charger
+
+    Every suspend while plugged in lasted ~42 s, whatever it asked for.
+
+ 2. IINLIM goes back to its 500 mA default. Boards without a charger-type
+    detector set the input limit from userspace; after the first suspend the
+    tablet spent the rest of the session charging at 500 mA -- while asleep,
+    which is exactly when it is most likely to be charging.
+
+ 3. EN_HIZ is cleared, so a charger put into high-impedance mode by the host
+    silently starts drawing from VBUS again the moment the system sleeps.
+
+Only the first is a bug the chip forces on us; the other two are the driver
+discarding a policy the host set, which no other charger driver does across a
+suspend. The reset serves no purpose either: the chip is in host mode with its
+watchdog off, so nothing in it can expire or change while the host is asleep,
+and it keeps its registers as long as it has either VBUS or a battery -- and
+if it has neither the system is not suspended, it is off. The vendor kernel
+for the same board leaves the registers alone in suspend and resume.
+
+So do not reset in either direction. Drop the suspend callback, and have
+resume re-apply the probe-time configuration only, which is idempotent and
+covers a part that has somehow fallen back to default mode. Genuine charger
+events still wake the system, which is what the wake irq is for.
+
+Signed-off-by: Ryan Brue <ryanbrue.dev@gmail.com>
+--- a/drivers/power/supply/bq24190_charger.c
++++ b/drivers/power/supply/bq24190_charger.c
+@@ -2252,25 +2252,6 @@
+ 	return 0;
+ }
+ 
+-static __maybe_unused int bq24190_pm_suspend(struct device *dev)
+-{
+-	struct i2c_client *client = to_i2c_client(dev);
+-	struct bq24190_dev_info *bdi = i2c_get_clientdata(client);
+-	int error;
+-
+-	error = pm_runtime_resume_and_get(bdi->dev);
+-	if (error < 0)
+-		dev_warn(bdi->dev, "pm_runtime_get failed: %i\n", error);
+-
+-	bq24190_register_reset(bdi);
+-
+-	if (error >= 0) {
+-		pm_runtime_put_autosuspend(bdi->dev);
+-	}
+-
+-	return 0;
+-}
+-
+ static __maybe_unused int bq24190_pm_resume(struct device *dev)
+ {
+ 	struct i2c_client *client = to_i2c_client(dev);
+@@ -2284,7 +2265,14 @@
+ 	if (error < 0)
+ 		dev_warn(bdi->dev, "pm_runtime_get failed: %i\n", error);
+ 
+-	bq24190_register_reset(bdi);
++	/*
++	 * The chip kept its configuration through the sleep: it is in host
++	 * mode with the i2c watchdog off, so nothing expired and nothing was
++	 * reset. Do not reset it here either -- a userspace setting such as
++	 * EN_HIZ or IINLIM would otherwise be silently lost on every resume.
++	 * Re-applying the probe-time configuration is idempotent and cheap,
++	 * and covers a part that did somehow fall back to default mode.
++	 */
+ 	bq24190_set_config(bdi);
+ 	bq24190_read(bdi, BQ24190_REG_SS, &bdi->ss_reg);
+ 
+@@ -2303,7 +2291,7 @@
+ static const struct dev_pm_ops bq24190_pm_ops = {
+ 	SET_RUNTIME_PM_OPS(bq24190_runtime_suspend, bq24190_runtime_resume,
+ 			   NULL)
+-	SET_SYSTEM_SLEEP_PM_OPS(bq24190_pm_suspend, bq24190_pm_resume)
++	SET_SYSTEM_SLEEP_PM_OPS(NULL, bq24190_pm_resume)
+ };
+ 
+ static const struct i2c_device_id bq24190_i2c_ids[] = {
