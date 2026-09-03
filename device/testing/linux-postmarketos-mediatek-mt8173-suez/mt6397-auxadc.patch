@@ -34,7 +34,7 @@ diff --git a/drivers/iio/adc/Makefile b/drivers/iio/adc/Makefile
 diff --git a/drivers/iio/adc/mt6397-auxadc.c b/drivers/iio/adc/mt6397-auxadc.c
 --- a/drivers/iio/adc/mt6397-auxadc.c
 +++ b/drivers/iio/adc/mt6397-auxadc.c
-@@ -0,0 +1,236 @@
+@@ -0,0 +1,299 @@
 +// SPDX-License-Identifier: GPL-2.0-only
 +/*
 + * MediaTek MT6397 PMIC AUXADC driver
@@ -61,14 +61,30 @@ diff --git a/drivers/iio/adc/mt6397-auxadc.c b/drivers/iio/adc/mt6397-auxadc.c
 +#include <linux/regmap.h>
 +
 +/*
-+ * ADC0 is channel 0's result register specifically: the vendor's register map
-+ * puts channel n's result at 0x0514 + 2 * n. Only channel 0 is described here,
-+ * so reading ADC0 unconditionally is correct -- but anyone adding a channel
-+ * must add its result register too, not just a channel-select value.
++ * Channel n's raw result register is at 0x0514 + 2 * n, 10 bits plus a ready
++ * bit. The chip also keeps a trimmed copy of each result in a second register
++ * (the vendor's RG_ADC_OUT_Cn_TRIM), and that is what MediaTek's battery code
++ * reads for every battery measurement; on hardware the two differ by around
++ * 13 LSB on the battery channel, which is 60 mV. The ready bit lives in the
++ * raw register only.
 + */
-+#define MT6397_AUXADC_ADC0		0x0514
-+#define MT6397_AUXADC_ADC0_RDY		BIT(15)
-+#define MT6397_AUXADC_ADC0_VAL		GENMASK(9, 0)
++#define MT6397_AUXADC_ADC(n)		(0x0514 + 2 * (n))
++#define MT6397_AUXADC_ADC_RDY		BIT(15)
++#define MT6397_AUXADC_ADC_VAL		GENMASK(9, 0)
++#define MT6397_AUXADC_ADC_TRIM(n)	(0x052a + 2 * (n))	/* ADC11 + n */
++
++/*
++ * The battery thermistor input (channel 3) is only meaningful with the PMIC's
++ * battery-detect bias current and the input buffer switched on, and needs
++ * 20 ms to settle after they are; the vendor does exactly this around every
++ * read and switches both off again after.
++ */
++#define MT6397_AUXADC_CON0		0x0542
++#define MT6397_AUXADC_CON0_BUF_PWD_B	BIT(1)
++#define MT6397_AUXADC_CON0_BUF_PWD_ON	BIT(3)
++#define MT6397_CHR_CON7			0x000e
++#define MT6397_CHR_CON7_BATON_TDET_EN	BIT(2)
++#define MT6397_AUXADC_BATTEMP_SETTLE_MS	20
 +
 +#define MT6397_AUXADC_CON1		0x0544
 +#define MT6397_AUXADC_CON1_CHSEL	GENMASK(10, 7)
@@ -87,16 +103,19 @@ diff --git a/drivers/iio/adc/mt6397-auxadc.c b/drivers/iio/adc/mt6397-auxadc.c
 +
 +/*
 + * The battery sits behind a divider, so the raw count has to be multiplied
-+ * back up. The vendor calls this R_BAT_SENSE and uses 4 on this PMIC.
++ * back up. The vendor calls this R_BAT_SENSE and uses 4 on this PMIC. The
++ * thermistor input is read directly.
 + */
 +#define MT6397_AUXADC_VBAT_DIVIDER	4
++#define MT6397_AUXADC_CH_VBAT		0
++#define MT6397_AUXADC_CH_BATTEMP	3
 +
 +struct mt6397_auxadc {
 +	struct regmap *regmap;
 +	struct mutex lock;	/* serialises the select/start/poll sequence */
 +};
 +
-+#define MT6397_AUXADC_CHANNEL(_idx, _hwchan)				\
++#define MT6397_AUXADC_CHANNEL(_idx, _hwchan, _name)			\
 +	{								\
 +		.type = IIO_VOLTAGE,					\
 +		.indexed = 1,						\
@@ -104,17 +123,17 @@ diff --git a/drivers/iio/adc/mt6397-auxadc.c b/drivers/iio/adc/mt6397-auxadc.c
 +		.address = (_hwchan),					\
 +		.info_mask_separate = BIT(IIO_CHAN_INFO_RAW) |		\
 +				      BIT(IIO_CHAN_INFO_SCALE),		\
-+		.datasheet_name = "VBAT",				\
++		.datasheet_name = (_name),				\
 +	}
 +
 +/*
-+ * Only the battery channel is described. The hardware also exposes current
-+ * sense, charger voltage and two thermal channels, but each needs its own
-+ * divider and, for the thermal ones, a buffer enable sequence -- none of which
-+ * can be verified on a board that does not use them.
++ * The battery voltage and the battery thermistor. The hardware also exposes
++ * current sense and charger voltage inputs, each behind its own divider, which
++ * are not described because no board here uses them.
 + */
 +static const struct iio_chan_spec mt6397_auxadc_channels[] = {
-+	MT6397_AUXADC_CHANNEL(0, 0),
++	MT6397_AUXADC_CHANNEL(0, MT6397_AUXADC_CH_VBAT, "VBAT"),
++	MT6397_AUXADC_CHANNEL(1, MT6397_AUXADC_CH_BATTEMP, "BATTEMP"),
 +};
 +
 +/*
@@ -157,15 +176,44 @@ diff --git a/drivers/iio/adc/mt6397-auxadc.c b/drivers/iio/adc/mt6397-auxadc.c
 +
 +	udelay(MT6397_AUXADC_START_US);
 +
-+	ret = regmap_read_poll_timeout(adc->regmap, MT6397_AUXADC_ADC0, reg,
-+				       reg & MT6397_AUXADC_ADC0_RDY,
++	ret = regmap_read_poll_timeout(adc->regmap, MT6397_AUXADC_ADC(hwchan),
++				       reg, reg & MT6397_AUXADC_ADC_RDY,
 +				       100, MT6397_AUXADC_TIMEOUT_US);
 +	if (ret)
 +		return ret;
 +
-+	*val = FIELD_GET(MT6397_AUXADC_ADC0_VAL, reg);
++	ret = regmap_read(adc->regmap, MT6397_AUXADC_ADC_TRIM(hwchan), &reg);
++	if (ret)
++		return ret;
++
++	*val = FIELD_GET(MT6397_AUXADC_ADC_VAL, reg);
 +
 +	return 0;
++}
++
++static int mt6397_auxadc_battemp_bias(struct mt6397_auxadc *adc, bool on)
++{
++	int ret;
++
++	if (on) {
++		ret = regmap_set_bits(adc->regmap, MT6397_AUXADC_CON0,
++				      MT6397_AUXADC_CON0_BUF_PWD_ON);
++		if (ret)
++			return ret;
++		ret = regmap_set_bits(adc->regmap, MT6397_AUXADC_CON0,
++				      MT6397_AUXADC_CON0_BUF_PWD_B);
++		if (ret)
++			return ret;
++		return regmap_set_bits(adc->regmap, MT6397_CHR_CON7,
++				       MT6397_CHR_CON7_BATON_TDET_EN);
++	}
++
++	ret = regmap_clear_bits(adc->regmap, MT6397_CHR_CON7,
++				MT6397_CHR_CON7_BATON_TDET_EN);
++	ret = ret ?: regmap_clear_bits(adc->regmap, MT6397_AUXADC_CON0,
++				       MT6397_AUXADC_CON0_BUF_PWD_B);
++	return ret ?: regmap_clear_bits(adc->regmap, MT6397_AUXADC_CON0,
++					MT6397_AUXADC_CON0_BUF_PWD_ON);
 +}
 +
 +static int mt6397_auxadc_read_channel(struct mt6397_auxadc *adc,
@@ -181,13 +229,26 @@ diff --git a/drivers/iio/adc/mt6397-auxadc.c b/drivers/iio/adc/mt6397-auxadc.c
 +	 */
 +	guard(mutex)(&adc->lock);
 +
++	if (hwchan == MT6397_AUXADC_CH_BATTEMP) {
++		ret = mt6397_auxadc_battemp_bias(adc, true);
++		if (ret)
++			return ret;
++		msleep(MT6397_AUXADC_BATTEMP_SETTLE_MS);
++	}
++
 +	for (i = 0; i < MT6397_AUXADC_SAMPLES; i++) {
 +		ret = mt6397_auxadc_read_once(adc, hwchan, &sample);
 +		if (ret)
-+			return ret;
++			break;
 +
 +		sum += sample;
 +	}
++
++	if (hwchan == MT6397_AUXADC_CH_BATTEMP)
++		mt6397_auxadc_battemp_bias(adc, false);
++
++	if (ret)
++		return ret;
 +
 +	*val = DIV_ROUND_CLOSEST(sum, MT6397_AUXADC_SAMPLES);
 +
@@ -211,7 +272,9 @@ diff --git a/drivers/iio/adc/mt6397-auxadc.c b/drivers/iio/adc/mt6397-auxadc.c
 +
 +	case IIO_CHAN_INFO_SCALE:
 +		/* millivolts per LSB, as a fraction to avoid rounding here */
-+		*val = MT6397_AUXADC_FULL_SCALE_MV * MT6397_AUXADC_VBAT_DIVIDER;
++		*val = MT6397_AUXADC_FULL_SCALE_MV;
++		if (chan->address == MT6397_AUXADC_CH_VBAT)
++			*val *= MT6397_AUXADC_VBAT_DIVIDER;
 +		*val2 = MT6397_AUXADC_PRECISION;
 +
 +		return IIO_VAL_FRACTIONAL;
