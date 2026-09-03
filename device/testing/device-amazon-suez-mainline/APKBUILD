@@ -3,7 +3,7 @@ maintainer="Ryan Brue <ryanbrue.dev@gmail.com>"
 pkgname=device-amazon-suez-mainline
 pkgdesc="Amazon Fire HD 10 (2017) (mainline)"
 pkgver=1
-pkgrel=1
+pkgrel=2
 url="https://postmarketos.org"
 license="MIT"
 arch="aarch64"
@@ -23,6 +23,8 @@ source="
 	suez-bcb-arm.sh
 	suez-bcb-disarm
 	suez-bcb-disarm.service
+	suez-pstore-blk
+	suez-pstore-blk.service
 "
 
 build() {
@@ -45,6 +47,18 @@ package() {
 	ln -s ../suez-bcb-disarm.service \
 		"$pkgdir"/usr/lib/systemd/system/multi-user.target.wants/suez-bcb-disarm.service
 
+	# The board's only persistent kernel log. ramoops cannot work here --
+	# no reset preserves DRAM -- so crash records go to the eMMC instead.
+	# The script explains the partition choice and why best_effort is not
+	# optional.
+	install -Dm755 "$srcdir"/suez-pstore-blk \
+		"$pkgdir"/usr/sbin/suez-pstore-blk
+	install -Dm644 "$srcdir"/suez-pstore-blk.service \
+		"$pkgdir"/usr/lib/systemd/system/suez-pstore-blk.service
+	install -d "$pkgdir"/usr/lib/systemd/system/sysinit.target.wants
+	ln -s ../suez-pstore-blk.service \
+		"$pkgdir"/usr/lib/systemd/system/sysinit.target.wants/suez-pstore-blk.service
+
 }
 
 sha512sums="
@@ -54,4 +68,6 @@ d89fa6205d2ec177514a6e47877f27c7c69745d30994e36597ac6940c114a71868940d7050ba67dc
 fbdb7d4e8dbd03258dca7b1147130865513cf45599bd9f83e253079d1dfe009c890198adc2bbb14773d0d20822fe13898bbc2f9e1a0e5ce4b6acfbd4ea64eca2  suez-bcb-arm.sh
 33b6cca3c1c822781f5a8da665d60843239152344b7d585081eb531adb30933631487c8f422893e0a2e274307c7537c97284016634370620a41badccb3a4efd9  suez-bcb-disarm
 aaf34e1a660df1fe4782b8a130ab7cd9477c39eb559f48f3ee78aa01673666491087d9f0ed6403b33fafddf61411f5a1efa0ba101c86934df0fdae24c712f3c5  suez-bcb-disarm.service
+8814fc2c8418110c39e62e26a6afb5a06c71ec4d79919fc0ef51cca899da833d75a6a411f4158893e36bf760ccba506b94cb68a892b5541544bb01716ea6b0c2  suez-pstore-blk
+5641f47975b388bef6e83b6062b885357539df30a2bb893391e5088df67fe3e6720c618cb67fef53c6eb6617bf2c0ba5bdd5d714b855c797a0a99a63f34ec4d8  suez-pstore-blk.service
 "
