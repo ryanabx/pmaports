@@ -1,0 +1,26 @@
+#!/bin/sh
+# Clear the recovery fallback armed by the initramfs hook. Run once the boot
+# has got far enough to be called a success; see suez-bcb-arm.sh.
+set -eu
+
+MISC=""
+for candidate in /dev/block/platform/*/*/by-name/MISC \
+		 /dev/block/platform/*/by-name/MISC; do
+	if [ -e "$candidate" ]; then
+		MISC="$candidate"
+		break
+	fi
+done
+
+if [ -z "$MISC" ] && [ "$(cat /sys/class/block/mmcblk0p9/size 2>/dev/null)" = "1024" ]; then
+	MISC=/dev/mmcblk0p9
+fi
+
+if [ -z "$MISC" ]; then
+	echo "suez-bcb: no MISC partition found, nothing to disarm" >&2
+	exit 0
+fi
+
+dd if=/dev/zero of="$MISC" bs=32 count=1 conv=notrunc status=none
+sync
+echo "suez-bcb: fallback disarmed via $MISC"

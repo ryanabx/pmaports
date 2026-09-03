@@ -3,7 +3,7 @@ maintainer="Ryan Brue <ryanbrue.dev@gmail.com>"
 pkgname=device-amazon-suez-mainline
 pkgdesc="Amazon Fire HD 10 (2017) (mainline)"
 pkgver=1
-pkgrel=0
+pkgrel=1
 url="https://postmarketos.org"
 license="MIT"
 arch="aarch64"
@@ -20,6 +20,9 @@ source="
 	deviceinfo
 	kernel-cmdline.conf
 	modules-initfs
+	suez-bcb-arm.sh
+	suez-bcb-disarm
+	suez-bcb-disarm.service
 "
 
 build() {
@@ -28,10 +31,27 @@ build() {
 
 package() {
 	devicepkg_package $startdir $pkgname
+
+	# Recovery fallback: the initramfs hook arms LK's bootloader control
+	# block, and the service clears it once the boot has succeeded. See the
+	# comments in those files.
+	install -Dm755 "$srcdir"/suez-bcb-arm.sh \
+		"$pkgdir"/usr/share/mkinitfs/hooks/00-suez-bcb-arm.sh
+	install -Dm755 "$srcdir"/suez-bcb-disarm \
+		"$pkgdir"/usr/sbin/suez-bcb-disarm
+	install -Dm644 "$srcdir"/suez-bcb-disarm.service \
+		"$pkgdir"/usr/lib/systemd/system/suez-bcb-disarm.service
+	install -d "$pkgdir"/usr/lib/systemd/system/multi-user.target.wants
+	ln -s ../suez-bcb-disarm.service \
+		"$pkgdir"/usr/lib/systemd/system/multi-user.target.wants/suez-bcb-disarm.service
+
 }
 
 sha512sums="
 a1c7602bfd1eb0b431c1e96d592dfaf5da7e5498c3adfad756b6d73fe37b7889ea6c6d0fb681727796a3c95cbd247040d764ba6f477354a43cf8836887ecbedd  deviceinfo
 5bb871570c94633d5a53107bcf9e2aa1285328a16a53b80b99c41761c84eeb9ca0af2cc78f9f4ecd75fdbb350b46397b10c0a7e43e5c109213adaa4f1e551b74  kernel-cmdline.conf
 d89fa6205d2ec177514a6e47877f27c7c69745d30994e36597ac6940c114a71868940d7050ba67dc5a260dc338ca5d789c521e35c37d7f2d3645762ab02101a9  modules-initfs
+fbdb7d4e8dbd03258dca7b1147130865513cf45599bd9f83e253079d1dfe009c890198adc2bbb14773d0d20822fe13898bbc2f9e1a0e5ce4b6acfbd4ea64eca2  suez-bcb-arm.sh
+33b6cca3c1c822781f5a8da665d60843239152344b7d585081eb531adb30933631487c8f422893e0a2e274307c7537c97284016634370620a41badccb3a4efd9  suez-bcb-disarm
+aaf34e1a660df1fe4782b8a130ab7cd9477c39eb559f48f3ee78aa01673666491087d9f0ed6403b33fafddf61411f5a1efa0ba101c86934df0fdae24c712f3c5  suez-bcb-disarm.service
 "
