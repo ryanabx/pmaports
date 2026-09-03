@@ -1,0 +1,52 @@
+From e3fa45942b9a6e6ae2cf7b8c4f67c0edecabc2f5 Mon Sep 17 00:00:00 2001
+From: Ryan Brue <ryanbrue.dev@gmail.com>
+Date: Thu, 3 Sep 2026 14:08:01 -0500
+Subject: [PATCH] dt-bindings: iio: adc: mediatek,mt6359-auxadc: add the MT6397
+ AUXADC
+
+The MT6397 PMIC has an auxiliary ADC of the same shape as the MT6350 series
+parts already described here: a channel-select and start register, a
+per-channel result register with a ready bit, and nothing else to describe
+in the device tree beyond the compatible and #io-channel-cells. The MFD
+binding for the MT6397 already accepts an "adc" child that references this
+schema, so only the compatible needs adding.
+
+The MT6397 AUXADC is 10 bits wide and measures the battery voltage and the
+battery thermistor on tablets built around this PMIC, which is what the
+mt6397-auxadc driver exposes.
+
+Signed-off-by: Ryan Brue <ryanbrue.dev@gmail.com>
+---
+ .../devicetree/bindings/iio/adc/mediatek,mt6359-auxadc.yaml  | 5 ++++-
+ 1 file changed, 4 insertions(+), 1 deletion(-)
+
+diff --git a/Documentation/devicetree/bindings/iio/adc/mediatek,mt6359-auxadc.yaml b/Documentation/devicetree/bindings/iio/adc/mediatek,mt6359-auxadc.yaml
+index 9936aa605..eaacef1d7 100644
+--- a/Documentation/devicetree/bindings/iio/adc/mediatek,mt6359-auxadc.yaml
++++ b/Documentation/devicetree/bindings/iio/adc/mediatek,mt6359-auxadc.yaml
+@@ -4,7 +4,7 @@
+ $id: http://devicetree.org/schemas/iio/adc/mediatek,mt6359-auxadc.yaml#
+ $schema: http://devicetree.org/meta-schemas/core.yaml#
+ 
+-title: MediaTek MT6350 series PMIC AUXADC
++title: MediaTek MT6350 series and MT6397 PMIC AUXADC
+ 
+ maintainers:
+   - AngeloGioacchino Del Regno <angelogioacchino.delregno@collabora.com>
+@@ -15,6 +15,8 @@ description:
+   such as battery and PMIC internal voltage regulators temperatures,
+   accessory detection resistance (usually, for a 3.5mm audio jack)
+   other than voltages for various PMIC internal components.
++  The older MT6397 has a 10-bit AUXADC of the same shape, measuring the
++  battery voltage and the battery thermistor.
+ 
+ properties:
+   compatible:
+@@ -23,6 +25,7 @@ properties:
+           - mediatek,mt6357-auxadc
+           - mediatek,mt6358-auxadc
+           - mediatek,mt6359-auxadc
++          - mediatek,mt6397-auxadc
+           - mediatek,mt6363-auxadc
+           - mediatek,mt6373-auxadc
+       - items:

@@ -1,0 +1,27 @@
+From 69468d0d37c11c6117ff1f8cfffe8e0756630626 Mon Sep 17 00:00:00 2001
+From: Ryan Brue <ryanbrue.dev@gmail.com>
+Date: Thu, 3 Sep 2026 14:08:02 -0500
+Subject: [PATCH] mfd: mt6397: add the fuel gauge cell for the MT6397
+
+Register the MT6397's fuel gauge (FGADC) as an MFD child so the
+mt6397-battery driver can bind to the "battery" node under the PMIC.
+
+Signed-off-by: Ryan Brue <ryanbrue.dev@gmail.com>
+---
+ drivers/mfd/mt6397-core.c | 3 +++
+ 1 file changed, 3 insertions(+)
+
+diff --git a/drivers/mfd/mt6397-core.c b/drivers/mfd/mt6397-core.c
+index afa210362..b4150b59e 100644
+--- a/drivers/mfd/mt6397-core.c
++++ b/drivers/mfd/mt6397-core.c
+@@ -257,6 +257,9 @@ static const struct mfd_cell mt6397_devs[] = {
+ 	{
+ 		.name = "mt6397-auxadc",
+ 		.of_compatible = "mediatek,mt6397-auxadc",
++	}, {
++		.name = "mt6397-battery",
++		.of_compatible = "mediatek,mt6397-battery",
+ 	}, {
+ 		.name = "mt6397-rtc",
+ 		.num_resources = ARRAY_SIZE(mt6397_rtc_resources),

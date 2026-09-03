@@ -1,0 +1,46 @@
+From 0977ee127095d6f3863067d5f23a5c048557ae0a Mon Sep 17 00:00:00 2001
+From: Ryan Brue <ryanbrue.dev@gmail.com>
+Date: Thu, 3 Sep 2026 14:10:14 -0500
+Subject: [PATCH] arm64: dts: mediatek: mt8173: give DISP_OVL0 its MMSYS reset
+ line
+
+MMSYS SW0_RST_B bit 17 resets DISP_OVL0; mainline defines only bit 25 (DSI0)
+in mt8173-resets.h. Add the define and wire the reset to the overlay node so
+its driver can take it.
+
+The bit was established on hardware by sweeping SW0_RST_B against a wedged
+overlay, not from a datasheet, which is why this stays a local patch: it is
+the belt-and-braces half of the bootloader-handover fix, next to the early
+stop in mt8173-disp-handover.c, and the combination is what has been
+verified to boot.
+
+Signed-off-by: Ryan Brue <ryanbrue.dev@gmail.com>
+---
+ arch/arm64/boot/dts/mediatek/mt8173.dtsi  | 1 +
+ include/dt-bindings/reset/mt8173-resets.h | 1 +
+ 2 files changed, 2 insertions(+)
+
+diff --git a/arch/arm64/boot/dts/mediatek/mt8173.dtsi b/arch/arm64/boot/dts/mediatek/mt8173.dtsi
+index 169ba4fd1..a5942be13 100644
+--- a/arch/arm64/boot/dts/mediatek/mt8173.dtsi
++++ b/arch/arm64/boot/dts/mediatek/mt8173.dtsi
+@@ -1118,6 +1118,7 @@ ovl0: ovl@1400c000 {
+ 			power-domains = <&spm MT8173_POWER_DOMAIN_MM>;
+ 			clocks = <&mmsys CLK_MM_DISP_OVL0>;
+ 			iommus = <&iommu M4U_PORT_DISP_OVL0>;
++			resets = <&mmsys MT8173_MMSYS_SW0_RST_B_DISP_OVL0>;
+ 			mediatek,gce-client-reg = <&gce SUBSYS_1400XXXX 0xc000 0x1000>;
+ 		};
+ 
+diff --git a/include/dt-bindings/reset/mt8173-resets.h b/include/dt-bindings/reset/mt8173-resets.h
+index 6a60c7cec..546fdd931 100644
+--- a/include/dt-bindings/reset/mt8173-resets.h
++++ b/include/dt-bindings/reset/mt8173-resets.h
+@@ -28,6 +28,7 @@
+ #define MT8173_INFRA_MMIOMMURST         47
+ 
+ /* MMSYS resets */
++#define MT8173_MMSYS_SW0_RST_B_DISP_OVL0	17
+ #define MT8173_MMSYS_SW0_RST_B_DISP_DSI0	25
+ 
+ /*  PERICFG resets */

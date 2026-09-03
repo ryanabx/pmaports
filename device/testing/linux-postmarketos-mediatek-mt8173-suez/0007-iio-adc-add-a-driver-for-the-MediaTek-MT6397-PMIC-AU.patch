@@ -1,0 +1,447 @@
+From 320beb05eaa9716b6b68b6dcad5c3399af94d338 Mon Sep 17 00:00:00 2001
+From: Ryan Brue <ryanbrue.dev@gmail.com>
+Date: Thu, 3 Sep 2026 14:08:02 -0500
+Subject: [PATCH] iio: adc: add a driver for the MediaTek MT6397 PMIC AUXADC
+
+The MT6397 has a 10-bit auxiliary ADC behind the SoC's PMIC wrapper. On
+tablets built around this PMIC it is the only way to read the battery
+voltage: the SoC's own auxadc (mt6577-auxadc) is wired to board thermistors,
+and charger ICs such as the BQ24297 do not measure the pack at all. It is
+also what the battery thermistor sits on. Both are exposed as IIO voltage
+channels so the fuel-gauge driver can consume them.
+
+The register interface is the one the vendor's pmic_auxadc.c programs:
+select the channel in AUXADC_CON1, pulse START (it is edge triggered, so it
+has to be lowered before it is raised), wait 30 us, and poll the channel's
+raw result register for its ready bit. The value is then read from the
+chip's trimmed copy of the result at 0x052a + 2n, which is what MediaTek's
+battery meter reads for every battery measurement; on hardware the trimmed
+and raw values differ by about 13 LSB (60 mV) on the battery channel.
+
+Two channel-specific sequences come from the same vendor source:
+
+ - The battery voltage is measured through ISENSE, the pack side of the fuel
+   gauge's sense resistor, not the PMIC's VBAT pin. On a board with a
+   switching charger in the power path, VBAT sits on the charger's SYS rail
+   and does not follow the pack. The vendor enables the ISENSE input and
+   disables VBAT in CHR_CON16, routes it onto channel 0 with the two
+   SOURCE_CH0 selects in AUXADC_CON14 for the duration of the conversion,
+   and settles 1 ms first.
+
+ - The battery thermistor (channel 3) is only meaningful with the PMIC's
+   battery-detect bias current and input buffer switched on, which need
+   20 ms to settle, and both are switched off again afterwards.
+
+Every read averages 16 conversions. A single conversion is far too noisy to
+drive a fuel gauge: measured with the pack resting, back-to-back reads swing
+over roughly 16 LSB (about 75 mV), and the discharge curve is nearly flat in
+the middle of the range, so that lands as an 11-point swing in reported
+state of charge. The vendor averages 5; a conversion costs well under a
+millisecond and nothing reads this more than a few times a minute, so more
+is cheap and cuts the spread by about a factor of four. The vendor's
+restore of the sample count register to 1 after each read is kept.
+
+Tested on the Amazon Fire HD 10 (2017), where the two channels feed the
+mt6397-battery fuel gauge.
+
+Signed-off-by: Ryan Brue <ryanbrue.dev@gmail.com>
+---
+ drivers/iio/adc/Kconfig         |  12 ++
+ drivers/iio/adc/Makefile        |   1 +
+ drivers/iio/adc/mt6397-auxadc.c | 352 ++++++++++++++++++++++++++++++++
+ 3 files changed, 365 insertions(+)
+ create mode 100644 drivers/iio/adc/mt6397-auxadc.c
+
+diff --git a/drivers/iio/adc/Kconfig b/drivers/iio/adc/Kconfig
+index 3755a81c1..8a6246218 100644
+--- a/drivers/iio/adc/Kconfig
++++ b/drivers/iio/adc/Kconfig
+@@ -1200,6 +1200,18 @@ config MEDIATEK_MT6370_ADC
+ 	  This driver can also be built as a module. If so, the module
+ 	  will be called "mt6370-adc".
+ 
++config MEDIATEK_MT6397_AUXADC
++	tristate "MediaTek MT6397 PMIC AUXADC driver"
++	depends on MFD_MT6397
++	help
++	  Say yes here to enable support for the auxiliary ADC inside the
++	  MediaTek MT6397 PMIC. On boards using this PMIC it is the only way
++	  to read the battery voltage, since the SoC AUXADC is wired to board
++	  thermistors instead.
++
++	  This driver can also be built as a module. If so, the module will be
++	  called mt6397-auxadc.
++
+ config MEDIATEK_MT6577_AUXADC
+ 	tristate "MediaTek AUXADC driver"
+ 	depends on ARCH_MEDIATEK || COMPILE_TEST
+diff --git a/drivers/iio/adc/Makefile b/drivers/iio/adc/Makefile
+index 707dd7089..4111e476b 100644
+--- a/drivers/iio/adc/Makefile
++++ b/drivers/iio/adc/Makefile
+@@ -103,6 +103,7 @@ obj-$(CONFIG_MCP3911) += mcp3911.o
+ obj-$(CONFIG_MEDIATEK_MT6359_AUXADC) += mt6359-auxadc.o
+ obj-$(CONFIG_MEDIATEK_MT6360_ADC) += mt6360-adc.o
+ obj-$(CONFIG_MEDIATEK_MT6370_ADC) += mt6370-adc.o
++obj-$(CONFIG_MEDIATEK_MT6397_AUXADC) += mt6397-auxadc.o
+ obj-$(CONFIG_MEDIATEK_MT6577_AUXADC) += mt6577_auxadc.o
+ obj-$(CONFIG_MEN_Z188_ADC) += men_z188_adc.o
+ obj-$(CONFIG_MESON_SARADC) += meson_saradc.o
+diff --git a/drivers/iio/adc/mt6397-auxadc.c b/drivers/iio/adc/mt6397-auxadc.c
+new file mode 100644
+index 000000000..38c49e0ef
+--- /dev/null
++++ b/drivers/iio/adc/mt6397-auxadc.c
+@@ -0,0 +1,352 @@
++// SPDX-License-Identifier: GPL-2.0-only
++/*
++ * MediaTek MT6397 PMIC AUXADC driver
++ *
++ * The MT6397 has a 10-bit auxiliary ADC behind the SoC's PMIC wrapper. It is
++ * the only way to read the battery voltage on boards built around this PMIC:
++ * the SoC's own auxadc (mt6577-auxadc) is wired to board thermistors, and
++ * charger ICs such as the BQ24297 do not measure the pack at all.
++ *
++ * A conversion is a three-step sequence: select the channel, pulse START, then
++ * poll the per-channel result register for its ready bit. The hardware needs a
++ * short settling delay after START before the ready bit is meaningful.
++ */
++
++#include <linux/bitfield.h>
++#include <linux/delay.h>
++#include <linux/iio/iio.h>
++#include <linux/math.h>
++#include <linux/mfd/mt6397/core.h>
++#include <linux/mod_devicetable.h>
++#include <linux/module.h>
++#include <linux/mutex.h>
++#include <linux/platform_device.h>
++#include <linux/regmap.h>
++
++/*
++ * Channel n's raw result register is at 0x0514 + 2 * n, 10 bits plus a ready
++ * bit. The chip also keeps a trimmed copy of each result in a second register
++ * (the vendor's RG_ADC_OUT_Cn_TRIM), and that is what MediaTek's battery code
++ * reads for every battery measurement; on hardware the two differ by around
++ * 13 LSB on the battery channel, which is 60 mV. The ready bit lives in the
++ * raw register only.
++ */
++#define MT6397_AUXADC_ADC(n)		(0x0514 + 2 * (n))
++#define MT6397_AUXADC_ADC_RDY		BIT(15)
++#define MT6397_AUXADC_ADC_VAL		GENMASK(9, 0)
++#define MT6397_AUXADC_ADC_TRIM(n)	(0x052a + 2 * (n))	/* ADC11 + n */
++
++/*
++ * The battery thermistor input (channel 3) is only meaningful with the PMIC's
++ * battery-detect bias current and the input buffer switched on, and needs
++ * 20 ms to settle after they are; the vendor does exactly this around every
++ * read and switches both off again after.
++ */
++#define MT6397_AUXADC_CON0		0x0542
++#define MT6397_AUXADC_CON0_BUF_PWD_B	BIT(1)
++#define MT6397_AUXADC_CON0_BUF_PWD_ON	BIT(3)
++#define MT6397_CHR_CON7			0x000e
++#define MT6397_CHR_CON7_BATON_TDET_EN	BIT(2)
++#define MT6397_AUXADC_BATTEMP_SETTLE_MS	20
++
++#define MT6397_AUXADC_CON1		0x0544
++#define MT6397_AUXADC_CON1_CHSEL	GENMASK(10, 7)
++#define MT6397_AUXADC_CON1_START	BIT(0)
++
++/*
++ * Channel 0 has two possible inputs. VBAT is the PMIC's own battery pin; on a
++ * board with a switching charger in the power path (BQ24297 here) that pin sits
++ * on the charger's SYS rail, not the pack. ISENSE is the pack side of the
++ * gauge's sense resistor. The vendor's battery meter always measures the pack
++ * through ISENSE (mt_bm_data.c "w/ powerpath, battery voltage is ISENSE"):
++ * it enables the ISENSE input and disables VBAT in CHR_CON16, then routes
++ * that input onto channel 0 with the two SOURCE_CH0 selects in AUXADC_CON14
++ * for the duration of the conversion (pmic_auxadc.c, channel 1).
++ */
++#define MT6397_CHR_CON16		0x0020
++#define MT6397_CHR_CON16_ADCIN_VSEN_EN	BIT(11)
++#define MT6397_CHR_CON16_ADCIN_VBAT_EN	BIT(10)
++#define MT6397_AUXADC_CON14		0x055e
++#define MT6397_AUXADC_CON14_CH0_NORM_SEL BIT(2)
++#define MT6397_AUXADC_CON14_CH0_LBAT_SEL BIT(0)
++#define MT6397_AUXADC_ISENSE_SETTLE_MS	1
++
++/* Samples per conversion; the vendor puts it back to 1 after every read. */
++#define MT6397_AUXADC_CON0_SPL_NUM	GENMASK(11, 7)
++
++/*
++ * Settling time between raising START and the ready bit being meaningful; the
++ * vendor driver waits the same 30 us and calls it a hardware limitation.
++ */
++#define MT6397_AUXADC_START_US		30
++#define MT6397_AUXADC_TIMEOUT_US	100000
++
++/* 10-bit conversion over a 1.2 V reference. */
++#define MT6397_AUXADC_FULL_SCALE_MV	1200
++#define MT6397_AUXADC_PRECISION		1024
++
++/*
++ * The battery sits behind a divider, so the raw count has to be multiplied
++ * back up. The vendor calls this R_BAT_SENSE and uses 4 on this PMIC. The
++ * thermistor input is read directly.
++ */
++#define MT6397_AUXADC_VBAT_DIVIDER	4
++#define MT6397_AUXADC_CH_VBAT		0
++#define MT6397_AUXADC_CH_BATTEMP	3
++
++struct mt6397_auxadc {
++	struct regmap *regmap;
++	struct mutex lock;	/* serialises the select/start/poll sequence */
++};
++
++#define MT6397_AUXADC_CHANNEL(_idx, _hwchan, _name)			\
++	{								\
++		.type = IIO_VOLTAGE,					\
++		.indexed = 1,						\
++		.channel = (_idx),					\
++		.address = (_hwchan),					\
++		.info_mask_separate = BIT(IIO_CHAN_INFO_RAW) |		\
++				      BIT(IIO_CHAN_INFO_SCALE),		\
++		.datasheet_name = (_name),				\
++	}
++
++/*
++ * The battery voltage and the battery thermistor. The hardware also exposes
++ * current sense and charger voltage inputs, each behind its own divider, which
++ * are not described because no board here uses them.
++ */
++static const struct iio_chan_spec mt6397_auxadc_channels[] = {
++	MT6397_AUXADC_CHANNEL(0, MT6397_AUXADC_CH_VBAT, "VBAT"),
++	MT6397_AUXADC_CHANNEL(1, MT6397_AUXADC_CH_BATTEMP, "BATTEMP"),
++};
++
++/*
++ * A single conversion is far too noisy to drive a fuel gauge. Measured on
++ * hardware with the pack resting, back-to-back reads swing over roughly 16
++ * LSB (~75 mV), and because the discharge curve is nearly flat in the middle
++ * of the range -- about 1.5 mV per percent -- that lands as an 11-point swing
++ * in reported state of charge, jumping by as much as 10 points between
++ * consecutive reads. The vendor kernel never uses a bare conversion either:
++ * every battery read goes through PMIC_IMM_GetOneChannelValue() with
++ * ADC_SAMPLE_TIMES (5) and is averaged. Take more than that -- a conversion
++ * costs well under a millisecond and nothing reads this more than a few times
++ * a minute -- which cuts the spread by about a factor of four.
++ */
++#define MT6397_AUXADC_SAMPLES		16
++
++static int mt6397_auxadc_read_once(struct mt6397_auxadc *adc,
++				   unsigned int hwchan, int *val)
++{
++	unsigned int reg;
++	int ret;
++
++	ret = regmap_update_bits(adc->regmap, MT6397_AUXADC_CON1,
++				 MT6397_AUXADC_CON1_CHSEL,
++				 FIELD_PREP(MT6397_AUXADC_CON1_CHSEL, hwchan));
++	if (ret)
++		return ret;
++
++	/* START is edge triggered: it has to be lowered before being raised. */
++	ret = regmap_update_bits(adc->regmap, MT6397_AUXADC_CON1,
++				 MT6397_AUXADC_CON1_START, 0);
++	if (ret)
++		return ret;
++
++	ret = regmap_update_bits(adc->regmap, MT6397_AUXADC_CON1,
++				 MT6397_AUXADC_CON1_START,
++				 MT6397_AUXADC_CON1_START);
++	if (ret)
++		return ret;
++
++	udelay(MT6397_AUXADC_START_US);
++
++	ret = regmap_read_poll_timeout(adc->regmap, MT6397_AUXADC_ADC(hwchan),
++				       reg, reg & MT6397_AUXADC_ADC_RDY,
++				       100, MT6397_AUXADC_TIMEOUT_US);
++	if (ret)
++		return ret;
++
++	ret = regmap_read(adc->regmap, MT6397_AUXADC_ADC_TRIM(hwchan), &reg);
++	if (ret)
++		return ret;
++
++	*val = FIELD_GET(MT6397_AUXADC_ADC_VAL, reg);
++
++	return 0;
++}
++
++static int mt6397_auxadc_battemp_bias(struct mt6397_auxadc *adc, bool on)
++{
++	int ret;
++
++	if (on) {
++		ret = regmap_set_bits(adc->regmap, MT6397_AUXADC_CON0,
++				      MT6397_AUXADC_CON0_BUF_PWD_ON);
++		if (ret)
++			return ret;
++		ret = regmap_set_bits(adc->regmap, MT6397_AUXADC_CON0,
++				      MT6397_AUXADC_CON0_BUF_PWD_B);
++		if (ret)
++			return ret;
++		return regmap_set_bits(adc->regmap, MT6397_CHR_CON7,
++				       MT6397_CHR_CON7_BATON_TDET_EN);
++	}
++
++	ret = regmap_clear_bits(adc->regmap, MT6397_CHR_CON7,
++				MT6397_CHR_CON7_BATON_TDET_EN);
++	ret = ret ?: regmap_clear_bits(adc->regmap, MT6397_AUXADC_CON0,
++				       MT6397_AUXADC_CON0_BUF_PWD_B);
++	return ret ?: regmap_clear_bits(adc->regmap, MT6397_AUXADC_CON0,
++					MT6397_AUXADC_CON0_BUF_PWD_ON);
++}
++
++static int mt6397_auxadc_isense_route(struct mt6397_auxadc *adc, bool on)
++{
++	int ret;
++
++	if (on) {
++		ret = regmap_update_bits(adc->regmap, MT6397_CHR_CON16,
++					 MT6397_CHR_CON16_ADCIN_VSEN_EN |
++					 MT6397_CHR_CON16_ADCIN_VBAT_EN,
++					 MT6397_CHR_CON16_ADCIN_VSEN_EN);
++		if (ret)
++			return ret;
++		return regmap_set_bits(adc->regmap, MT6397_AUXADC_CON14,
++				       MT6397_AUXADC_CON14_CH0_NORM_SEL |
++				       MT6397_AUXADC_CON14_CH0_LBAT_SEL);
++	}
++
++	return regmap_clear_bits(adc->regmap, MT6397_AUXADC_CON14,
++				 MT6397_AUXADC_CON14_CH0_NORM_SEL |
++				 MT6397_AUXADC_CON14_CH0_LBAT_SEL);
++}
++
++static int mt6397_auxadc_read_channel(struct mt6397_auxadc *adc,
++				      unsigned int hwchan, int *val)
++{
++	unsigned int sum = 0;
++	int i, ret, sample;
++
++	/*
++	 * Held across the whole burst, not per conversion: the channel select
++	 * and the result register are shared state, so another channel's read
++	 * interleaving here would have us average someone else's samples.
++	 */
++	guard(mutex)(&adc->lock);
++
++	if (hwchan == MT6397_AUXADC_CH_VBAT) {
++		ret = mt6397_auxadc_isense_route(adc, true);
++		if (ret)
++			return ret;
++		msleep(MT6397_AUXADC_ISENSE_SETTLE_MS);
++	} else if (hwchan == MT6397_AUXADC_CH_BATTEMP) {
++		ret = mt6397_auxadc_battemp_bias(adc, true);
++		if (ret)
++			return ret;
++		msleep(MT6397_AUXADC_BATTEMP_SETTLE_MS);
++	}
++
++	for (i = 0; i < MT6397_AUXADC_SAMPLES; i++) {
++		ret = mt6397_auxadc_read_once(adc, hwchan, &sample);
++		if (ret)
++			break;
++
++		sum += sample;
++	}
++
++	if (hwchan == MT6397_AUXADC_CH_VBAT)
++		mt6397_auxadc_isense_route(adc, false);
++	else if (hwchan == MT6397_AUXADC_CH_BATTEMP)
++		mt6397_auxadc_battemp_bias(adc, false);
++
++	regmap_update_bits(adc->regmap, MT6397_AUXADC_CON0,
++			   MT6397_AUXADC_CON0_SPL_NUM,
++			   FIELD_PREP(MT6397_AUXADC_CON0_SPL_NUM, 1));
++
++	if (ret)
++		return ret;
++
++	*val = DIV_ROUND_CLOSEST(sum, MT6397_AUXADC_SAMPLES);
++
++	return 0;
++}
++
++static int mt6397_auxadc_read_raw(struct iio_dev *indio_dev,
++				  const struct iio_chan_spec *chan,
++				  int *val, int *val2, long mask)
++{
++	struct mt6397_auxadc *adc = iio_priv(indio_dev);
++	int ret;
++
++	switch (mask) {
++	case IIO_CHAN_INFO_RAW:
++		ret = mt6397_auxadc_read_channel(adc, chan->address, val);
++		if (ret)
++			return ret;
++
++		return IIO_VAL_INT;
++
++	case IIO_CHAN_INFO_SCALE:
++		/* millivolts per LSB, as a fraction to avoid rounding here */
++		*val = MT6397_AUXADC_FULL_SCALE_MV;
++		if (chan->address == MT6397_AUXADC_CH_VBAT)
++			*val *= MT6397_AUXADC_VBAT_DIVIDER;
++		*val2 = MT6397_AUXADC_PRECISION;
++
++		return IIO_VAL_FRACTIONAL;
++
++	default:
++		return -EINVAL;
++	}
++}
++
++static const struct iio_info mt6397_auxadc_info = {
++	.read_raw = mt6397_auxadc_read_raw,
++};
++
++static int mt6397_auxadc_probe(struct platform_device *pdev)
++{
++	struct device *dev = &pdev->dev;
++	struct mt6397_chip *chip = dev_get_drvdata(dev->parent);
++	struct mt6397_auxadc *adc;
++	struct iio_dev *indio_dev;
++	int ret;
++
++	indio_dev = devm_iio_device_alloc(dev, sizeof(*adc));
++	if (!indio_dev)
++		return -ENOMEM;
++
++	adc = iio_priv(indio_dev);
++	adc->regmap = chip->regmap;
++
++	ret = devm_mutex_init(dev, &adc->lock);
++	if (ret)
++		return ret;
++
++	indio_dev->name = "mt6397-auxadc";
++	indio_dev->info = &mt6397_auxadc_info;
++	indio_dev->modes = INDIO_DIRECT_MODE;
++	indio_dev->channels = mt6397_auxadc_channels;
++	indio_dev->num_channels = ARRAY_SIZE(mt6397_auxadc_channels);
++
++	return devm_iio_device_register(dev, indio_dev);
++}
++
++static const struct of_device_id mt6397_auxadc_of_match[] = {
++	{ .compatible = "mediatek,mt6397-auxadc" },
++	{ /* sentinel */ }
++};
++MODULE_DEVICE_TABLE(of, mt6397_auxadc_of_match);
++
++static struct platform_driver mt6397_auxadc_driver = {
++	.driver = {
++		.name = "mt6397-auxadc",
++		.of_match_table = mt6397_auxadc_of_match,
++	},
++	.probe = mt6397_auxadc_probe,
++};
++module_platform_driver(mt6397_auxadc_driver);
++
++MODULE_AUTHOR("Ryan Brue <ryanbrue.dev@gmail.com>");
++MODULE_DESCRIPTION("MediaTek MT6397 PMIC AUXADC driver");
++MODULE_LICENSE("GPL");

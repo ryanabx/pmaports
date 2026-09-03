@@ -1,0 +1,34 @@
+From e5fd7d855e184810d381f3b3cf203150ab31e8aa Mon Sep 17 00:00:00 2001
+From: Ryan Brue <ryanbrue.dev@gmail.com>
+Date: Thu, 3 Sep 2026 14:08:23 -0500
+Subject: [PATCH] dt-bindings: arm: cpus: add the mediatek,mt8173-smp enable
+ method
+
+On MT8173 boards whose firmware does not ship ARM Trusted Firmware, PSCI
+CPU_ON sets a secondary core's entry point but leaves its MTCMOS power
+domain off, and CPU_OFF parks the core but leaves the domain on. The kernel
+has to power the domain itself around the PSCI calls. Document the enable
+method that does so, for arm64 alongside psci and spin-table.
+
+Boards that do ship ARM Trusted Firmware keep using "psci"; BL31 powers the
+domain for them.
+
+Signed-off-by: Ryan Brue <ryanbrue.dev@gmail.com>
+---
+ Documentation/devicetree/bindings/arm/cpus.yaml | 3 +++
+ 1 file changed, 3 insertions(+)
+
+diff --git a/Documentation/devicetree/bindings/arm/cpus.yaml b/Documentation/devicetree/bindings/arm/cpus.yaml
+index 5be89c584..380b89355 100644
+--- a/Documentation/devicetree/bindings/arm/cpus.yaml
++++ b/Documentation/devicetree/bindings/arm/cpus.yaml
+@@ -244,6 +244,9 @@ properties:
+       - enum:
+           - psci
+           - spin-table
++          # PSCI CPU_ON/CPU_OFF wrapped with the CPU MTCMOS power sequence
++          # the firmware omits (MT8173 boards without ARM Trusted Firmware)
++          - mediatek,mt8173-smp
+       # On ARM 32-bit systems this property is optional
+       - enum:
+           - actions,s500-smp

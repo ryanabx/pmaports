@@ -1,0 +1,180 @@
+From c1ed2e5346ee27e710716a89d9972cea5a5daaf0 Mon Sep 17 00:00:00 2001
+From: Ryan Brue <ryanbrue.dev@gmail.com>
+Date: Thu, 3 Sep 2026 09:31:45 -0500
+Subject: [PATCH] soc: mediatek: mt8173: stop a display overlay left running by
+ the bootloader
+
+Some bootloaders (LK on the Amazon Fire HD 10 2017, for one) hand the
+MT8173 display overlay over mid-scanout, with their own layers still
+enabled against their own framebuffers. Linux then gates the SMI clocks
+underneath it: the SMI larb runtime-suspends as soon as its driver probes,
+which on a kernel where mediatek-drm is a module happens long before that
+module is loaded. Any read that was in flight at that moment never
+completes.
+
+The overlay is stuck for good after that. Its frame state machine parks in
+s_w_rst, the soft DISP_REG_OVL_RST no longer clears it, and it never emits
+another pixel. No IOMMU fault is reported, because the transaction never
+reaches the M4U, so the symptom is just a CRTC whose vblank never fires
+and drm_atomic_helper_wait_for_vblanks() warning on every commit. It is a
+race: the scan position at which the engine freezes differs from boot to
+boot.
+
+Recovering afterwards is unreliable. MMSYS SW0_RST_B bit 17 does reset
+DISP_OVL0 (mainline only defines bit 25 for DSI0), but taking that reset
+at OVL probe left the engine out of s_w_rst with layer 0's first fetch hung
+instead; and sweeping the block resets with the SMI ungated restored
+scanout twice and then stalled on an identical repeat, with three retries
+in one boot all failing. Whether a wedged overlay can be recovered is
+decided per boot, so the fix has to be prevention.
+
+Stop the engine before anything can strand it, at subsys_initcall: the
+device tree is populated, but the SMI larb and IOMMU drivers have not
+probed yet, so the clocks are still as the bootloader left them and the
+larb is still in bypass. Clear SRC_CON and each layer's RDMA_CTRL, poll
+every layer's "SMI read outstanding" debug bit until the reads already in
+flight retire, then disable the engine and take the soft reset. On
+hardware the whole sequence takes about 16 us and logs once per boot.
+
+The two debug registers used, FLOW_CTRL_DBG (0x240, idle at bit 0) and the
+per-layer RDMA_DBG (0x24c + 4n, SMI busy at bit 30), are not described
+upstream; the offsets and bits are those of the vendor's OVL debug dump.
+
+This is a standalone initcall rather than part of mediatek-drm on purpose:
+the whole point is to run before the SMI larb probes, and a driver that is
+built as a module cannot be there in time. It does nothing unless the
+overlay is found enabled.
+
+Signed-off-by: Ryan Brue <ryanbrue.dev@gmail.com>
+---
+ drivers/soc/mediatek/Makefile               |   1 +
+ drivers/soc/mediatek/mt8173-disp-handover.c | 108 ++++++++++++++++++++
+ 2 files changed, 109 insertions(+)
+ create mode 100644 drivers/soc/mediatek/mt8173-disp-handover.c
+
+diff --git a/drivers/soc/mediatek/Makefile b/drivers/soc/mediatek/Makefile
+index 0665573e3..ed3810388 100644
+--- a/drivers/soc/mediatek/Makefile
++++ b/drivers/soc/mediatek/Makefile
+@@ -6,6 +6,7 @@ obj-$(CONFIG_MTK_INFRACFG) += mtk-infracfg.o
+ obj-$(CONFIG_MTK_PMIC_WRAP) += mtk-pmic-wrap.o
+ obj-$(CONFIG_MTK_REGULATOR_COUPLER) += mtk-regulator-coupler.o
+ obj-$(CONFIG_MTK_MMSYS) += mtk-mmsys.o
++obj-$(CONFIG_MTK_MMSYS) += mt8173-disp-handover.o
+ obj-$(CONFIG_MTK_MMSYS) += mtk-mutex.o
+ obj-$(CONFIG_MTK_SVS) += mtk-svs.o
+ obj-$(CONFIG_MTK_SOCINFO) += mtk-socinfo.o
+diff --git a/drivers/soc/mediatek/mt8173-disp-handover.c b/drivers/soc/mediatek/mt8173-disp-handover.c
+new file mode 100644
+index 000000000..643a7dd64
+--- /dev/null
++++ b/drivers/soc/mediatek/mt8173-disp-handover.c
+@@ -0,0 +1,108 @@
++// SPDX-License-Identifier: GPL-2.0-only
++/*
++ * Take the MT8173 display overlay back from a bootloader that left it running.
++ *
++ * Some bootloaders (LK on the Amazon Fire HD 10 2017, for one) hand the OVL
++ * over mid-scanout, with their own layers still enabled against their own
++ * framebuffers.  Linux then gates the SMI clocks underneath it -- the SMI larb
++ * runtime-suspends as soon as its driver probes, which on a kernel where
++ * mediatek-drm is a module happens long before that module is loaded -- and any
++ * read that was in flight at that moment never completes.
++ *
++ * The overlay is stuck for good after that: its frame state machine parks in
++ * s_w_rst, the soft DISP_REG_OVL_RST no longer clears it, and it never emits
++ * another pixel.  No IOMMU fault is reported either, because the transaction
++ * never reaches the M4U.  Recovering afterwards is unreliable -- whether an
++ * MMSYS block reset clears it varies from boot to boot -- so stop the engine
++ * before anything can strand it.
++ *
++ * This runs at subsys_initcall, where the device tree is populated but the SMI
++ * larb and IOMMU drivers have not probed yet, so the clocks are still as the
++ * bootloader left them and the larb is still in bypass.
++ */
++
++#include <linux/bits.h>
++#include <linux/init.h>
++#include <linux/io.h>
++#include <linux/iopoll.h>
++#include <linux/of.h>
++#include <linux/of_address.h>
++#include <linux/printk.h>
++
++#define DISP_REG_OVL_EN				0x000c
++#define DISP_REG_OVL_RST			0x0014
++#define DISP_REG_OVL_SRC_CON			0x002c
++#define DISP_REG_OVL_RDMA_CTRL(n)		(0x00c0 + 0x20 * (n))
++/*
++ * Not described upstream; the vendor driver calls these the OVL debug
++ * registers.  FLOW_CTRL_DBG bit 0 is the engine's idle flag and bit 30 of each
++ * layer's RDMA debug register is that layer's "SMI read outstanding".
++ */
++#define DISP_REG_OVL_FLOW_CTRL_DBG		0x0240
++#define OVL_FLOW_CTRL_IDLE			BIT(0)
++#define DISP_REG_OVL_RDMA_DBG(n)		(0x024c + 4 * (n))
++#define OVL_RDMA_DBG_SMI_BUSY			BIT(30)
++
++#define OVL_LAYER_NR				4
++
++static int __init mt8173_disp_handover(void)
++{
++	struct device_node *np;
++	void __iomem *regs;
++	unsigned int i;
++	u32 val;
++
++	if (!of_machine_is_compatible("mediatek,mt8173"))
++		return 0;
++
++	np = of_find_compatible_node(NULL, NULL, "mediatek,mt8173-disp-ovl");
++	if (!np)
++		return 0;
++
++	regs = of_iomap(np, 0);
++	of_node_put(np);
++	if (!regs)
++		return 0;
++
++	/* Nothing to do unless the bootloader left the overlay running. */
++	if (!readl(regs + DISP_REG_OVL_EN) &&
++	    !readl(regs + DISP_REG_OVL_SRC_CON))
++		goto out;
++
++	pr_info("mt8173-disp: overlay left running by the bootloader (EN=0x%x SRC_CON=0x%x), stopping it\n",
++		readl(regs + DISP_REG_OVL_EN),
++		readl(regs + DISP_REG_OVL_SRC_CON));
++
++	/* Stop the layers issuing any further fetches ... */
++	writel(0, regs + DISP_REG_OVL_SRC_CON);
++	for (i = 0; i < OVL_LAYER_NR; i++)
++		writel(0, regs + DISP_REG_OVL_RDMA_CTRL(i));
++
++	/*
++	 * ... then let the reads already outstanding retire while the SMI is
++	 * still clocked.  Draining here, rather than leaving them to be cut off
++	 * later, is the whole point of running this early.
++	 */
++	for (i = 0; i < OVL_LAYER_NR; i++)
++		if (readl_poll_timeout_atomic(regs + DISP_REG_OVL_RDMA_DBG(i),
++					      val,
++					      !(val & OVL_RDMA_DBG_SMI_BUSY),
++					      100, 50000))
++			pr_warn("mt8173-disp: layer %u read did not retire\n", i);
++
++	writel(0, regs + DISP_REG_OVL_EN);
++
++	writel(1, regs + DISP_REG_OVL_RST);
++	writel(0, regs + DISP_REG_OVL_RST);
++	if (readl_poll_timeout_atomic(regs + DISP_REG_OVL_FLOW_CTRL_DBG, val,
++				      val & OVL_FLOW_CTRL_IDLE, 100, 50000))
++		pr_warn("mt8173-disp: overlay did not go idle (flow_ctrl=0x%x)\n",
++			readl(regs + DISP_REG_OVL_FLOW_CTRL_DBG));
++	else
++		pr_info("mt8173-disp: overlay stopped and idle\n");
++
++out:
++	iounmap(regs);
++	return 0;
++}
++subsys_initcall(mt8173_disp_handover);

@@ -1,0 +1,1129 @@
+From d8714bf6545a5cccee238782f896e975fcf2bc6a Mon Sep 17 00:00:00 2001
+From: Ryan Brue <ryanbrue.dev@gmail.com>
+Date: Thu, 3 Sep 2026 14:09:45 -0500
+Subject: [PATCH] soc: mediatek: add suspend-to-RAM through the MT8173 SPM
+
+MT8173 boards that ship ARM Trusted Firmware suspend through PSCI: BL31
+implements SYSTEM_SUSPEND and programs the System Power Manager at EL3.
+Amazon's Fire HD 10 (2017) firmware is PSCI 0.2, which predates
+SYSTEM_SUSPEND, so psci_init_system_suspend() never installs
+platform_suspend_ops and /sys/power/mem_sleep offers only s2idle. The
+firmware on a shipped consumer device cannot be replaced, and there is
+nothing to fix in the PSCI code.
+
+The vendor kernel does not use PSCI for suspend either; it drives the SPM
+from the kernel (drivers/misc/mediatek/base/power/mt8173/{mt_sleep,mt_spm,
+mt_spm_internal,mt_spm_sleep}.c). This driver is that path, reduced to the
+one scenario it needs and rewritten against mainline infrastructure: the
+SPM is a small sequencer ("PCM") with its own instruction memory; the kernel
+points it at a firmware image in DRAM, kicks its instruction fetcher,
+programs the wake-source mask and the idle conditions, and parks the CPU in
+WFI. The PCM firmware waits for every CPU's STANDBYWFI, puts DRAM into
+self-refresh, drops VCORE, gates the 26 MHz clock, and reverses all of it
+on a wake event. The image carried here is the vendor's
+pcm_suspend_20150805_V1 (suspend_binary_ca7[] in its GPL-2.0
+mt_spm_sleep.c), byte for byte; it is sequencer microcode for which no
+assembler source exists.
+
+What this driver deliberately does not do is power the CPU down. The
+vendor's default path needs its cpu_dormant.S, MTCMOS cluster teardown and
+a firmware re-entry path, none of which mainline has for this SoC. But the
+vendor's spm_trigger_wfi_for_sleep() has a second branch, taken when
+SPM_CPU_PDN_DIS is set, that is only ACINACTM plus a plain WFI: the CPU
+keeps its state and its rail, and everything outside the CPU still
+suspends. That branch is what this implements, so SPM_CPU_PDN_DIS and
+SPM_INFRA_PDN_DIS (which the vendor requires whenever the CPU stays on) are
+added to the vendor's suspend flags. Three consequences follow and are all
+measured on hardware:
+
+ - Both clusters must report STANDBYWFIL2 before the SPM starts, and a
+   powered cluster only does so with ACINACTM asserted. The vendor asserts
+   it for the A53 cluster only (MP0_AXI_CONFIG bit 4) because its A72
+   cluster is already powered down; here the A72's bit, CA15L_MISCDBG bit 0,
+   is asserted too. Without it the SPM never sees its sleep condition and
+   "suspend" returns immediately with nothing powered down, which looks
+   exactly like a working suspend from userspace, so the wake path warns
+   when the PCM did not complete the sequence.
+
+ - The PCM timer cannot wake the board: its expiry sets the wake flag but a
+   CPU parked in WFI is only woken by a GIC interrupt, and the vendor's
+   periodic wake relies on the CPU re-entering through its reset vector.
+   The timer is therefore pinned at PCM_TIMER_MAX, as the vendor does when
+   it is unused, and the PCM watchdog armed behind it can never fire first.
+   Wake sources are the EINT-routed ones (power key, RTC, charger) plus the
+   keypad block, so the volume keys wake a tablet too.
+
+ - The MT6397 hold bits for VCA15, VSRMCA15 and VCORE are cleared before
+   the sleep, as the vendor does on this branch, so those rails do not
+   follow SRCLKEN down while the CPU stays powered; they are restored on
+   wake.
+
+Everything else (register offsets, PCM_CON0/1 sequences, event vectors,
+AP_STANBY_CON, WFI enables, wake-source mask, ISR handling, the fscp_ck
+reparent to the crystal) follows the vendor register for register.
+
+Tested on the Amazon Fire HD 10 (2017): repeated suspend-to-RAM cycles of
+60 s and longer, woken by the RTC and by the power key, with the display,
+GPU, Wi-Fi and Bluetooth all surviving; the board draws about 35 mA asleep.
+
+Signed-off-by: Ryan Brue <ryanbrue.dev@gmail.com>
+---
+ drivers/soc/mediatek/Kconfig           |   15 +
+ drivers/soc/mediatek/Makefile          |    1 +
+ drivers/soc/mediatek/mtk-spm-suspend.c | 1012 ++++++++++++++++++++++++
+ 3 files changed, 1028 insertions(+)
+ create mode 100644 drivers/soc/mediatek/mtk-spm-suspend.c
+
+diff --git a/drivers/soc/mediatek/Kconfig b/drivers/soc/mediatek/Kconfig
+index d7293977f..f4dfe7956 100644
+--- a/drivers/soc/mediatek/Kconfig
++++ b/drivers/soc/mediatek/Kconfig
+@@ -79,6 +79,21 @@ config MTK_SVS
+ 	  chip process corner, temperatures and other factors. Then DVFS
+ 	  driver could apply SVS bank voltage to PMIC/Buck.
+ 
++config MTK_SPM_SUSPEND
++	tristate "MediaTek MT8173 SPM suspend-to-RAM"
++	depends on ARCH_MEDIATEK || COMPILE_TEST
++	depends on SUSPEND && MFD_SYSCON
++	help
++	  Suspend-to-RAM driven by the MT8173 System Power Manager, for boards
++	  whose firmware is older than PSCI 1.0 and therefore cannot offer
++	  SYSTEM_SUSPEND. On those the kernel has no platform_suspend_ops and
++	  /sys/power/mem_sleep offers only s2idle.
++
++	  Boards that ship ARM Trusted Firmware do not need this -- BL31 does
++	  the same work at EL3 -- and should not enable it.
++
++	  If unsure, say N.
++
+ config MTK_SOCINFO
+ 	tristate "MediaTek SoC Information"
+ 	default y
+diff --git a/drivers/soc/mediatek/Makefile b/drivers/soc/mediatek/Makefile
+index ed3810388..3bddd67d8 100644
+--- a/drivers/soc/mediatek/Makefile
++++ b/drivers/soc/mediatek/Makefile
+@@ -10,3 +10,4 @@ obj-$(CONFIG_MTK_MMSYS) += mt8173-disp-handover.o
+ obj-$(CONFIG_MTK_MMSYS) += mtk-mutex.o
+ obj-$(CONFIG_MTK_SVS) += mtk-svs.o
+ obj-$(CONFIG_MTK_SOCINFO) += mtk-socinfo.o
++obj-$(CONFIG_MTK_SPM_SUSPEND) += mtk-spm-suspend.o
+diff --git a/drivers/soc/mediatek/mtk-spm-suspend.c b/drivers/soc/mediatek/mtk-spm-suspend.c
+new file mode 100644
+index 000000000..b089fea98
+--- /dev/null
++++ b/drivers/soc/mediatek/mtk-spm-suspend.c
+@@ -0,0 +1,1012 @@
++// SPDX-License-Identifier: GPL-2.0-only
++/*
++ * MediaTek MT8173 System Power Manager -- suspend to RAM.
++ *
++ * Copyright (C) 2016 MediaTek Inc.
++ * Copyright (C) 2026 Ryan Brue
++ *
++ * MT8173 boards that ship ARM Trusted Firmware suspend through PSCI: BL31
++ * implements SYSTEM_SUSPEND and does the SPM programming at EL3. Amazon's
++ * firmware is PSCI 0.2, which predates SYSTEM_SUSPEND, so
++ * psci_init_system_suspend() never calls suspend_set_ops() and
++ * /sys/power/mem_sleep offers only [s2idle]. There is nothing to fix in PSCI
++ * from here, and the firmware is not replaceable on a locked device.
++ *
++ * The vendor kernel does not use PSCI for suspend either. It drives the SPM
++ * itself, from drivers/misc/mediatek/base/power/mt8173/{mt_sleep,mt_spm,
++ * mt_spm_internal,mt_spm_sleep}.c. This driver is that path, reduced to the
++ * single scenario it needs and rewritten against mainline infrastructure.
++ *
++ * How the SPM works: it is a small sequencer ("PCM") with its own instruction
++ * memory. The kernel points it at a firmware image in DRAM, kicks its
++ * instruction fetcher, programs the wakeup mask and the conditions under which
++ * the SoC may go down, and then parks the CPU. The PCM firmware -- the 847
++ * words of spm_suspend_pcm[] below, carried from the vendor kernel under its
++ * GPL-2.0 licence -- does the rest in hardware: it waits for every CPU's
++ * STANDBYWFI, puts DRAM into self-refresh, drops VCORE, gates the 26 MHz
++ * clock, and reverses all of it on a wakeup event before releasing the
++ * CPU. The CPU sees an ordinary WFI that took a long time to return.
++ *
++ * WHAT THIS DRIVER DOES NOT DO
++ *
++ * The vendor's default is to power the CPU down across suspend, which needs
++ * its cpu_dormant.S and mt_cpuidle.c -- context save/restore, MTCMOS cluster
++ * teardown and a firmware re-entry path, none of which mainline has for this
++ * SoC. But spm_trigger_wfi_for_sleep() has a second branch, taken when
++ * SPM_CPU_PDN_DIS is set, that is only ACINACTM plus a plain WFI. The CPU
++ * keeps its state and its rail; everything outside the CPU still suspends.
++ * That branch is what this driver implements. It saves less power than the
++ * vendor's default and needs roughly a tenth of the code.
++ *
++ * SPM_INFRA_PDN_DIS comes along for the ride: slp_suspend_ops_enter() refuses
++ * outright to power infra down while the CPU stays on, so keeping the CPU
++ * means keeping infra, which in turn means the UART save/restore dance in the
++ * vendor code is unnecessary here.
++ */
++
++#include <linux/bits.h>
++#include <linux/clk.h>
++#include <linux/delay.h>
++#include <linux/dma-mapping.h>
++#include <linux/interrupt.h>
++#include <linux/io.h>
++#include <linux/mfd/mt6397/core.h>
++#include <linux/mfd/mt6397/registers.h>
++#include <linux/mfd/syscon.h>
++#include <linux/module.h>
++#include <linux/of.h>
++#include <linux/of_platform.h>
++#include <linux/platform_device.h>
++#include <linux/regmap.h>
++#include <linux/suspend.h>
++
++/* SPM registers, offsets within the scpsys block at 0x10006000. */
++#define SPM_POWERON_CONFIG_SET		0x000
++#define SPM_POWER_ON_VAL0		0x010
++#define SPM_POWER_ON_VAL1		0x014
++#define SPM_CLK_SETTLE			0x100
++#define SPM_PCM_CON0			0x310
++#define SPM_PCM_CON1			0x314
++#define SPM_PCM_IM_PTR			0x318
++#define SPM_PCM_IM_LEN			0x31c
++#define SPM_PCM_REG_DATA_INI		0x320
++/* Vectors 0-3 and 4-7 are not contiguous: 0x340-0x34c, then 0x3d0-0x3dc. */
++#define SPM_PCM_EVENT_VECTOR(n)		((n) < 4 ? 0x340 + 4 * (n) : 0x3d0 + 4 * ((n) - 4))
++#define SPM_PCM_MAS_PAUSE_MASK		0x354
++#define SPM_PCM_PWR_IO_EN		0x358
++#define SPM_PCM_TIMER_VAL		0x35c
++#define SPM_PCM_TIMER_OUT		0x360
++#define SPM_PCM_REG12_DATA		0x3b0
++#define SPM_PCM_REG13_DATA		0x3b4
++#define SPM_PCM_EVENT_REG_STA		0x3c0
++#define SPM_PCM_FSM_STA			0x3c4
++#define SPM_PCM_SW_INT_CLEAR		0x3e4
++#define SPM_CLK_CON			0x400
++#define SPM_AP_STANBY_CON		0x608
++#define SPM_SLEEP_WAKEUP_EVENT_MASK	0x810
++#define SPM_SLEEP_CPU_WAKEUP_EVENT	0x814
++#define SPM_PCM_WDT_TIMER_VAL		0x824
++#define SPM_SLEEP_ISR_MASK		0x900
++#define SPM_SLEEP_ISR_STATUS		0x904
++#define SPM_SLEEP_ISR_RAW_STA		0x910
++#define SPM_SLEEP_WAKEUP_MISC		0x918
++#define SPM_SLEEP_SUBSYS_IDLE_STA	0x920
++#define SPM_PCM_RESERVE			0xb00
++#define SPM_PCM_FLAGS			0xb08
++#define SPM_PCM_SRC_REQ			0xb0c
++#define SPM_PCM_PASR_DPD_0		0xb60
++#define SPM_PCM_PASR_DPD_2		0xb68
++#define SPM_PCM_PASR_DPD_3		0xb6c
++#define SPM_SLEEP_CA7_WFI_EN(n)		(0xf00 + 4 * (n))
++#define SPM_SLEEP_CA15_WFI_EN(n)	(0xf10 + 4 * (n))
++
++/* Writes to the block are ignored unless this key is presented first. */
++#define SPM_PROJECT_CODE		0xb16
++#define SPM_REGWR_CFG_KEY		(SPM_PROJECT_CODE << 16)
++#define SPM_REGWR_EN			BIT(0)
++
++#define CON0_CFG_KEY			(SPM_PROJECT_CODE << 16)
++#define CON0_PCM_KICK			BIT(0)
++#define CON0_IM_KICK			BIT(1)
++#define CON0_IM_SLEEP_DVS		BIT(3)
++#define CON0_PCM_SW_RESET		BIT(15)
++
++#define CON1_CFG_KEY			(SPM_PROJECT_CODE << 16)
++#define CON1_IM_SLAVE			BIT(0)
++#define CON1_MIF_APBEN			BIT(3)
++#define CON1_PCM_TIMER_EN		BIT(5)
++#define CON1_IM_NONRP_EN		BIT(6)
++#define CON1_PCM_WDT_EN			BIT(8)
++#define CON1_PCM_WDT_WAKE_MODE		BIT(9)
++#define CON1_SPM_SRAM_SLP_B		BIT(10)
++#define CON1_SPM_SRAM_ISO_B		BIT(11)
++#define CON1_EVENT_LOCK_EN		BIT(12)
++
++#define PCM_PWRIO_EN_R0			BIT(0)
++#define PCM_PWRIO_EN_R7			BIT(7)
++#define PCM_RF_SYNC_R0			BIT(16)
++#define PCM_RF_SYNC_R7			BIT(23)
++
++#define PCM_SW_INT_ALL			0xff
++
++#define CC_LOCK_INFRA_DCM		BIT(5)
++#define CC_SRCLKENA_MASK_0		BIT(6)
++#define CC_DISABLE_DORM_PWR		BIT(14)
++
++#define ISRM_TWAM			BIT(2)
++#define ISRM_PCM_RETURN			BIT(3)
++#define ISRM_RET_IRQ_AUX		(0x7f << 9)	/* IRQ1..7, not IRQ0 */
++#define ISRM_ALL_EXC_TWAM		(ISRM_RET_IRQ_AUX | ISRM_PCM_RETURN)
++#define ISRC_ALL_EXC_TWAM		ISRM_PCM_RETURN
++
++#define WAKE_MISC_PCM_TIMER		BIT(19)
++#define WAKE_MISC_CPU_WAKE		BIT(20)
++
++/* SPM_PCM_FSM_STA immediately after a PCM software reset. */
++#define PCM_FSM_STA_DEF			0x48490
++#define POWER_ON_VAL1_DEF		0x01011820
++
++/*
++ * SPM_CLK_CON as spm_register_init() leaves it on the vendor kernel. The PCM
++ * firmware assumes these: the three SYSCLK request enables, the clock-square
++ * select, and the two 32 kHz removal enables. A bootloader may leave a quite
++ * different value behind, so the driver installs this one for the duration of
++ * a suspend and restores what it found afterwards.
++ */
++#define CC_SYSCLK0_EN_0			BIT(0)
++#define CC_SYSCLK0_EN_1			BIT(1)
++#define CC_SYSCLK1_EN_0			BIT(2)
++#define CC_CXO32K_RM_EN_MD1		BIT(9)
++#define CC_CXO32K_RM_EN_MD2		BIT(10)
++#define CC_CLKSQ1_SEL			BIT(12)
++#define CC_MD32_DCM_EN			BIT(18)
++#define SPM_CLK_CON_DEF \
++	(CC_SYSCLK0_EN_0 | CC_SYSCLK0_EN_1 | CC_SYSCLK1_EN_0 | \
++	 CC_SRCLKENA_MASK_0 | CC_CXO32K_RM_EN_MD1 | CC_CXO32K_RM_EN_MD2 | \
++	 CC_CLKSQ1_SEL | CC_MD32_DCM_EN)
++
++#define PCM_WDT_TIMEOUT			(30 * 32768)		/* 30 s */
++#define PCM_TIMER_MAX			(0xffffffff - PCM_WDT_TIMEOUT)
++
++/* VTCXO settle time, 128 ticks of 32 kHz -- 3.9 ms. */
++#define SPM_SYSCLK_SETTLE		128
++
++/*
++ * pcm_flags, as passed to the PCM firmware in SPM_PCM_FLAGS. Each _DIS bit
++ * tells the firmware to skip one part of the sequence.
++ */
++#define SPM_CPU_PDN_DIS			BIT(0)
++#define SPM_INFRA_PDN_DIS		BIT(1)
++#define SPM_DDRPHY_PDN_DIS		BIT(2)
++#define SPM_DUALVCORE_PDN_DIS		BIT(3)
++#define SPM_PASR_DIS			BIT(4)
++#define SPM_DPD_DIS			BIT(5)
++#define SPM_CPU_DVS_DIS			BIT(9)
++#define SPM_SCREEN_OFF			BIT(13)
++
++/* Bit positions in SPM_PCM_REG12_DATA, the "why did we wake" register. */
++#define WAKE_SRC_SPM_MERGE		BIT(0)
++#define WAKE_SRC_KP			BIT(2)
++#define WAKE_SRC_EINT			BIT(6)
++#define WAKE_SRC_HDMI_CEC		BIT(8)
++#define WAKE_SRC_MD32			BIT(10)
++#define WAKE_SRC_USB_CD			BIT(14)
++#define WAKE_SRC_USB_PDN		BIT(15)
++#define WAKE_SRC_IRRX			BIT(17)
++#define WAKE_SRC_THERM			BIT(21)
++#define WAKE_SRC_SYSPWREQ		BIT(24)
++#define WAKE_SRC_SEJ			BIT(27)
++#define WAKE_SRC_ALL_MD32		BIT(28)
++
++#define WAKE_SRC_FOR_SUSPEND \
++	(WAKE_SRC_KP | WAKE_SRC_EINT | WAKE_SRC_MD32 | WAKE_SRC_USB_CD | \
++	 WAKE_SRC_USB_PDN | WAKE_SRC_THERM | WAKE_SRC_SYSPWREQ | \
++	 WAKE_SRC_SEJ | WAKE_SRC_ALL_MD32 | WAKE_SRC_HDMI_CEC | WAKE_SRC_IRRX)
++
++static const char *const wakesrc_name[32] = {
++	[0] = "SPM_MERGE",	[2] = "KP",		[3] = "WDT",
++	[4] = "GPT",		[5] = "GPT_MD32",	[6] = "EINT",
++	[7] = "EINT_MD32",	[8] = "HDMI_CEC",	[9] = "LOW_BAT",
++	[10] = "MD32",		[11] = "F26M_WAKE",	[12] = "F26M_SLEEP",
++	[13] = "PCM_WDT",	[14] = "USB_CD",	[15] = "USB_PDN",
++	[16] = "PMIC_EINT_0",	[17] = "IRRX",		[18] = "PMIC_MD32",
++	[19] = "UART0",		[20] = "AFE",		[21] = "THERM",
++	[22] = "CIRQ",		[23] = "AUD_MD32",	[24] = "SYSPWREQ",
++	[25] = "MD_WDT",	[26] = "CLDMA_MD",	[27] = "SEJ",
++	[28] = "ALL_MD32",	[29] = "CPU_IRQ",	[30] = "APSRC_WAKE",
++	[31] = "APSRC_SLEEP",
++};
++
++/*
++ * mcucfg: the two snoop-inactive bits asserted around the WFI. Both clusters
++ * need one, and they are not the same register: the A53 cluster's is
++ * MP0_AXI_CONFIG bit 4, as in the vendor's spm_trigger_wfi_for_sleep(); the
++ * A72 cluster's is CA15L_MISCDBG bit 0, the bit spm_mtcmos_ctrl_cpusys1() sets
++ * when it powers that cluster down. MP1_AXI_CONFIG (0x22c) is inert on this
++ * SoC. The SPM will not start the sleep sequence until both clusters report
++ * STANDBYWFIL2, and a powered cluster only does so with ACINACTM asserted.
++ */
++#define MP0_AXI_CONFIG			0x02c
++#define ACINACTM			BIT(4)
++#define CA15L_MISCDBG			0x20c
++#define CA15L_ACINACTM			BIT(0)
++
++/*
++ * The suspend PCM firmware, pcm_suspend_20150805_V1, byte for byte the
++ * suspend_binary_ca7[] array in the vendor's GPL-2.0 mt_spm_sleep.c
++ * (drivers/misc/mediatek/base/power/mt8173/, Copyright (C) 2016 MediaTek Inc.).
++ * It is sequencer microcode for which no assembler source is available.
++ */
++static const u32 spm_suspend_pcm[] = {
++	0x81f58407, 0x81f68407, 0x803a0400, 0x803a8400, 0x1b80001f, 0x20000000,
++	0x80300400, 0x80318400, 0x80328400, 0xa1d28407, 0x81f20407, 0x81409801,
++	0xd8000245, 0x17c07c1f, 0x18c0001f, 0x10006234, 0xc0c031a0, 0x1200041f,
++	0x80310400, 0x1b80001f, 0x2000000a, 0xa0110400, 0x18c0001f, 0x100062c8,
++	0xe0e00010, 0xe0e00030, 0xe0e00070, 0xe0e000f0, 0x1b80001f, 0x2000001a,
++	0xe0e00ff0, 0xe8208000, 0x10006354, 0xfffe7fff, 0xe8208000, 0x10006834,
++	0x00000010, 0x81f00407, 0xa1dd0407, 0x81fd0407, 0xc2803780, 0x1290041f,
++	0x8880000c, 0x2f7be75f, 0xd8200642, 0x17c07c1f, 0x1b00001f, 0x7fffe7ff,
++	0xd0000680, 0x17c07c1f, 0x1b00001f, 0x7ffff7ff, 0xf0000000, 0x17c07c1f,
++	0x80880001, 0xd8000762, 0x17c07c1f, 0xd00027a0, 0x1200041f, 0xe8208000,
++	0x10006834, 0x00000000, 0x1b00001f, 0x3fffe7ff, 0x1b80001f, 0x20000004,
++	0xd820092c, 0x17c07c1f, 0xe8208000, 0x10006834, 0x00000010, 0xd00011a0,
++	0x17c07c1f, 0x18c0001f, 0x10006608, 0x1910001f, 0x10006608, 0x813b0404,
++	0xe0c00004, 0x1880001f, 0x10006320, 0xc0c03680, 0xe080000f, 0xd8200b23,
++	0x17c07c1f, 0x1b00001f, 0x7ffff7ff, 0xd00011a0, 0x17c07c1f, 0xe080001f,
++	0xe8208000, 0x10006354, 0xffffffff, 0x18c0001f, 0x100062c8, 0xe0e000f0,
++	0xe0e00030, 0xe0e00000, 0x81409801, 0xd8000fe5, 0x17c07c1f, 0x18c0001f,
++	0x10004094, 0x1910001f, 0x1020e374, 0xe0c00004, 0x18c0001f, 0x10004098,
++	0x1910001f, 0x1020e378, 0xe0c00004, 0x18c0001f, 0x10011094, 0x1910001f,
++	0x10213374, 0xe0c00004, 0x18c0001f, 0x10011098, 0x1910001f, 0x10213378,
++	0xe0c00004, 0x1910001f, 0x10213378, 0x18c0001f, 0x10006234, 0xc0c03360,
++	0x17c07c1f, 0xc2803780, 0x1290841f, 0xa1d20407, 0x81f28407, 0xa1d68407,
++	0xa0128400, 0xa0118400, 0xa0100400, 0xa01a8400, 0xa01a0400, 0x19c0001f,
++	0x001c239f, 0x1b00001f, 0x3fffefff, 0xf0000000, 0x17c07c1f, 0x808d8001,
++	0xd8201422, 0x17c07c1f, 0x803d8400, 0x1b80001f, 0x2000001a, 0x80340400,
++	0x17c07c1f, 0x17c07c1f, 0x80310400, 0x81fa0407, 0x81f18407, 0x81f08407,
++	0xa1dc0407, 0x1b80001f, 0x200000b6, 0xd00020e0, 0x17c07c1f, 0x1880001f,
++	0x20000208, 0x81411801, 0xd8001605, 0x17c07c1f, 0xe8208000, 0x1000f600,
++	0xd2000000, 0x1380081f, 0x18c0001f, 0x10006240, 0xe0e00016, 0xe0e0001e,
++	0xe0e0000e, 0xe0e0000f, 0x80368400, 0x1380081f, 0x80370400, 0x1380081f,
++	0x80360400, 0x803e0400, 0x1380081f, 0x80380400, 0x803b0400, 0xa01d8400,
++	0x1b80001f, 0x20000034, 0x803d8400, 0x1b80001f, 0x20000152, 0x803d0400,
++	0x1380081f, 0x18c0001f, 0x1000f5c8, 0x1910001f, 0x1000f5c8, 0xa1000404,
++	0xe0c00004, 0x18c0001f, 0x100125c8, 0x1910001f, 0x100125c8, 0xa1000404,
++	0xe0c00004, 0x1910001f, 0x100125c8, 0x80340400, 0x17c07c1f, 0x17c07c1f,
++	0x80310400, 0xe8208000, 0x10000044, 0x00000100, 0x1b80001f, 0x20000068,
++	0x1b80001f, 0x2000000a, 0x18c0001f, 0x10006240, 0xe0e0000d, 0xd8001e65,
++	0x17c07c1f, 0x18c0001f, 0x100040f4, 0x1910001f, 0x100040f4, 0xa11c8404,
++	0xe0c00004, 0x1b80001f, 0x2000000a, 0x813c8404, 0xe0c00004, 0x18c0001f,
++	0x100110f4, 0x1910001f, 0x100110f4, 0xa11c8404, 0xe0c00004, 0x1b80001f,
++	0x2000000a, 0x813c8404, 0xe0c00004, 0x1b80001f, 0x20000100, 0x81fa0407,
++	0x81f18407, 0x81f08407, 0xe8208000, 0x10006354, 0xfffe7b47, 0x18c0001f,
++	0x65930003, 0xc0c03080, 0x17c07c1f, 0xa1d80407, 0xa1dc0407, 0x18c0001f,
++	0x10006608, 0x1910001f, 0x10006608, 0xa11b0404, 0xe0c00004, 0xc2803780,
++	0x1291041f, 0x8880000c, 0x2f7be75f, 0xd8202222, 0x17c07c1f, 0x1b00001f,
++	0x3fffe7ff, 0xd0002260, 0x17c07c1f, 0x1b00001f, 0xbfffe7ff, 0xf0000000,
++	0x17c07c1f, 0x1890001f, 0x10006608, 0x808b0801, 0xd8202502, 0x17c07c1f,
++	0x1880001f, 0x10006320, 0xc0c03400, 0xe080000f, 0xd8002663, 0x17c07c1f,
++	0xe080001f, 0xa1da0407, 0x81fc0407, 0xa0110400, 0xa0140400, 0xa01d8400,
++	0xd0002fc0, 0x17c07c1f, 0x1b80001f, 0x20000fdf, 0x1890001f, 0x10006608,
++	0x80c98801, 0x810a8801, 0x10918c1f, 0xa0939002, 0x8080080d, 0xd82027a2,
++	0x12007c1f, 0x1b00001f, 0x3fffe7ff, 0x1b80001f, 0x20000004, 0xd800304c,
++	0x17c07c1f, 0x1b00001f, 0xbfffe7ff, 0xd0003040, 0x17c07c1f, 0x81f80407,
++	0x81fc0407, 0x18c0001f, 0x65930006, 0xc0c03080, 0x17c07c1f, 0x18c0001f,
++	0x65930007, 0xc0c03080, 0x17c07c1f, 0x1880001f, 0x10006320, 0xc0c03400,
++	0xe080000f, 0xd8002663, 0x17c07c1f, 0xe080001f, 0x18c0001f, 0x65930005,
++	0xc0c03080, 0x17c07c1f, 0xa1da0407, 0xe8208000, 0x10000048, 0x00000100,
++	0x1b80001f, 0x20000068, 0xa0110400, 0xa0140400, 0x18c0001f, 0x1000f5c8,
++	0x1910001f, 0x1000f5c8, 0x81200404, 0xe0c00004, 0x18c0001f, 0x100125c8,
++	0x1910001f, 0x100125c8, 0x81200404, 0xe0c00004, 0x1910001f, 0x100125c8,
++	0xa01d0400, 0xa01b0400, 0xa0180400, 0x803d8400, 0xa01e0400, 0xa0160400,
++	0xa0170400, 0xa0168400, 0x1b80001f, 0x20000104, 0x81411801, 0xd8002f85,
++	0x17c07c1f, 0x18c0001f, 0x10006240, 0xc0c03360, 0x17c07c1f, 0xe8208000,
++	0x1000f600, 0xd2000001, 0xd8000768, 0x17c07c1f, 0xc2803780, 0x1291841f,
++	0x1b00001f, 0x7ffff7ff, 0xf0000000, 0x17c07c1f, 0x1900001f, 0x10006830,
++	0xe1000003, 0x18c0001f, 0x10006834, 0xe0e00000, 0xe0e00001, 0xf0000000,
++	0x17c07c1f, 0xe0f07f16, 0x1380201f, 0xe0f07f1e, 0x1380201f, 0xe0f07f0e,
++	0x1b80001f, 0x20000104, 0xe0f07f0c, 0xe0f07f0d, 0xe0f07e0d, 0xe0f07c0d,
++	0xe0f0780d, 0xf0000000, 0xe0f0700d, 0xe0f07f0d, 0xe0f07f0f, 0xe0f07f1e,
++	0xf0000000, 0xe0f07f12, 0x11407c1f, 0x81f08407, 0x81f18407, 0x1b80001f,
++	0x20000001, 0xa1d08407, 0xa1d18407, 0x1392841f, 0x812ab401, 0x80ebb401,
++	0xa0c00c04, 0xd8203603, 0x17c07c1f, 0x80c01403, 0xd8203423, 0x01400405,
++	0x1900001f, 0x10006814, 0xf0000000, 0xe1000003, 0xa1d00407, 0x1b80001f,
++	0x20000208, 0x80ea3401, 0x1a00001f, 0x10006814, 0xf0000000, 0xe2000003,
++	0x18c0001f, 0x10006b6c, 0x1910001f, 0x10006b6c, 0xa1002804, 0xf0000000,
++	0xe0c00004, 0x17c07c1f, 0x17c07c1f, 0x17c07c1f, 0x17c07c1f, 0x17c07c1f,
++	0x17c07c1f, 0x17c07c1f, 0x17c07c1f, 0x17c07c1f, 0x17c07c1f, 0x17c07c1f,
++	0x17c07c1f, 0x17c07c1f, 0x17c07c1f, 0x17c07c1f, 0x17c07c1f, 0x17c07c1f,
++	0x17c07c1f, 0x17c07c1f, 0x17c07c1f, 0x17c07c1f, 0x17c07c1f, 0x17c07c1f,
++	0x17c07c1f, 0x17c07c1f, 0x17c07c1f, 0x17c07c1f, 0x17c07c1f, 0x17c07c1f,
++	0x17c07c1f, 0x17c07c1f, 0x17c07c1f, 0x17c07c1f, 0x17c07c1f, 0x17c07c1f,
++	0x17c07c1f, 0x17c07c1f, 0x17c07c1f, 0x17c07c1f, 0x17c07c1f, 0x17c07c1f,
++	0x17c07c1f, 0x17c07c1f, 0x17c07c1f, 0x17c07c1f, 0x17c07c1f, 0x17c07c1f,
++	0x17c07c1f, 0x17c07c1f, 0x17c07c1f, 0x17c07c1f, 0x17c07c1f, 0x17c07c1f,
++	0x17c07c1f, 0x17c07c1f, 0x17c07c1f, 0x17c07c1f, 0x17c07c1f, 0x17c07c1f,
++	0x17c07c1f, 0x17c07c1f, 0x1840001f, 0x00000001, 0xa1d48407, 0x1990001f,
++	0x10006b08, 0x1a50001f, 0x10006610, 0x8246a401, 0xe8208000, 0x10006b6c,
++	0x00000000, 0x1b00001f, 0x2f7be75f, 0x81469801, 0xd8004305, 0x17c07c1f,
++	0x1b80001f, 0xd00f0000, 0x8880000c, 0x2f7be75f, 0xd8005da2, 0x17c07c1f,
++	0xd0004340, 0x17c07c1f, 0x1b80001f, 0x500f0000, 0xe8208000, 0x10006354,
++	0xfffe7b47, 0xc0c06940, 0x81401801, 0xd80048e5, 0x17c07c1f, 0x81f60407,
++	0x18c0001f, 0x10006200, 0xc0c05e60, 0x12807c1f, 0xe8208000, 0x1000625c,
++	0x00000001, 0x1b80001f, 0x20000080, 0xc0c05e60, 0x1280041f, 0x18c0001f,
++	0x10006204, 0xc0c06200, 0x1280041f, 0x18c0001f, 0x10006208, 0xc0c05e60,
++	0x12807c1f, 0xe8208000, 0x10006244, 0x00000001, 0x1b80001f, 0x20000080,
++	0xc0c05e60, 0x1280041f, 0x18d0001f, 0x10200200, 0x18c0001f, 0x10006290,
++	0xc0c05e60, 0x1280041f, 0xe8208000, 0x10006404, 0x00003101, 0xc2803780,
++	0x1292041f, 0x81469801, 0xd8204a45, 0x17c07c1f, 0x1b00001f, 0x2f7be75f,
++	0x1b80001f, 0x30000004, 0x8880000c, 0x2f7be75f, 0xd8005802, 0x17c07c1f,
++	0xc0c064c0, 0x17c07c1f, 0x18c0001f, 0x10006294, 0xe0f07fff, 0xe0e00fff,
++	0xe0e000ff, 0x81449801, 0xd8004c85, 0x17c07c1f, 0x1a00001f, 0x10006604,
++	0xe2200003, 0xc0c06580, 0x17c07c1f, 0xe2200005, 0xc0c06580, 0x17c07c1f,
++	0xa1d38407, 0xa1d98407, 0x1800001f, 0x00000012, 0x1800001f, 0x00000e12,
++	0x1800001f, 0x03800e12, 0x1800001f, 0x038e0e12, 0xe8208000, 0x10006310,
++	0x0b1600f8, 0x1b00001f, 0xbfffe7ff, 0x1b80001f, 0x90100000, 0x80c00400,
++	0xd8204fa3, 0xa1d58407, 0xa1dd8407, 0x1b00001f, 0x3fffefff, 0xd0004e60,
++	0x17c07c1f, 0x1890001f, 0x100063e8, 0x88c0000c, 0x2f7be75f, 0xd80051c3,
++	0x17c07c1f, 0x80c40001, 0xd8005143, 0x17c07c1f, 0x1b00001f, 0xbfffe7ff,
++	0xd0005180, 0x17c07c1f, 0x1b00001f, 0x7ffff7ff, 0xd0004e60, 0x17c07c1f,
++	0x80c40001, 0xd82052c3, 0x17c07c1f, 0xa1de0407, 0x1b00001f, 0x7fffe7ff,
++	0xd0004e60, 0x17c07c1f, 0x18c0001f, 0x10006294, 0xe0e001fe, 0xe0e003fc,
++	0xe0e007f8, 0xe0e00ff0, 0x1b80001f, 0x20000020, 0xe0f07ff0, 0xe0f07f00,
++	0x81449801, 0xd80055a5, 0x17c07c1f, 0x1a00001f, 0x10006604, 0xe2200002,
++	0xc0c06580, 0x17c07c1f, 0xe2200004, 0xc0c06580, 0x17c07c1f, 0x1b80001f,
++	0x200016a8, 0x1800001f, 0x03800e12, 0x1b80001f, 0x20000300, 0x1800001f,
++	0x00000e12, 0x1b80001f, 0x20000300, 0x1800001f, 0x00000012, 0x1b80001f,
++	0x20000104, 0x10007c1f, 0x81f38407, 0x81f98407, 0x81f90407, 0x81f40407,
++	0x1b80001f, 0x200016a8, 0x81401801, 0xd8005da5, 0x17c07c1f, 0xe8208000,
++	0x10006404, 0x00002101, 0x18c0001f, 0x10006290, 0x1212841f, 0xc0c05fe0,
++	0x12807c1f, 0xc0c05fe0, 0x1280041f, 0x18c0001f, 0x10006208, 0x1212841f,
++	0xc0c05fe0, 0x12807c1f, 0xe8208000, 0x10006244, 0x00000000, 0x1b80001f,
++	0x20000080, 0xc0c05fe0, 0x1280041f, 0xe8208000, 0x10200268, 0x000ffffe,
++	0x18c0001f, 0x10006204, 0x1212841f, 0xc0c06340, 0x1280041f, 0x18c0001f,
++	0x10006200, 0x1212841f, 0xc0c05fe0, 0x12807c1f, 0xe8208000, 0x1000625c,
++	0x00000000, 0x1b80001f, 0x20000080, 0xc0c05fe0, 0x1280041f, 0x19c0001f,
++	0x01411820, 0x1ac0001f, 0x55aa55aa, 0x10007c1f, 0xf0000000, 0xd8005f0a,
++	0x17c07c1f, 0xe2e0004f, 0xe2e0006f, 0xe2e0002f, 0xd8205faa, 0x17c07c1f,
++	0xe2e0002e, 0xe2e0003e, 0xe2e00032, 0xf0000000, 0x17c07c1f, 0xd80060aa,
++	0x17c07c1f, 0xe2e00036, 0xe2e0003e, 0x1380201f, 0xe2e0003c, 0xd82061ca,
++	0x17c07c1f, 0x1380201f, 0xe2e0007c, 0x1b80001f, 0x20000003, 0xe2e0005c,
++	0xe2e0004c, 0xe2e0004d, 0xf0000000, 0x17c07c1f, 0xd8206309, 0x17c07c1f,
++	0xe2e0000d, 0xe2e0000c, 0xe2e0001c, 0xe2e0001e, 0xe2e00016, 0xe2e00012,
++	0xf0000000, 0x17c07c1f, 0xd8206489, 0x17c07c1f, 0xe2e00016, 0x1380201f,
++	0xe2e0001e, 0x1380201f, 0xe2e0001c, 0x1380201f, 0xe2e0000c, 0xe2e0000d,
++	0xf0000000, 0x17c07c1f, 0xa1d40407, 0x1391841f, 0xa1d90407, 0x1393041f,
++	0xf0000000, 0x17c07c1f, 0x18d0001f, 0x10006604, 0x10cf8c1f, 0xd8206583,
++	0x17c07c1f, 0xf0000000, 0x17c07c1f, 0xe8208000, 0x11008014, 0x00000002,
++	0xe8208000, 0x11008020, 0x00000101, 0xe8208000, 0x11008004, 0x000000d0,
++	0x1a00001f, 0x11008000, 0xd800684a, 0xe220005d, 0xd820686a, 0xe2200000,
++	0xe2200001, 0xe8208000, 0x11008024, 0x00000001, 0x1b80001f, 0x20000424,
++	0xf0000000, 0x17c07c1f, 0xa1d10407, 0x1b80001f, 0x20000020, 0xf0000000,
++	0x17c07c1f
++};
++
++/*
++ * Event vectors: (pc << 16) | (imme << 6) | (resume << 5) | event. These four
++ * come from suspend_pcm_ca7 in the vendor's mt_spm_sleep.c and are specific to
++ * the firmware image above -- the pc fields are entry points into it.
++ */
++#define EVENT_VEC(event, resume, imme, pc) \
++	(((pc) << 16) | (!!(imme) << 6) | (!!(resume) << 5) | ((event) & 0x1f))
++
++static const u32 spm_suspend_vec[4] = {
++	EVENT_VEC(11, 1, 0, 0),
++	EVENT_VEC(12, 1, 0, 54),
++	EVENT_VEC(30, 1, 0, 143),
++	EVENT_VEC(31, 1, 0, 277),
++};
++
++/*
++ * The pcm_flags: the vendor's slp_spm_flags for suspend, plus SPM_CPU_PDN_DIS,
++ * which is the whole design of this driver, and SPM_INFRA_PDN_DIS, which the
++ * vendor's slp_suspend_ops_enter() requires whenever the CPU stays powered.
++ * SPM_DDRPHY_PDN_DIS is clear, as on the vendor: the DDR PHY powers down.
++ */
++#define SPM_FLAGS \
++	(SPM_CPU_PDN_DIS | SPM_INFRA_PDN_DIS | \
++	 SPM_DUALVCORE_PDN_DIS | SPM_PASR_DIS | SPM_DPD_DIS | \
++	 SPM_CPU_DVS_DIS | SPM_SCREEN_OFF)
++
++struct mtk_spm {
++	struct device *dev;
++	struct regmap *spm;
++	struct regmap *mcucfg;
++	struct regmap *pmic;
++	struct clk *scp_sel;
++	struct clk *clk26m;
++	struct clk *syspll1_d2;
++	u32 *pcm;		/* PCM firmware, DMA-visible */
++	dma_addr_t pcm_dma;
++	/* saved across suspend, see spm_save_state() */
++	u32 save_pwr_on_val0;
++	u32 save_pwr_on_val1;
++	u32 save_clk_con;
++	u32 save_pmic[3];
++};
++
++static struct mtk_spm *spm_ctx;
++
++static u32 spm_read(struct mtk_spm *s, u32 off)
++{
++	u32 val = 0;
++
++	regmap_read(s->spm, off, &val);
++	return val;
++}
++
++static void spm_write(struct mtk_spm *s, u32 off, u32 val)
++{
++	regmap_write(s->spm, off, val);
++}
++
++/* The block ignores writes until this is presented. Cheap; do it every time. */
++static void spm_unlock(struct mtk_spm *s)
++{
++	spm_write(s, SPM_POWERON_CONFIG_SET, SPM_REGWR_CFG_KEY | SPM_REGWR_EN);
++}
++
++/*
++ * Bring the SPM to the state the PCM firmware expects. The vendor does this
++ * once at boot from spm_register_init(); doing it in .enter instead keeps a
++ * wrong value from affecting a machine that is merely running, and the values
++ * are restored on the way out.
++ */
++static int spm_reset_and_init_pcm(struct mtk_spm *s)
++{
++	u32 con1, sta;
++
++	spm_write(s, SPM_PCM_CON0, CON0_CFG_KEY | CON0_PCM_SW_RESET);
++	spm_write(s, SPM_PCM_CON0, CON0_CFG_KEY);
++
++	sta = spm_read(s, SPM_PCM_FSM_STA);
++	if (sta != PCM_FSM_STA_DEF) {
++		dev_err(s->dev, "PCM reset failed, FSM_STA = 0x%x\n", sta);
++		return -EIO;
++	}
++
++	/* disable the event vectors until the PCM enables them itself */
++	spm_write(s, SPM_PCM_CON0, CON0_CFG_KEY | CON0_IM_SLEEP_DVS);
++
++	/* keep the WDT setting, drop everything else */
++	con1 = spm_read(s, SPM_PCM_CON1) &
++	       (CON1_PCM_WDT_WAKE_MODE | CON1_PCM_WDT_EN);
++	spm_write(s, SPM_PCM_CON1, con1 | CON1_CFG_KEY | CON1_EVENT_LOCK_EN |
++		  CON1_SPM_SRAM_ISO_B | CON1_SPM_SRAM_SLP_B |
++		  CON1_IM_NONRP_EN | CON1_MIF_APBEN);
++
++	return 0;
++}
++
++/* Point the instruction fetcher at the firmware in DRAM and start the fetch. */
++static void spm_kick_im_to_fetch(struct mtk_spm *s)
++{
++	u32 con0;
++
++	/*
++	 * The vendor skips the fetch and runs from SPM SRAM (CON1_IM_SLAVE)
++	 * when IM_PTR and IM_LEN already describe this image. That is only an
++	 * optimisation, and it reads registers the bootloader left behind to
++	 * decide -- so always re-fetch instead. A fetch is a few microseconds
++	 * once per suspend.
++	 */
++	spm_write(s, SPM_PCM_IM_PTR, (u32)s->pcm_dma);
++	spm_write(s, SPM_PCM_IM_LEN, ARRAY_SIZE(spm_suspend_pcm) - 1);
++
++	con0 = spm_read(s, SPM_PCM_CON0) & ~(CON0_IM_KICK | CON0_PCM_KICK);
++	spm_write(s, SPM_PCM_CON0, con0 | CON0_CFG_KEY | CON0_IM_KICK);
++	spm_write(s, SPM_PCM_CON0, con0 | CON0_CFG_KEY);
++}
++
++/* r0 and r7 are the PCM's power-control outputs; seed them from the defaults. */
++static void spm_init_pcm_register(struct mtk_spm *s)
++{
++	spm_write(s, SPM_PCM_REG_DATA_INI, spm_read(s, SPM_POWER_ON_VAL0));
++	spm_write(s, SPM_PCM_PWR_IO_EN, PCM_RF_SYNC_R0);
++	spm_write(s, SPM_PCM_PWR_IO_EN, 0);
++
++	spm_write(s, SPM_PCM_REG_DATA_INI, spm_read(s, SPM_POWER_ON_VAL1));
++	spm_write(s, SPM_PCM_PWR_IO_EN, PCM_RF_SYNC_R7);
++	spm_write(s, SPM_PCM_PWR_IO_EN, 0);
++}
++
++/*
++ * Tell the SPM what must be true before it may take the SoC down. The vendor
++ * builds these words from a struct pwr_ctrl; there is only one scenario here,
++ * so the values are folded in with the field that produced each one named.
++ */
++static void spm_set_power_control(struct mtk_spm *s)
++{
++	/*
++	 * disp_req_mask = 0 and mfg_req_mask = 0 -> honour the display and GPU
++	 * requests (bits 16 and 17 are "unmasked"); md32_req_mask = 1 -> ignore
++	 * the MD32 coprocessor, which mainline does not run; wfi_op = AND ->
++	 * every enabled CPU must be in WFI, not just one.
++	 */
++	spm_write(s, SPM_AP_STANBY_CON, BIT(17) | BIT(16) | BIT(4));
++
++	/* pcm_apsrc_req = 0: do not hold the DRAM source request across sleep */
++	spm_write(s, SPM_PCM_SRC_REQ, 0);
++
++	/* every dsi/dpi/isp "keep DDR alive" request masked off */
++	spm_write(s, SPM_PCM_PASR_DPD_2, 0);
++
++	/* srclkenai_mask = 1 */
++	spm_write(s, SPM_CLK_CON, spm_read(s, SPM_CLK_CON) | CC_SRCLKENA_MASK_0);
++
++	/*
++	 * Require WFI from all eight possible cores. MT8173 fits two per
++	 * cluster, and the SPM reports the four that do not exist as
++	 * permanently in WFI, so an AND over all eight is the same condition as
++	 * an AND over the four that are real -- measured on this unit.
++	 */
++	spm_write(s, SPM_SLEEP_CA7_WFI_EN(0), 1);
++	spm_write(s, SPM_SLEEP_CA7_WFI_EN(1), 1);
++	spm_write(s, SPM_SLEEP_CA7_WFI_EN(2), 1);
++	spm_write(s, SPM_SLEEP_CA7_WFI_EN(3), 1);
++	spm_write(s, SPM_SLEEP_CA15_WFI_EN(0), 1);
++	spm_write(s, SPM_SLEEP_CA15_WFI_EN(1), 1);
++	spm_write(s, SPM_SLEEP_CA15_WFI_EN(2), 1);
++	spm_write(s, SPM_SLEEP_CA15_WFI_EN(3), 1);
++}
++
++static void spm_set_wakeup_event(struct mtk_spm *s)
++{
++	u32 isr;
++
++	/*
++	 * The PCM timer is set to its maximum (~36 h), as the vendor does when
++	 * its periodic wake is disabled. It is not a usable backstop here, see
++	 * the comment above spm_report_wakeup(); the PCM watchdog is armed at
++	 * this value + 30 s in spm_kick_pcm_to_run(), which is what makes a
++	 * shorter value dangerous rather than merely useless.
++	 */
++	spm_write(s, SPM_PCM_TIMER_VAL, PCM_TIMER_MAX);
++	spm_write(s, SPM_PCM_CON1,
++		  spm_read(s, SPM_PCM_CON1) | CON1_CFG_KEY | CON1_PCM_TIMER_EN);
++
++	/* the mask register is active-low: a clear bit is an enabled source */
++	spm_write(s, SPM_SLEEP_WAKEUP_EVENT_MASK, (u32)~WAKE_SRC_FOR_SUSPEND);
++
++	/* unmask the SPM ISR, keeping whatever TWAM setting is there */
++	isr = spm_read(s, SPM_SLEEP_ISR_MASK) & ISRM_TWAM;
++	spm_write(s, SPM_SLEEP_ISR_MASK, isr | ISRM_RET_IRQ_AUX);
++}
++
++static void spm_kick_pcm_to_run(struct mtk_spm *s)
++{
++	u32 con1, con0;
++
++	/* the PCM watchdog is the backstop for a firmware that never returns */
++	con1 = spm_read(s, SPM_PCM_CON1) &
++	       ~(CON1_PCM_WDT_WAKE_MODE | CON1_PCM_WDT_EN);
++	spm_write(s, SPM_PCM_CON1, CON1_CFG_KEY | con1);
++	spm_write(s, SPM_PCM_WDT_TIMER_VAL,
++		  spm_read(s, SPM_PCM_TIMER_VAL) + PCM_WDT_TIMEOUT);
++	spm_write(s, SPM_PCM_CON1, con1 | CON1_CFG_KEY | CON1_PCM_WDT_EN);
++
++	spm_write(s, SPM_PCM_PASR_DPD_0, 0);
++
++	spm_write(s, SPM_PCM_MAS_PAUSE_MASK, 0xffffffff);
++	spm_write(s, SPM_PCM_REG_DATA_INI, 0);
++	spm_write(s, SPM_CLK_CON, spm_read(s, SPM_CLK_CON) & ~CC_DISABLE_DORM_PWR);
++
++	spm_write(s, SPM_PCM_FLAGS, SPM_FLAGS | SPM_CPU_PDN_DIS | SPM_INFRA_PDN_DIS);
++	spm_write(s, SPM_PCM_RESERVE, 0);
++
++	/* infra_dcm_lock = 1 */
++	spm_write(s, SPM_CLK_CON, spm_read(s, SPM_CLK_CON) | CC_LOCK_INFRA_DCM);
++
++	/* r0_ctrl_en = 1, r7_ctrl_en = 1 */
++	spm_write(s, SPM_PCM_PWR_IO_EN, PCM_PWRIO_EN_R0 | PCM_PWRIO_EN_R7);
++
++	con0 = spm_read(s, SPM_PCM_CON0) & ~(CON0_IM_KICK | CON0_PCM_KICK);
++	spm_write(s, SPM_PCM_CON0, con0 | CON0_CFG_KEY | CON0_PCM_KICK);
++	spm_write(s, SPM_PCM_CON0, con0 | CON0_CFG_KEY);
++}
++
++static void spm_clean_after_wakeup(struct mtk_spm *s)
++{
++	spm_write(s, SPM_PCM_CON1,
++		  CON1_CFG_KEY | (spm_read(s, SPM_PCM_CON1) & ~CON1_PCM_WDT_EN));
++
++	spm_write(s, SPM_PCM_PWR_IO_EN, 0);
++	spm_write(s, SPM_SLEEP_CPU_WAKEUP_EVENT, 0);
++	spm_write(s, SPM_PCM_CON1,
++		  CON1_CFG_KEY | (spm_read(s, SPM_PCM_CON1) & ~CON1_PCM_TIMER_EN));
++	spm_write(s, SPM_SLEEP_WAKEUP_EVENT_MASK, ~0);
++	spm_write(s, SPM_SLEEP_ISR_MASK,
++		  spm_read(s, SPM_SLEEP_ISR_MASK) | ISRM_ALL_EXC_TWAM);
++	spm_write(s, SPM_SLEEP_ISR_STATUS, ISRC_ALL_EXC_TWAM);
++	spm_write(s, SPM_PCM_SW_INT_CLEAR, PCM_SW_INT_ALL);
++}
++
++/*
++ * The CPU stays powered on this path (SPM_CPU_PDN_DIS) and waits in WFI with
++ * interrupts masked, so only a pending GIC interrupt can bring it back. The
++ * EINT-routed wake sources (power key, RTC alarm, charger) have their own GIC
++ * lines. The PCM timer does not: its expiry stops PCM_TIMER_OUT and sets
++ * WAKE_MISC_PCM_TIMER in the firmware's r12, but the CPU stays in WFI; the
++ * vendor's periodic timer wake relies on the CPU re-entering through its reset
++ * vector, which is the dormant path this driver does not take. The timer is
++ * therefore pinned at PCM_TIMER_MAX (as the vendor does when it is unused)
++ * and the PCM watchdog, armed at timer + 30 s, can never fire first. The
++ * PCM_TIMER decode below is kept so the event is recognisable if it ever is
++ * delivered.
++ */
++static void spm_report_wakeup(struct mtk_spm *s)
++{
++	u32 r12 = spm_read(s, SPM_PCM_REG12_DATA);
++	u32 misc = spm_read(s, SPM_SLEEP_WAKEUP_MISC);
++	u32 assert_pc = spm_read(s, SPM_PCM_REG_DATA_INI);
++	u32 event_reg = spm_read(s, SPM_PCM_EVENT_REG_STA);
++	char buf[160];
++	int n = 0, i;
++
++	if (assert_pc) {
++		dev_err(s->dev, "PCM asserted at %u, r13 = 0x%x, debug = 0x%x\n",
++			assert_pc, spm_read(s, SPM_PCM_REG13_DATA),
++			spm_read(s, SPM_PCM_PASR_DPD_3));
++		return;
++	}
++
++	buf[0] = '\0';
++	if (r12 & WAKE_SRC_SPM_MERGE) {
++		if (misc & WAKE_MISC_PCM_TIMER)
++			n += scnprintf(buf + n, sizeof(buf) - n, " PCM_TIMER");
++		if (misc & WAKE_MISC_CPU_WAKE)
++			n += scnprintf(buf + n, sizeof(buf) - n, " CPU");
++	}
++	for (i = 1; i < 32; i++) {
++		if ((r12 & BIT(i)) && wakesrc_name[i])
++			n += scnprintf(buf + n, sizeof(buf) - n, " %s",
++				       wakesrc_name[i]);
++	}
++
++	/*
++	 * Bit 20 of PCM_EVENT_REG_STA is the firmware's "I completed the sleep
++	 * sequence" flag. Without it the PCM turned around early and nothing
++	 * was actually powered down, which looks exactly like a working suspend
++	 * from userspace -- so say so.
++	 */
++	if (!(event_reg & 0x100000))
++		dev_warn(s->dev, "PCM aborted the sleep sequence (event_reg = 0x%x)\n",
++			 event_reg);
++
++	dev_dbg(s->dev, "woke by%s, slept %u ticks, idle_sta = 0x%x, raw_sta = 0x%x\n",
++		 buf[0] ? buf : " (nothing)", spm_read(s, SPM_PCM_TIMER_OUT),
++		 spm_read(s, SPM_SLEEP_SUBSYS_IDLE_STA),
++		 spm_read(s, SPM_SLEEP_ISR_RAW_STA));
++}
++
++/*
++ * With the CPU staying powered, the three rails that feed it must not be
++ * dropped by the PMIC's SRCLKEN-driven hardware voltage control while the SoC
++ * is down. This is the same trio of writes spm_go_to_sleep() makes on its
++ * !is_cpu_pdn() path -- VCA15, VSRMCA15 and VCORE, bits [1:0], [1:0] and [1].
++ * The vendor never puts them back; we do, so that resume leaves the PMIC as it
++ * was found.
++ */
++static const struct {
++	u32 reg;
++	u32 mask;
++} spm_pmic_hold[3] = {
++	{ MT6397_VCA15_CON5,   GENMASK(1, 0) },
++	{ MT6397_VSRMCA15_CON5, GENMASK(1, 0) },
++	{ MT6397_VCORE_CON5,   BIT(1) },
++};
++
++static void spm_pmic_prepare(struct mtk_spm *s)
++{
++	int i;
++
++	for (i = 0; i < ARRAY_SIZE(spm_pmic_hold); i++) {
++		regmap_read(s->pmic, spm_pmic_hold[i].reg, &s->save_pmic[i]);
++		regmap_update_bits(s->pmic, spm_pmic_hold[i].reg,
++				   spm_pmic_hold[i].mask, 0);
++	}
++}
++
++static void spm_pmic_restore(struct mtk_spm *s)
++{
++	int i;
++
++	for (i = 0; i < ARRAY_SIZE(spm_pmic_hold); i++)
++		regmap_update_bits(s->pmic, spm_pmic_hold[i].reg,
++				   spm_pmic_hold[i].mask, s->save_pmic[i]);
++}
++
++/*
++ * The SoC's SPM outputs are driven from POWER_ON_VAL0/1 and CLK_CON whenever
++ * the PCM is not in control. The firmware expects the vendor's values; the
++ * bootloader leaves different ones. Save what is there, install the vendor's,
++ * and put the originals back on resume, so a machine that never suspends is
++ * left exactly as mainline had it.
++ */
++static void spm_save_state(struct mtk_spm *s)
++{
++	s->save_pwr_on_val0 = spm_read(s, SPM_POWER_ON_VAL0);
++	s->save_pwr_on_val1 = spm_read(s, SPM_POWER_ON_VAL1);
++	s->save_clk_con = spm_read(s, SPM_CLK_CON);
++}
++
++static void spm_restore_state(struct mtk_spm *s)
++{
++	spm_write(s, SPM_POWER_ON_VAL0, s->save_pwr_on_val0);
++	spm_write(s, SPM_POWER_ON_VAL1, s->save_pwr_on_val1);
++	spm_write(s, SPM_CLK_CON, s->save_clk_con);
++}
++
++static int mtk_spm_suspend_enter(suspend_state_t state)
++{
++	struct mtk_spm *s = spm_ctx;
++	int ret;
++
++	spm_unlock(s);
++	spm_save_state(s);
++
++	spm_write(s, SPM_POWER_ON_VAL0, 0);
++	spm_write(s, SPM_POWER_ON_VAL1, POWER_ON_VAL1_DEF);
++	spm_write(s, SPM_CLK_CON, SPM_CLK_CON_DEF);
++	spm_write(s, SPM_PCM_PWR_IO_EN, 0);
++
++	ret = spm_reset_and_init_pcm(s);
++	if (ret)
++		goto restore;
++
++	/* VTCXO settle time, in 32 kHz ticks */
++	spm_write(s, SPM_CLK_SETTLE, SPM_SYSCLK_SETTLE);
++
++	spm_kick_im_to_fetch(s);
++	spm_init_pcm_register(s);
++
++	spm_write(s, SPM_PCM_EVENT_VECTOR(0), spm_suspend_vec[0]);
++	spm_write(s, SPM_PCM_EVENT_VECTOR(1), spm_suspend_vec[1]);
++	spm_write(s, SPM_PCM_EVENT_VECTOR(2), spm_suspend_vec[2]);
++	spm_write(s, SPM_PCM_EVENT_VECTOR(3), spm_suspend_vec[3]);
++	spm_write(s, SPM_PCM_EVENT_VECTOR(4), 0);
++	spm_write(s, SPM_PCM_EVENT_VECTOR(5), 0);
++	spm_write(s, SPM_PCM_EVENT_VECTOR(6), 0);
++	spm_write(s, SPM_PCM_EVENT_VECTOR(7), 0);
++
++	spm_set_power_control(s);
++	spm_set_wakeup_event(s);
++	spm_kick_pcm_to_run(s);
++
++	/*
++	 * Everything past here runs with the SPM armed and waiting for the CPU
++	 * standby signals. ACINACTM tells a cluster's bus interface that its
++	 * snoop traffic has stopped, which is what lets the cluster assert
++	 * STANDBYWFIL2 -- and suspend_ctrl leaves ca7top_idle_mask,
++	 * ca15top_idle_mask and mcusys_idle_mask all at 0, which means "require"
++	 * (mt_spm_sodi.c sets them to 1 for the shallowest state, so 1 is
++	 * "ignore"). So both clusters need it, not just the one this CPU is in:
++	 * without the A72's, CA15_CPUTOP never reports idle and the SPM never
++	 * enters sleep at all.
++	 *
++	 * Touching the A72's is safe here only because suspend_enter() has
++	 * already offlined every secondary CPU, so nothing is executing in that
++	 * cluster. No coherent access may happen between setting these and the
++	 * WFI, which is why there is nothing between them but the barrier.
++	 */
++	regmap_update_bits(s->mcucfg, CA15L_MISCDBG, CA15L_ACINACTM,
++			   CA15L_ACINACTM);
++	regmap_update_bits(s->mcucfg, MP0_AXI_CONFIG, ACINACTM, ACINACTM);
++
++	/* isb, then dsb, then wfi -- the order the vendor's wfi_with_sync uses */
++	asm volatile("isb\n\tdsb sy\n\twfi" : : : "memory");
++
++	regmap_update_bits(s->mcucfg, MP0_AXI_CONFIG, ACINACTM, 0);
++	regmap_update_bits(s->mcucfg, CA15L_MISCDBG, CA15L_ACINACTM, 0);
++
++	spm_report_wakeup(s);
++	spm_clean_after_wakeup(s);
++
++restore:
++	spm_restore_state(s);
++
++	return ret;
++}
++
++/*
++ * Everything that can sleep lives here rather than in .enter, which runs with
++ * interrupts disabled: the PMIC is reached over pmic-wrap, whose regmap takes a
++ * mutex, and clk_set_parent takes the clk prepare lock. The SPM and mcucfg
++ * regmaps are regmap-mmio, which is fast_io and therefore spinlock-based, so
++ * those are the only ones .enter is allowed to touch.
++ *
++ * .prepare_late and .wake are an exact pair: suspend_enter() reaches .wake on
++ * every path on which it called .prepare_late, including the failure ones.
++ */
++static int mtk_spm_suspend_prepare_late(void)
++{
++	struct mtk_spm *s = spm_ctx;
++
++	spm_pmic_prepare(s);
++
++	/*
++	 * fscp_ck must not be parented to a PLL that the SPM is about to stop.
++	 * The vendor reparents it to the 26 MHz crystal for the duration.
++	 */
++	if (s->scp_sel && s->clk26m)
++		clk_set_parent(s->scp_sel, s->clk26m);
++
++	return 0;
++}
++
++static void mtk_spm_suspend_wake(void)
++{
++	struct mtk_spm *s = spm_ctx;
++
++	if (s->scp_sel && s->syspll1_d2)
++		clk_set_parent(s->scp_sel, s->syspll1_d2);
++
++	spm_pmic_restore(s);
++}
++
++/*
++ * PM_SUSPEND_MEM only. Offering PM_SUSPEND_STANDBY as well would advertise a
++ * state the SPM firmware has no sequence for.
++ */
++static int mtk_spm_suspend_valid(suspend_state_t state)
++{
++	return state == PM_SUSPEND_MEM;
++}
++
++static const struct platform_suspend_ops mtk_spm_suspend_ops = {
++	.valid = mtk_spm_suspend_valid,
++	.prepare_late = mtk_spm_suspend_prepare_late,
++	.enter = mtk_spm_suspend_enter,
++	.wake = mtk_spm_suspend_wake,
++};
++
++
++static int mtk_spm_get_pmic_regmap(struct mtk_spm *s)
++{
++	struct platform_device *pmic_pdev;
++	struct device_node *np;
++
++	np = of_parse_phandle(s->dev->of_node, "mediatek,pmic", 0);
++	if (!np)
++		return -EINVAL;
++
++	pmic_pdev = of_find_device_by_node(np);
++	of_node_put(np);
++	if (!pmic_pdev)
++		return -EPROBE_DEFER;
++
++	s->pmic = pmic_pdev->dev.parent ?
++		  dev_get_regmap(pmic_pdev->dev.parent, NULL) : NULL;
++	put_device(&pmic_pdev->dev);
++
++	return s->pmic ? 0 : -EPROBE_DEFER;
++}
++
++/*
++ * Normally never runs: the wake path acks the SPM's status and software
++ * interrupt in spm_clean_after_wakeup() before interrupts are re-enabled. The
++ * line is requested because the vendor does (all six, IRQF_NO_SUSPEND) and so
++ * that a firmware-raised SPM interrupt has an owner; it acks defensively.
++ */
++static irqreturn_t mtk_spm_irq(int irq, void *data)
++{
++	struct mtk_spm *s = data;
++	u32 isr = spm_read(s, SPM_SLEEP_ISR_STATUS);
++
++	spm_write(s, SPM_SLEEP_ISR_MASK,
++		  spm_read(s, SPM_SLEEP_ISR_MASK) | ISRM_ALL_EXC_TWAM);
++	spm_write(s, SPM_SLEEP_ISR_STATUS, isr);
++	spm_write(s, SPM_PCM_SW_INT_CLEAR, PCM_SW_INT_ALL);
++
++	dev_dbg(s->dev, "SPM irq outside the wake path, isr = 0x%x\n", isr);
++	return IRQ_HANDLED;
++}
++
++static int mtk_spm_probe(struct platform_device *pdev)
++{
++	struct device *dev = &pdev->dev;
++	struct mtk_spm *s;
++	int ret;
++
++	s = devm_kzalloc(dev, sizeof(*s), GFP_KERNEL);
++	if (!s)
++		return -ENOMEM;
++
++	s->dev = dev;
++
++	/*
++	 * No reg of our own: the SPM registers are the scpsys syscon, which
++	 * mtk-pm-domains also uses for the peripheral power domains. Taking a
++	 * regmap on the shared parent is what keeps the two from fighting over
++	 * an ioremap, and is the same thing mtk-pm-domains does.
++	 */
++	if (!dev->parent)
++		return dev_err_probe(dev, -ENODEV, "no syscon parent\n");
++
++	s->spm = syscon_node_to_regmap(dev->parent->of_node);
++	if (IS_ERR(s->spm))
++		return dev_err_probe(dev, PTR_ERR(s->spm),
++				     "no regmap for the scpsys syscon\n");
++
++	s->mcucfg = syscon_regmap_lookup_by_phandle(dev->of_node, "mediatek,mcucfg");
++	if (IS_ERR(s->mcucfg))
++		return dev_err_probe(dev, PTR_ERR(s->mcucfg),
++				     "no mediatek,mcucfg phandle\n");
++
++	/*
++	 * The MT6397 is not a syscon -- it has no registers of its own on the
++	 * SoC bus, and its regmap is created by mtk-pmic-wrap and registered
++	 * against the pwrap device. mt6397-core.c reaches it the same way, with
++	 * dev_get_regmap() on its parent. Only three registers are touched, all
++	 * on the CPU-stays-powered path.
++	 */
++	ret = mtk_spm_get_pmic_regmap(s);
++	if (ret)
++		return dev_err_probe(dev, ret, "no PMIC regmap\n");
++
++	/* Optional: without them fscp_ck simply is not reparented. */
++	s->scp_sel = devm_clk_get_optional(dev, "scp_sel");
++	s->clk26m = devm_clk_get_optional(dev, "clk26m");
++	s->syspll1_d2 = devm_clk_get_optional(dev, "syspll1_d2");
++	if (IS_ERR(s->scp_sel) || IS_ERR(s->clk26m) || IS_ERR(s->syspll1_d2)) {
++		dev_warn(dev, "SCP clocks unavailable; not reparenting fscp_ck\n");
++		s->scp_sel = NULL;
++	}
++
++	/*
++	 * The SPM's instruction fetcher is a bus master reading DRAM, and
++	 * SPM_PCM_IM_PTR is 32 bits wide. Coherent memory, so the firmware is
++	 * visible to it without any cache maintenance of our own.
++	 */
++	ret = dma_set_mask_and_coherent(dev, DMA_BIT_MASK(32));
++	if (ret)
++		return dev_err_probe(dev, ret, "no 32-bit DMA\n");
++
++	s->pcm = dmam_alloc_coherent(dev, sizeof(spm_suspend_pcm), &s->pcm_dma,
++				     GFP_KERNEL);
++	if (!s->pcm)
++		return -ENOMEM;
++
++	/* Optional: SPM IRQ0, trigger type from the DT. */
++	ret = platform_get_irq_optional(pdev, 0);
++	if (ret > 0) {
++		ret = devm_request_irq(dev, ret, mtk_spm_irq, IRQF_NO_SUSPEND,
++				       "mtk-spm-suspend", s);
++		if (ret)
++			return dev_err_probe(dev, ret, "cannot request the SPM irq\n");
++	}
++	memcpy(s->pcm, spm_suspend_pcm, sizeof(spm_suspend_pcm));
++
++	spm_ctx = s;
++	suspend_set_ops(&mtk_spm_suspend_ops);
++
++	dev_info(dev, "suspend-to-RAM via the SPM, PCM firmware at %pad (%zu words)\n",
++		 &s->pcm_dma, ARRAY_SIZE(spm_suspend_pcm));
++
++	return 0;
++}
++
++static void mtk_spm_remove(struct platform_device *pdev)
++{
++	suspend_set_ops(NULL);
++	spm_ctx = NULL;
++}
++
++static const struct of_device_id mtk_spm_of_match[] = {
++	{ .compatible = "mediatek,mt8173-spm-suspend" },
++	{ }
++};
++MODULE_DEVICE_TABLE(of, mtk_spm_of_match);
++
++static struct platform_driver mtk_spm_driver = {
++	.probe = mtk_spm_probe,
++	.remove = mtk_spm_remove,
++	.driver = {
++		.name = "mtk-spm-suspend",
++		.of_match_table = mtk_spm_of_match,
++	},
++};
++module_platform_driver(mtk_spm_driver);
++
++MODULE_DESCRIPTION("MediaTek MT8173 SPM suspend-to-RAM");
++MODULE_LICENSE("GPL");

@@ -1,0 +1,65 @@
+From bebe81fbb2f6abd46e8988887ed836ef4d1eaa66 Mon Sep 17 00:00:00 2001
+From: Ryan Brue <ryanbrue.dev@gmail.com>
+Date: Thu, 3 Sep 2026 09:31:45 -0500
+Subject: [PATCH] drm/mediatek: dsi: force command mode in mtk_dsi_poweron()
+
+mtk_dsi_reset_engine() does not touch DSI_MODE_CTRL, so whatever the
+bootloader left there survives power-on. On boards where the bootloader
+lights the panel for a boot logo and hands the DSI over still running, the
+leftover value is a video mode, and the first mtk_dsi_host_transfer() then
+takes the "already streaming" path: it stops the stream and waits for
+VM_DONE, which never arrives because nothing is actually being scanned out.
+The panel's very first command fails and it is never initialised:
+
+  [drm] Wait DSI IRQ(0x00000008) Timeout
+  *ERROR* failed to switch cmd mode
+  sending dcs data 8f a5 failed: -62
+
+Write CMD_MODE to DSI_MODE_CTRL right after the engine reset. Command mode
+is the correct state to power on into regardless of what came before; the
+video mode is programmed by mtk_dsi_start() when the stream is actually
+started, exactly as today.
+
+Seen on the Amazon Fire HD 10 (2017), whose LK bootloader draws its logo
+over DSI in video mode and never stops the stream before jumping to the
+kernel.
+
+Signed-off-by: Ryan Brue <ryanbrue.dev@gmail.com>
+---
+ drivers/gpu/drm/mediatek/mtk_dsi.c | 23 +++++++++++++++++++++++
+ 1 file changed, 23 insertions(+)
+
+diff --git a/drivers/gpu/drm/mediatek/mtk_dsi.c b/drivers/gpu/drm/mediatek/mtk_dsi.c
+index 49dfc0f82..7b08a212a 100644
+--- a/drivers/gpu/drm/mediatek/mtk_dsi.c
++++ b/drivers/gpu/drm/mediatek/mtk_dsi.c
+@@ -737,6 +737,29 @@ static int mtk_dsi_poweron(struct mtk_dsi *dsi)
+ 		       dsi->regs + dsi->driver_data->reg_shadow_dbg_off);
+ 
+ 	mtk_dsi_reset_engine(dsi);
++
++	/*
++	 * Force command mode before anything can try to send a DCS command.
++	 *
++	 * mtk_dsi_reset_engine() does not touch DSI_MODE_CTRL, so whatever the
++	 * bootloader left there survives. On boards where the bootloader lights
++	 * the panel for a boot logo and hands it over still running -- the
++	 * Amazon Fire HD 10 does exactly this -- that leftover value is a video
++	 * mode, and the first mtk_dsi_host_transfer() takes the "already
++	 * streaming" path: it stops the stream and waits for VM_DONE, which
++	 * never arrives because nothing is actually being scanned out. The
++	 * panel's very first command then fails and it is never initialised:
++	 *
++	 *   [drm] Wait DSI IRQ(0x00000008) Timeout
++	 *   *ERROR* failed to switch cmd mode
++	 *   sending dcs data 8f a5 failed: -62
++	 *
++	 * Command mode is the right state to power on into regardless; video
++	 * mode is programmed by mtk_dsi_start() when the stream actually
++	 * starts.
++	 */
++	writel(CMD_MODE, dsi->regs + DSI_MODE_CTRL);
++
+ 	mtk_dsi_phy_timconfig(dsi);
+ 
+ 	mtk_dsi_ps_control(dsi, true);

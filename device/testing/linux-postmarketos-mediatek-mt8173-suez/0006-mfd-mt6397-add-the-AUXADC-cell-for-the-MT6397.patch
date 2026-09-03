@@ -1,0 +1,28 @@
+From ff0bae440ae26bb50b2e361017015038f8374bf3 Mon Sep 17 00:00:00 2001
+From: Ryan Brue <ryanbrue.dev@gmail.com>
+Date: Thu, 3 Sep 2026 14:08:01 -0500
+Subject: [PATCH] mfd: mt6397: add the AUXADC cell for the MT6397
+
+Register the MT6397's auxiliary ADC as an MFD child so the mt6397-auxadc
+driver can bind to the "adc" node under the PMIC, the way the MT6359 AUXADC
+cell already does for the newer PMICs.
+
+Signed-off-by: Ryan Brue <ryanbrue.dev@gmail.com>
+---
+ drivers/mfd/mt6397-core.c | 3 +++
+ 1 file changed, 3 insertions(+)
+
+diff --git a/drivers/mfd/mt6397-core.c b/drivers/mfd/mt6397-core.c
+index 1bdacda9a..afa210362 100644
+--- a/drivers/mfd/mt6397-core.c
++++ b/drivers/mfd/mt6397-core.c
+@@ -255,6 +255,9 @@ static const struct mfd_cell mt6359_devs[] = {
+ 
+ static const struct mfd_cell mt6397_devs[] = {
+ 	{
++		.name = "mt6397-auxadc",
++		.of_compatible = "mediatek,mt6397-auxadc",
++	}, {
+ 		.name = "mt6397-rtc",
+ 		.num_resources = ARRAY_SIZE(mt6397_rtc_resources),
+ 		.resources = mt6397_rtc_resources,

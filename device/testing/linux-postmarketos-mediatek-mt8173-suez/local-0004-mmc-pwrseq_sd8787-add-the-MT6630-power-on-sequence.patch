@@ -1,0 +1,55 @@
+From f829373f4c92405aa22e1073009955e197dd83e1 Mon Sep 17 00:00:00 2001
+From: Ryan Brue <ryanbrue.dev@gmail.com>
+Date: Thu, 3 Sep 2026 14:10:14 -0500
+Subject: [PATCH] mmc: pwrseq_sd8787: add the MT6630 power-on sequence
+
+The MediaTek MT6630 combo chip has two control lines, PMU_EN and RST, and
+the vendor's power-on order is: both low and stable, PMU_EN high, wait,
+RST high, wait. Reuse the sd8787 pwrseq (which already models a pair of
+powerdown and reset GPIOs) with an MT6630 variant carrying those delays,
+so the SDIO core can power the chip before it enumerates it.
+
+Local: this rides along with the MT6630 driver, which is not in an
+upstreamable shape yet.
+
+Signed-off-by: Ryan Brue <ryanbrue.dev@gmail.com>
+---
+ drivers/mmc/core/pwrseq_sd8787.c | 22 ++++++++++++++++++++++
+ 1 file changed, 22 insertions(+)
+
+diff --git a/drivers/mmc/core/pwrseq_sd8787.c b/drivers/mmc/core/pwrseq_sd8787.c
+index 30282155a..e2d4a9c05 100644
+--- a/drivers/mmc/core/pwrseq_sd8787.c
++++ b/drivers/mmc/core/pwrseq_sd8787.c
+@@ -78,9 +78,31 @@ static const struct mmc_pwrseq_ops mmc_pwrseq_wilc1000_ops = {
+ 	.power_off = mmc_pwrseq_wilc1000_power_off,
+ };
+ 
++static void mmc_pwrseq_mt6630_pre_power_on(struct mmc_host *host)
++{
++	struct mmc_pwrseq_sd8787 *pwrseq = to_pwrseq_sd8787(host->pwrseq);
++
++	/* The pwrdn_gpio is PMU_EN, reset_gpio is RST. Vendor sequence:
++	 * both low (off stable), PMU_EN up (reset stable), RST up (on
++	 * stable). */
++	gpiod_set_value_cansleep(pwrseq->pwrdn_gpio, 0);
++	gpiod_set_value_cansleep(pwrseq->reset_gpio, 0);
++	msleep(20);
++	gpiod_set_value_cansleep(pwrseq->pwrdn_gpio, 1);
++	msleep(50);
++	gpiod_set_value_cansleep(pwrseq->reset_gpio, 1);
++	msleep(50);
++}
++
++static const struct mmc_pwrseq_ops mmc_pwrseq_mt6630_ops = {
++	.pre_power_on = mmc_pwrseq_mt6630_pre_power_on,
++	.power_off = mmc_pwrseq_wilc1000_power_off,
++};
++
+ static const struct of_device_id mmc_pwrseq_sd8787_of_match[] = {
+ 	{ .compatible = "mmc-pwrseq-sd8787", .data = &mmc_pwrseq_sd8787_ops },
+ 	{ .compatible = "mmc-pwrseq-wilc1000", .data = &mmc_pwrseq_wilc1000_ops },
++	{ .compatible = "mmc-pwrseq-mt6630", .data = &mmc_pwrseq_mt6630_ops },
+ 	{/* sentinel */},
+ };
+ MODULE_DEVICE_TABLE(of, mmc_pwrseq_sd8787_of_match);

@@ -1,0 +1,2831 @@
+From e089e426a1157242630610615d3bdd15eef9f0f6 Mon Sep 17 00:00:00 2001
+From: Ryan Brue <ryanbrue.dev@gmail.com>
+Date: Thu, 3 Sep 2026 14:09:46 -0500
+Subject: [PATCH] arm64: dts: mediatek: add the Amazon Fire HD 10 (2017)
+
+The Amazon Fire HD 10 (2017), "suez", is an MT8173 tablet with the MT6397
+PMIC and MT6311 secondary buck, a 1200x1920 Novatek NT51021 DSI panel with
+an LP8557 backlight, a FocalTech FT5726 touchscreen, a BQ24297 charger, a
+BMC150 accelerometer, an LTR-559 light sensor, a Realtek RT5514 microphone
+codec, an MT6630 Wi-Fi/Bluetooth combo on SDIO, eMMC, a microSD slot, and
+a PowerVR GX6250 GPU.
+
+Its firmware is LK with PSCI 0.2 and no ARM Trusted Firmware, which shapes
+the board file in three places: the CPUs use the mediatek,mt8173-smp enable
+method so the kernel powers their MTCMOS domains; suspend-to-RAM is driven
+by the kernel through the SPM, described as a child of the SCPSYS node; and
+the VPU and the four blocks that depend on it are disabled, because the
+bootloader leaves the VPU's memory inside a region the kernel cannot map
+and every suspend attempt otherwise aborts on it.
+
+Every regulator constraint, interrupt, GPIO and pin setting is taken from
+the vendor's board file for this hardware revision (suez_dvt.dts in the
+Fire OS 3.18 tree) or from its driver custom data, and the battery node
+carries the Desay pack's characterisation tables from the same tree, as
+the unit's IDME identifies. Where the two sources disagree or a value was
+established on hardware instead, the comment next to the property says so.
+
+Signed-off-by: Ryan Brue <ryanbrue.dev@gmail.com>
+---
+ arch/arm64/boot/dts/mediatek/Makefile         |    1 +
+ .../boot/dts/mediatek/mt8173-amazon-suez.dts  | 2779 +++++++++++++++++
+ 2 files changed, 2780 insertions(+)
+ create mode 100644 arch/arm64/boot/dts/mediatek/mt8173-amazon-suez.dts
+
+diff --git a/arch/arm64/boot/dts/mediatek/Makefile b/arch/arm64/boot/dts/mediatek/Makefile
+index a86fb313b..ec85d7c49 100644
+--- a/arch/arm64/boot/dts/mediatek/Makefile
++++ b/arch/arm64/boot/dts/mediatek/Makefile
+@@ -93,6 +93,7 @@ mt7988a-bananapi-bpi-r4-pro-8x-sd-cn18-dtbs := \
+ 	mt7988a-bananapi-bpi-r4-pro-cn18.dtbo
+ dtb-$(CONFIG_ARCH_MEDIATEK) += mt7988a-bananapi-bpi-r4-pro-8x-sd-cn18.dtb
+ dtb-$(CONFIG_ARCH_MEDIATEK) += mt8167-pumpkin.dtb
++dtb-$(CONFIG_ARCH_MEDIATEK) += mt8173-amazon-suez.dtb
+ dtb-$(CONFIG_ARCH_MEDIATEK) += mt8173-elm.dtb
+ dtb-$(CONFIG_ARCH_MEDIATEK) += mt8173-elm-hana.dtb
+ dtb-$(CONFIG_ARCH_MEDIATEK) += mt8173-elm-hana-rev7.dtb
+diff --git a/arch/arm64/boot/dts/mediatek/mt8173-amazon-suez.dts b/arch/arm64/boot/dts/mediatek/mt8173-amazon-suez.dts
+new file mode 100644
+index 000000000..31e56ea15
+--- /dev/null
++++ b/arch/arm64/boot/dts/mediatek/mt8173-amazon-suez.dts
+@@ -0,0 +1,2779 @@
++// SPDX-License-Identifier: (GPL-2.0 OR MIT)
++/*
++ * Copyright (c) 2026 Ryan Brue <ryanbrue.dev@gmail.com>
++ *
++ * Amazon Fire HD 10 (2017), codename "suez".
++ */
++
++/dts-v1/;
++#include <dt-bindings/gpio/gpio.h>
++#include <dt-bindings/input/input.h>
++#include "mt8173.dtsi"
++
++/ {
++	model = "Amazon Fire HD 10 (2017)";
++	compatible = "mediatek,suez", "mediatek,mt8173";
++
++	/*
++	 * The vendor bootloader (LK) chooses which appended DTB to hand to the
++	 * kernel by board revision: shipping only the vendor "hvt" DTB does not
++	 * boot, shipping only the vendor "dvt" one does, and this unit reports
++	 * version = "dvt". A DTB LK does not select is silently ignored and the
++	 * kernel is never entered at all - which is why a mainline DTB carrying
++	 * neither property never got control.
++	 *
++	 * Nothing in mainline binds to this property; it exists only so LK
++	 * selects the DTB. It is kept here because the DTB is appended to the
++	 * kernel image as-is; a packaging step that patched it in would be the
++	 * alternative.
++	 */
++	version = "dvt";
++
++	aliases {
++		/*
++		 * Without these the MMC host indices come from probe order, so
++		 * enabling the SD slot renamed the eMMC from mmcblk0 to
++		 * mmcblk1. That is not cosmetic: every flashing instruction
++		 * for this device addresses boot_x as /dev/mmcblk0p11, and
++		 * with the SD controller holding index 0 that path points at
++		 * the card slot instead. Pin them.
++		 */
++		mmc0 = &mmc0;
++		mmc1 = &mmc1;
++		mmc2 = &mmc3;
++
++		serial0 = &uart0;
++	};
++
++	chosen {
++		#address-cells = <2>;
++		#size-cells = <2>;
++		ranges;
++
++		stdout-path = "serial0:921600n8";
++
++		/*
++		 * The bootloader initialises the DSI panel to draw its logo and
++		 * leaves it running. Describing that framebuffer gives a working
++		 * console long before there is a display driver, which is the
++		 * only way to see anything on a device with no exposed UART.
++		 *
++		 * Base address and size were read back from the running vendor
++		 * kernel: the bootloader passes them in the ATAG_VIDEOLFB it
++		 * hands over. NOTE: System RAM stopping at 0xb4bbffff is true
++		 * of the *downstream* kernel, whose vendor DT reserves this
++		 * window; LK's rewritten /memory node does not, so we reserve
++		 * it ourselves in reserved-memory below.
++		 */
++		framebuffer@b4bc0000 {
++			compatible = "simple-framebuffer";
++			reg = <0 0xb4bc0000 0 (1216 * 1920 * 4)>;
++			width = <1200>;
++			height = <1920>;
++			/*
++			 * Scanlines are padded to 1216 px (64-byte aligned):
++			 * the vendor mtkfb reports stride 4864, not 1200*4.
++			 * Getting this wrong shears the image 16 px per row.
++			 */
++			stride = <(1216 * 4)>;
++			format = "a8r8g8b8";
++		};
++	};
++
++	memory@40000000 {
++		device_type = "memory";
++		reg = <0 0x40000000 0 0x80000000>;
++	};
++
++	/*
++	 * The pack. Everything the gauge needs is on the fuel-gauge node below;
++	 * this node carries only what the power-supply core reads for the
++	 * generic properties. The figures are the vendor's for the Desay cell
++	 * this unit is fitted with (IDME productid2 0831 = BATTERY_ID_DSY;
++	 * ATL units read 0841), from suez_bat_setting.dtsi battery_dsy_setting:
++	 * q_max_pos_25 and the 25 C profile's end points. Nothing here is
++	 * measured on this board.
++	 */
++	battery: battery {
++		compatible = "simple-battery";
++		voltage-min-design-microvolt = <3352000>;
++		voltage-max-design-microvolt = <4321000>;
++		charge-full-design-microamp-hours = <6348000>;
++		constant-charge-voltage-max-microvolt = <4352000>;
++	};
++
++	sound {
++		compatible = "mediatek,mt8173-mt6391";
++		mediatek,audio-codec = <&mt6397codec>;
++		/*
++		 * Capture comes from the RT5514 over I2S2, not from the MT6397.
++		 * The AFE carries that stream to I17/I18 -> O09/O10 -> VUL;
++		 * this adds the back end that lets that leg power up.
++		 */
++		mediatek,capture-codec = <&rt5514>;
++		mediatek,platform = <&afe>;
++		pinctrl-names = "default";
++		pinctrl-0 = <&audio_pins_default>;
++	};
++
++	/*
++	 * The always-on rail feeding the MT6630's SDIO interface. Not a real
++	 * switchable supply -- the chip's power control is its PMU_EN GPIO
++	 * (pio 8), not a regulator -- but the MMC core refuses to initialise
++	 * a card on a host whose ocr_avail is empty ("no support for card's
++	 * volts", seen on hardware), and ocr_avail comes from vmmc. A fixed
++	 * always-on 3.3 V regulator is the honest description of the rail and
++	 * gives the core a voltage window to accept the chip's OCR with.
++	 * mt8173-elm models its SDIO WiFi power the same way (sdio_fixed_3v3).
++	 */
++	wifi_fixed_3v3: regulator-wifi {
++		compatible = "regulator-fixed";
++		regulator-name = "wifi_fixed_3v3";
++		regulator-min-microvolt = <3300000>;
++		regulator-max-microvolt = <3300000>;
++		regulator-always-on;
++	};
++
++	/*
++	 * MT6630 power-up, in-kernel (vendor mtk_wcn_cmb_hw_pwr_on): PMU_EN
++	 * (pio 8) and RST (pio 38) low 20 ms, PMU_EN high 50 ms, RST high
++	 * 50 ms. Same proven timing as the userspace bring-up ritual. With
++	 * this the chip answers the boot-time SDIO scan and BT exists from
++	 * boot; the powerdown/reset naming is the pwrseq-sd8787 binding's.
++	 */
++	wifi_pwrseq: wifi-pwrseq {
++		compatible = "mmc-pwrseq-mt6630";
++		powerdown-gpios = <&pio 8 GPIO_ACTIVE_HIGH>;
++		reset-gpios = <&pio 38 GPIO_ACTIVE_HIGH>;
++	};
++
++	/*
++	 * Hall effect sensor, for the magnetic folio cover.
++	 *
++	 * The vendor describes it as a bare "hall,hall-sensor" node on pio 124
++	 * with IRQ_TYPE_LEVEL_LOW, which has no mainline driver; gpio-keys
++	 * reporting SW_LID is the mainline idiom, and mt8173-elm.dtsi does
++	 * exactly this for its own lid.
++	 *
++	 * Confirmed present on this unit before being described, because the
++	 * vendor DTS also lists parts that are not fitted (the STK3x1x and the
++	 * camera both fail to answer). Sampling the pin's input level through
++	 * the pinctrl register file while the folio was closed and reopened
++	 * gave 1 -> 0 on close and 0 -> 1 on open, so the sensor is real and
++	 * active low as the vendor says.
++	 *
++	 * Note pio 124 is KPCOL2, the keypad's third column. This board reuses
++	 * it for the hall sensor and only fits two keys, which is why the
++	 * keypad node sees nothing on column 2. The vendor gives the pin no
++	 * pin configuration and relies on the pad default; the pull-up in
++	 * hall_pins states that level explicitly.
++	 *
++	 * Deliberately not a wakeup-source, unlike elm: the power key is the
++	 * wake path on this board, and closing the cover suspends through
++	 * logind's default lid handling.
++	 */
++	lid-switch {
++		compatible = "gpio-keys";
++		pinctrl-names = "default";
++		pinctrl-0 = <&hall_pins>;
++
++		switch-lid {
++			label = "Hall Effect Sensor";
++			gpios = <&pio 124 GPIO_ACTIVE_LOW>;
++			linux,input-type = <EV_SW>;
++			linux,code = <SW_LID>;
++			debounce-interval = <20>;
++		};
++	};
++
++	reserved-memory {
++		#address-cells = <2>;
++		#size-cells = <2>;
++		ranges;
++
++		/*
++		 * Deliberately NOT at 0x44400000. That window is the vendor
++		 * "ram_console", and TWRP's kernel re-initialises it on every
++		 * boot - which destroys the log in the very act of booting the
++		 * recovery you need in order to read it.
++		 *
++		 * Address chosen by measurement, not assumption. Dumped /dev/mem
++		 * from a booted downstream kernel: 0x90000000 (and 0x80000000)
++		 * read back readable and entirely zero, while 0x70000000,
++		 * 0xa0000000, 0xb0000000 and 0xb4000000 all held live data.
++		 *
++		 * Rejected candidates, all of which lose the log:
++		 *   0x44400000 - vendor "ram_console"; TWRP re-initialises it on
++		 *                boot, so booting the recovery you need in order to
++		 *                read the log is what destroys it.
++		 *   0x4bd00000 - vendor "mdump"; the vendor kernel puts its
++		 *                crash-dump handler *code* at the head, and the
++		 *                tail comes back zeroed.
++		 *   0xb4bc0000 - framebuffer carve-out; outside the vendor kernel's
++		 *                memory map, so /dev/mem cannot read it back.
++		 *
++		 * This is ordinary RAM rather than a vendor-reserved window, so
++		 * reserving it here keeps our kernel off it; the bet is that an
++		 * initramfs-only reader never allocates that high.
++		 */
++		ramoops@90000000 {
++			compatible = "ramoops";
++			reg = <0 0x90000000 0 0x80000>;
++			console-size = <0x40000>;
++			record-size = <0x8000>;
++			/*
++			 * Room for pstore-ftrace (enabled at runtime through
++			 * /sys/kernel/debug/pstore/record_ftrace), so a silent
++			 * hang leaves the tail of the function trace behind.
++			 * Budget: 0x80000 = console 0x40000 + ftrace 0x20000 +
++			 * dmesg records of 0x8000.
++			 */
++			ftrace-size = <0x20000>;
++		};
++
++	};
++};
++
++&uart0 {
++	status = "okay";
++};
++
++&scpsys {
++	/*
++	 * Suspend-to-RAM. This board's firmware is PSCI 0.2, which predates
++	 * SYSTEM_SUSPEND, so the kernel is never given platform_suspend_ops
++	 * and /sys/power/mem_sleep offers only s2idle. mtk-spm-suspend drives
++	 * the SPM from the kernel instead, the way the vendor kernel does.
++	 *
++	 * This is deliberately a board property rather than something in
++	 * mt8173.dtsi: mt8173-elm and mt8173-oak ship ARM Trusted Firmware,
++	 * where BL31 does this same work at EL3, and adding the node there
++	 * would put two suspend implementations on the same hardware.
++	 */
++	spm_suspend: spm-suspend {
++		compatible = "mediatek,mt8173-spm-suspend";
++
++		/* SPM IRQ0, as the vendor's scpsys node has it (155..160). */
++		interrupts = <GIC_SPI 155 IRQ_TYPE_LEVEL_LOW>;
++
++		/* MP0_AXI_CONFIG, for ACINACTM around the WFI */
++		mediatek,mcucfg = <&mcucfg>;
++
++		/*
++		 * The rails feeding the still-powered CPU must not follow
++		 * SRCLKEN down while the SoC is asleep.
++		 */
++		mediatek,pmic = <&pmic>;
++
++		/*
++		 * fscp_ck is parked on the crystal for the duration, because
++		 * the SPM stops the PLL it normally runs from.
++		 */
++		clocks = <&topckgen CLK_TOP_SCP_SEL>,
++			 <&topckgen CLK_TOP_SYSPLL1_D2>,
++			 <&clk26m>;
++		clock-names = "scp_sel", "syspll1_d2", "clk26m";
++	};
++};
++
++&pwrap {
++	pmic: pmic {
++		compatible = "mediatek,mt6397";
++		/*
++		 * EINT 5, not the 11 that mt8173-elm and mt8173-evb use. All three
++		 * suez board revisions (hvt/evt/dvt) route the PMIC interrupt to
++		 * EINT 5 in the vendor DTB. With 11 the parent line never fires --
++		 * /proc/interrupts shows mt6397-pmic on mt-eint 11 stuck at 0 -- so
++		 * no PMIC child interrupt is ever delivered, which costs the power
++		 * key and the RTC alarm.
++		 */
++		interrupts-extended = <&pio 5 IRQ_TYPE_LEVEL_HIGH>;
++		interrupt-controller;
++		#interrupt-cells = <2>;
++
++		mt6397rtc: rtc {
++			compatible = "mediatek,mt6397-rtc";
++		};
++
++		mt6397clk: mt6397clock {
++			compatible = "mediatek,mt6397-clk";
++			#clock-cells = <1>;
++		};
++
++		/*
++		 * The MT6391 audio codec, marketing name for the audio block
++		 * of this MT6397-family PMIC. Values from the vendor DTS
++		 * (all three board revisions agree): Class-D speaker mode,
++		 * ADC/DMIC warm-up times.
++		 */
++		mt6397codec: audio-codec {
++			compatible = "mediatek,mt6397-codec";
++			mediatek,speaker-mode = <0>;
++			mediatek,adc-warmup-time-us = <10000>;
++			mediatek,dmic-warmup-time-us = <45000>;
++		};
++
++		/*
++		 * The PMIC's auxiliary ADC. It is the only way to read the
++		 * battery voltage on this board: the SoC AUXADC channels are
++		 * board thermistors (the vendor's cust_adc.dtsi describes only
++		 * temperature0/1 plus an RF channel), and the BQ24297 is a
++		 * charger with no ADC, which is why bq24190-battery reports
++		 * neither voltage_now nor capacity. Channel 0 is the pack voltage
++		 * (through ISENSE, as the vendor measures it with a power-path
++		 * charger) and channel 1 the battery thermistor.
++		 */
++		pmic_auxadc: adc {
++			compatible = "mediatek,mt6397-auxadc";
++			#io-channel-cells = <1>;
++		};
++
++		/*
++		 * The PMIC's fuel gauge, running MediaTek's battery-meter
++		 * algorithm on the hardware coulomb counter, exactly as Fire OS
++		 * did (CONFIG_SOC_BY_HW_FG). Every number below is the vendor's
++		 * own tuning for the Desay pack in this unit, copied from
++		 * suez_bat_setting.dtsi battery_dsy_setting and the suez_1v0
++		 * defaults in mt_bm_data.c; none is measured here. The five
++		 * profiles are at -10, 0, 10, 25 and 50 C (the vendor's t0, t1,
++		 * t1_5, t2, t3); the OCV profiles are <depth-of-discharge %,
++		 * mV> and the resistance profiles <mOhm, mV>, 120 points each.
++		 * The battery NTC is on the PMIC's AUXADC hardware channel 3
++		 * (IIO index 1 of pmic_auxadc) behind a 24 kOhm pull-up to
++		 * 1.2 V (rbat_pull_up_r / rbat_pull_up_volt).
++		 */
++		fuel_gauge: battery {
++			compatible = "mediatek,mt6397-battery";
++			io-channels = <&pmic_auxadc 0>, <&pmic_auxadc 1>;
++			io-channel-names = "voltage", "temperature";
++			monitored-battery = <&battery>;
++			power-supplies = <&bq24297>;
++			mediatek,sense-resistor-milli-ohms = <10>;	/* r_fg_value */
++			mediatek,car-tune-value = <101>;
++			mediatek,ocv2cv-transform;
++			mediatek,step-of-qmax-milliamp-hours = <54>;
++			mediatek,cv-current-microamp = <600000>;	/* cv_current 6000 x 0.1 mA */
++			mediatek,poweron-low-capacity-tolerance = <0>;
++			mediatek,ntc-pull-up-ohms = <24000>;
++			mediatek,ntc-pull-up-millivolt = <1200>;
++			mediatek,ntc-pull-down-ohms = <100000000>;
++			mediatek,profile-temperatures = <(-10) 0 10 25 50>;
++			mediatek,qmax-milliamp-hours = <5947 6141 6210 6348 6345>;
++			mediatek,qmax-high-current-milliamp-hours = <5739 5568 5936 6130 6133>;
++			mediatek,ntc-table = <(-20) 499900>,
++				<(-15) 371600>,
++				<(-10) 278700>,
++				<(-5) 210800>,
++				<0 160800>,
++				<5 123800>,
++				<10 96030>,
++				<15 75100>,
++				<20 59190>,
++				<25 47000>,
++				<30 37590>,
++				<35 30270>,
++				<40 24540>,
++				<45 20020>,
++				<50 16430>,
++				<55 13570>,
++				<60 11270>,
++				<65 9409>,
++				<70 7897>;
++			mediatek,ocv-profile-0 = <0 4275>,
++				<1 4252>,
++				<2 4237>,
++				<3 4226>,
++				<4 4215>,
++				<5 4205>,
++				<5 4196>,
++				<6 4186>,
++				<7 4177>,
++				<8 4167>,
++				<9 4158>,
++				<10 4149>,
++				<11 4139>,
++				<12 4130>,
++				<13 4121>,
++				<14 4113>,
++				<15 4104>,
++				<15 4098>,
++				<16 4092>,
++				<17 4088>,
++				<18 4083>,
++				<19 4076>,
++				<20 4065>,
++				<21 4049>,
++				<22 4030>,
++				<23 4012>,
++				<24 3998>,
++				<25 3987>,
++				<25 3978>,
++				<26 3971>,
++				<27 3965>,
++				<28 3959>,
++				<29 3955>,
++				<30 3950>,
++				<31 3945>,
++				<32 3941>,
++				<33 3936>,
++				<34 3929>,
++				<35 3923>,
++				<35 3916>,
++				<36 3909>,
++				<37 3901>,
++				<38 3894>,
++				<39 3886>,
++				<40 3879>,
++				<41 3872>,
++				<42 3866>,
++				<43 3860>,
++				<44 3854>,
++				<44 3850>,
++				<45 3847>,
++				<46 3843>,
++				<47 3840>,
++				<48 3836>,
++				<49 3833>,
++				<50 3829>,
++				<51 3826>,
++				<52 3823>,
++				<53 3820>,
++				<54 3817>,
++				<54 3813>,
++				<55 3811>,
++				<56 3808>,
++				<57 3805>,
++				<58 3803>,
++				<59 3800>,
++				<60 3798>,
++				<61 3796>,
++				<62 3794>,
++				<63 3791>,
++				<64 3790>,
++				<64 3788>,
++				<65 3786>,
++				<66 3784>,
++				<67 3782>,
++				<68 3780>,
++				<69 3778>,
++				<70 3776>,
++				<71 3774>,
++				<72 3772>,
++				<73 3769>,
++				<74 3766>,
++				<74 3763>,
++				<75 3759>,
++				<76 3756>,
++				<77 3752>,
++				<78 3749>,
++				<79 3746>,
++				<80 3743>,
++				<81 3740>,
++				<82 3736>,
++				<83 3731>,
++				<84 3725>,
++				<84 3720>,
++				<85 3716>,
++				<86 3711>,
++				<87 3704>,
++				<88 3697>,
++				<89 3694>,
++				<90 3693>,
++				<91 3692>,
++				<92 3691>,
++				<93 3689>,
++				<94 3687>,
++				<94 3684>,
++				<95 3676>,
++				<96 3651>,
++				<97 3613>,
++				<98 3565>,
++				<99 3504>,
++				<100 3419>,
++				<101 3277>,
++				<101 3277>,
++				<101 3277>,
++				<101 3277>,
++				<101 3277>,
++				<101 3277>,
++				<101 3277>,
++				<101 3277>,
++				<101 3277>;
++			mediatek,ocv-profile-1 = <0 4287>,
++				<1 4267>,
++				<2 4253>,
++				<3 4241>,
++				<4 4230>,
++				<4 4220>,
++				<5 4210>,
++				<6 4201>,
++				<7 4192>,
++				<8 4183>,
++				<9 4175>,
++				<10 4166>,
++				<11 4157>,
++				<11 4148>,
++				<12 4139>,
++				<13 4130>,
++				<14 4121>,
++				<15 4113>,
++				<16 4105>,
++				<17 4098>,
++				<18 4091>,
++				<18 4088>,
++				<19 4084>,
++				<20 4079>,
++				<21 4070>,
++				<22 4055>,
++				<23 4036>,
++				<24 4018>,
++				<25 4003>,
++				<26 3990>,
++				<26 3982>,
++				<27 3975>,
++				<28 3969>,
++				<29 3963>,
++				<30 3960>,
++				<31 3956>,
++				<32 3952>,
++				<33 3949>,
++				<33 3945>,
++				<34 3940>,
++				<35 3935>,
++				<36 3929>,
++				<37 3923>,
++				<38 3915>,
++				<39 3908>,
++				<40 3899>,
++				<40 3890>,
++				<41 3882>,
++				<42 3874>,
++				<43 3867>,
++				<44 3861>,
++				<45 3855>,
++				<46 3850>,
++				<47 3845>,
++				<47 3841>,
++				<48 3836>,
++				<49 3832>,
++				<50 3829>,
++				<51 3825>,
++				<52 3822>,
++				<53 3819>,
++				<54 3816>,
++				<55 3813>,
++				<55 3810>,
++				<56 3807>,
++				<57 3805>,
++				<58 3802>,
++				<59 3800>,
++				<60 3798>,
++				<61 3796>,
++				<62 3794>,
++				<62 3792>,
++				<63 3790>,
++				<64 3789>,
++				<65 3788>,
++				<66 3787>,
++				<67 3786>,
++				<68 3785>,
++				<69 3784>,
++				<69 3784>,
++				<70 3783>,
++				<71 3781>,
++				<72 3780>,
++				<73 3779>,
++				<74 3777>,
++				<75 3775>,
++				<76 3773>,
++				<77 3770>,
++				<77 3768>,
++				<78 3765>,
++				<79 3761>,
++				<80 3756>,
++				<81 3755>,
++				<82 3750>,
++				<83 3745>,
++				<84 3740>,
++				<84 3735>,
++				<85 3730>,
++				<86 3725>,
++				<87 3719>,
++				<88 3712>,
++				<89 3706>,
++				<90 3704>,
++				<91 3702>,
++				<91 3700>,
++				<92 3698>,
++				<93 3695>,
++				<94 3692>,
++				<95 3685>,
++				<96 3670>,
++				<97 3639>,
++				<98 3594>,
++				<98 3536>,
++				<99 3457>,
++				<100 3335>,
++				<100 3335>,
++				<100 3335>,
++				<100 3335>,
++				<100 3335>,
++				<100 3335>;
++			mediatek,ocv-profile-2 = <0 4309>,
++				<1 4292>,
++				<2 4279>,
++				<3 4268>,
++				<3 4258>,
++				<4 4248>,
++				<5 4238>,
++				<6 4229>,
++				<7 4219>,
++				<8 4210>,
++				<9 4201>,
++				<10 4192>,
++				<10 4183>,
++				<11 4174>,
++				<12 4165>,
++				<13 4156>,
++				<14 4147>,
++				<15 4138>,
++				<16 4129>,
++				<17 4120>,
++				<17 4112>,
++				<18 4103>,
++				<19 4095>,
++				<20 4088>,
++				<21 4084>,
++				<22 4080>,
++				<23 4076>,
++				<23 4069>,
++				<24 4056>,
++				<25 4037>,
++				<26 4019>,
++				<27 4005>,
++				<28 3994>,
++				<29 3985>,
++				<30 3978>,
++				<30 3972>,
++				<31 3967>,
++				<32 3964>,
++				<33 3961>,
++				<34 3958>,
++				<35 3955>,
++				<36 3951>,
++				<37 3945>,
++				<37 3939>,
++				<38 3933>,
++				<39 3925>,
++				<40 3917>,
++				<41 3907>,
++				<42 3897>,
++				<43 3888>,
++				<43 3879>,
++				<44 3872>,
++				<45 3865>,
++				<46 3860>,
++				<47 3855>,
++				<48 3850>,
++				<49 3846>,
++				<50 3841>,
++				<50 3837>,
++				<51 3834>,
++				<52 3830>,
++				<53 3826>,
++				<54 3823>,
++				<55 3820>,
++				<56 3817>,
++				<57 3814>,
++				<57 3811>,
++				<58 3808>,
++				<59 3806>,
++				<60 3803>,
++				<61 3801>,
++				<62 3798>,
++				<63 3796>,
++				<63 3794>,
++				<64 3791>,
++				<65 3790>,
++				<66 3788>,
++				<67 3786>,
++				<68 3784>,
++				<69 3783>,
++				<70 3781>,
++				<70 3780>,
++				<71 3779>,
++				<72 3778>,
++				<73 3776>,
++				<74 3774>,
++				<75 3772>,
++				<76 3770>,
++				<77 3767>,
++				<77 3764>,
++				<78 3761>,
++				<79 3758>,
++				<80 3755>,
++				<81 3752>,
++				<82 3749>,
++				<83 3744>,
++				<83 3739>,
++				<84 3734>,
++				<85 3729>,
++				<86 3725>,
++				<87 3719>,
++				<88 3711>,
++				<89 3705>,
++				<90 3702>,
++				<90 3701>,
++				<91 3699>,
++				<92 3698>,
++				<93 3697>,
++				<94 3694>,
++				<95 3686>,
++				<96 3681>,
++				<97 3653>,
++				<97 3612>,
++				<98 3561>,
++				<99 3495>,
++				<100 3400>,
++				<101 3225>,
++				<101 3225>,
++				<101 3225>,
++				<101 3225>;
++			mediatek,ocv-profile-3 = <0 4321>,
++				<1 4304>,
++				<2 4292>,
++				<3 4280>,
++				<3 4270>,
++				<4 4260>,
++				<5 4250>,
++				<6 4240>,
++				<7 4231>,
++				<8 4221>,
++				<9 4212>,
++				<9 4203>,
++				<10 4194>,
++				<11 4184>,
++				<12 4176>,
++				<13 4167>,
++				<14 4158>,
++				<14 4149>,
++				<15 4140>,
++				<16 4131>,
++				<17 4122>,
++				<18 4113>,
++				<19 4104>,
++				<20 4095>,
++				<20 4087>,
++				<21 4079>,
++				<22 4073>,
++				<23 4069>,
++				<24 4065>,
++				<25 4058>,
++				<26 4045>,
++				<26 4029>,
++				<27 4014>,
++				<28 4002>,
++				<29 3992>,
++				<30 3984>,
++				<31 3978>,
++				<31 3974>,
++				<32 3970>,
++				<33 3969>,
++				<34 3966>,
++				<35 3961>,
++				<36 3955>,
++				<37 3948>,
++				<37 3943>,
++				<38 3936>,
++				<39 3930>,
++				<40 3924>,
++				<41 3917>,
++				<42 3909>,
++				<43 3900>,
++				<43 3890>,
++				<44 3879>,
++				<45 3871>,
++				<46 3863>,
++				<47 3858>,
++				<48 3853>,
++				<48 3848>,
++				<49 3843>,
++				<50 3839>,
++				<51 3835>,
++				<52 3831>,
++				<53 3828>,
++				<54 3824>,
++				<54 3820>,
++				<55 3817>,
++				<56 3814>,
++				<57 3811>,
++				<58 3808>,
++				<59 3805>,
++				<60 3803>,
++				<60 3800>,
++				<61 3798>,
++				<62 3796>,
++				<63 3793>,
++				<64 3791>,
++				<65 3789>,
++				<66 3787>,
++				<66 3785>,
++				<67 3783>,
++				<68 3781>,
++				<69 3779>,
++				<70 3777>,
++				<71 3775>,
++				<71 3774>,
++				<72 3770>,
++				<73 3767>,
++				<74 3765>,
++				<75 3762>,
++				<76 3759>,
++				<77 3756>,
++				<77 3752>,
++				<78 3750>,
++				<79 3747>,
++				<80 3744>,
++				<81 3742>,
++				<82 3739>,
++				<83 3736>,
++				<83 3730>,
++				<84 3726>,
++				<85 3721>,
++				<86 3716>,
++				<87 3712>,
++				<88 3706>,
++				<88 3698>,
++				<89 3693>,
++				<90 3691>,
++				<91 3691>,
++				<92 3690>,
++				<93 3688>,
++				<94 3686>,
++				<94 3684>,
++				<95 3678>,
++				<96 3662>,
++				<97 3628>,
++				<98 3586>,
++				<99 3531>,
++				<100 3460>,
++				<100 3352>,
++				<100 3352>;
++			mediatek,ocv-profile-4 = <0 4337>,
++				<1 4321>,
++				<2 4307>,
++				<3 4294>,
++				<3 4282>,
++				<4 4270>,
++				<5 4259>,
++				<6 4249>,
++				<7 4238>,
++				<8 4228>,
++				<9 4219>,
++				<9 4209>,
++				<10 4199>,
++				<11 4190>,
++				<12 4181>,
++				<13 4171>,
++				<14 4162>,
++				<14 4153>,
++				<15 4144>,
++				<16 4135>,
++				<17 4126>,
++				<18 4118>,
++				<19 4109>,
++				<20 4100>,
++				<20 4092>,
++				<21 4084>,
++				<22 4075>,
++				<23 4067>,
++				<24 4059>,
++				<25 4051>,
++				<26 4043>,
++				<26 4036>,
++				<27 4028>,
++				<28 4020>,
++				<29 4013>,
++				<30 4006>,
++				<31 3999>,
++				<31 3992>,
++				<32 3985>,
++				<33 3978>,
++				<34 3972>,
++				<35 3965>,
++				<36 3959>,
++				<37 3953>,
++				<37 3946>,
++				<38 3940>,
++				<39 3934>,
++				<40 3927>,
++				<41 3921>,
++				<42 3914>,
++				<43 3907>,
++				<43 3898>,
++				<44 3888>,
++				<45 3878>,
++				<46 3870>,
++				<47 3863>,
++				<48 3857>,
++				<49 3852>,
++				<49 3847>,
++				<50 3843>,
++				<51 3839>,
++				<52 3834>,
++				<53 3831>,
++				<54 3827>,
++				<54 3823>,
++				<55 3820>,
++				<56 3817>,
++				<57 3813>,
++				<58 3810>,
++				<59 3807>,
++				<60 3804>,
++				<60 3802>,
++				<61 3799>,
++				<62 3796>,
++				<63 3794>,
++				<64 3792>,
++				<65 3789>,
++				<66 3787>,
++				<66 3785>,
++				<67 3783>,
++				<68 3781>,
++				<69 3779>,
++				<70 3777>,
++				<71 3774>,
++				<71 3770>,
++				<72 3764>,
++				<73 3758>,
++				<74 3753>,
++				<75 3749>,
++				<76 3746>,
++				<77 3743>,
++				<77 3739>,
++				<78 3736>,
++				<79 3733>,
++				<80 3730>,
++				<81 3727>,
++				<82 3724>,
++				<83 3721>,
++				<83 3717>,
++				<84 3712>,
++				<85 3707>,
++				<86 3702>,
++				<87 3698>,
++				<88 3692>,
++				<89 3685>,
++				<89 3680>,
++				<90 3679>,
++				<91 3678>,
++				<92 3678>,
++				<93 3676>,
++				<94 3675>,
++				<94 3672>,
++				<95 3666>,
++				<96 3647>,
++				<97 3614>,
++				<98 3572>,
++				<99 3519>,
++				<100 3450>,
++				<100 3350>,
++				<101 3171>;
++			mediatek,resistance-profile-0 = <254 4275>,
++				<254 4252>,
++				<263 4237>,
++				<267 4226>,
++				<269 4215>,
++				<269 4205>,
++				<271 4196>,
++				<273 4186>,
++				<276 4177>,
++				<282 4167>,
++				<296 4158>,
++				<320 4149>,
++				<342 4139>,
++				<361 4130>,
++				<368 4121>,
++				<373 4113>,
++				<377 4104>,
++				<387 4098>,
++				<396 4092>,
++				<400 4088>,
++				<401 4083>,
++				<404 4076>,
++				<400 4065>,
++				<391 4049>,
++				<381 4030>,
++				<380 4012>,
++				<389 3998>,
++				<394 3987>,
++				<397 3978>,
++				<398 3971>,
++				<402 3965>,
++				<405 3959>,
++				<407 3955>,
++				<408 3950>,
++				<414 3945>,
++				<420 3941>,
++				<422 3936>,
++				<421 3929>,
++				<419 3923>,
++				<419 3916>,
++				<415 3909>,
++				<411 3901>,
++				<405 3894>,
++				<403 3886>,
++				<401 3879>,
++				<400 3872>,
++				<369 3866>,
++				<385 3860>,
++				<380 3854>,
++				<290 3850>,
++				<216 3847>,
++				<175 3843>,
++				<150 3840>,
++				<134 3836>,
++				<123 3833>,
++				<115 3829>,
++				<109 3826>,
++				<106 3823>,
++				<102 3820>,
++				<99 3817>,
++				<97 3813>,
++				<96 3811>,
++				<95 3808>,
++				<94 3805>,
++				<93 3803>,
++				<93 3800>,
++				<93 3798>,
++				<93 3796>,
++				<93 3794>,
++				<92 3791>,
++				<92 3790>,
++				<92 3788>,
++				<93 3786>,
++				<93 3784>,
++				<92 3782>,
++				<91 3780>,
++				<89 3778>,
++				<88 3776>,
++				<86 3774>,
++				<84 3772>,
++				<83 3769>,
++				<81 3766>,
++				<79 3763>,
++				<78 3759>,
++				<77 3756>,
++				<76 3752>,
++				<76 3749>,
++				<76 3746>,
++				<75 3743>,
++				<75 3740>,
++				<75 3736>,
++				<74 3731>,
++				<73 3725>,
++				<74 3720>,
++				<74 3716>,
++				<74 3711>,
++				<74 3704>,
++				<73 3697>,
++				<73 3694>,
++				<73 3693>,
++				<74 3692>,
++				<75 3691>,
++				<76 3689>,
++				<77 3687>,
++				<79 3684>,
++				<80 3676>,
++				<78 3651>,
++				<81 3613>,
++				<84 3565>,
++				<90 3504>,
++				<98 3419>,
++				<124 3277>,
++				<124 3277>,
++				<124 3277>,
++				<124 3277>,
++				<124 3277>,
++				<124 3277>,
++				<124 3277>,
++				<124 3277>,
++				<124 3277>;
++			mediatek,resistance-profile-1 = <230 4287>,
++				<230 4267>,
++				<240 4253>,
++				<244 4241>,
++				<251 4230>,
++				<252 4220>,
++				<254 4210>,
++				<255 4201>,
++				<256 4192>,
++				<259 4183>,
++				<261 4175>,
++				<262 4166>,
++				<263 4157>,
++				<266 4148>,
++				<267 4139>,
++				<269 4130>,
++				<270 4121>,
++				<270 4113>,
++				<269 4105>,
++				<269 4098>,
++				<261 4091>,
++				<197 4088>,
++				<239 4084>,
++				<248 4079>,
++				<249 4070>,
++				<245 4055>,
++				<240 4036>,
++				<232 4018>,
++				<211 4003>,
++				<257 3990>,
++				<265 3982>,
++				<267 3975>,
++				<268 3969>,
++				<270 3963>,
++				<272 3960>,
++				<274 3956>,
++				<278 3952>,
++				<280 3949>,
++				<280 3945>,
++				<280 3940>,
++				<280 3935>,
++				<277 3929>,
++				<277 3923>,
++				<274 3915>,
++				<272 3908>,
++				<269 3899>,
++				<265 3890>,
++				<263 3882>,
++				<260 3874>,
++				<258 3867>,
++				<256 3861>,
++				<255 3855>,
++				<253 3850>,
++				<255 3845>,
++				<255 3841>,
++				<218 3836>,
++				<255 3832>,
++				<257 3829>,
++				<258 3825>,
++				<257 3822>,
++				<259 3819>,
++				<259 3816>,
++				<260 3813>,
++				<262 3810>,
++				<263 3807>,
++				<265 3805>,
++				<266 3802>,
++				<263 3800>,
++				<266 3798>,
++				<269 3796>,
++				<270 3794>,
++				<270 3792>,
++				<271 3790>,
++				<274 3789>,
++				<276 3788>,
++				<277 3787>,
++				<277 3786>,
++				<278 3785>,
++				<282 3784>,
++				<285 3784>,
++				<285 3783>,
++				<290 3781>,
++				<292 3780>,
++				<295 3779>,
++				<299 3777>,
++				<300 3775>,
++				<304 3773>,
++				<306 3770>,
++				<309 3768>,
++				<311 3765>,
++				<317 3761>,
++				<309 3756>,
++				<280 3755>,
++				<334 3750>,
++				<342 3745>,
++				<351 3740>,
++				<358 3735>,
++				<368 3730>,
++				<373 3725>,
++				<385 3719>,
++				<393 3712>,
++				<402 3706>,
++				<417 3704>,
++				<431 3702>,
++				<446 3700>,
++				<463 3698>,
++				<484 3695>,
++				<507 3692>,
++				<533 3685>,
++				<559 3670>,
++				<575 3639>,
++				<611 3594>,
++				<661 3536>,
++				<729 3457>,
++				<822 3335>,
++				<822 3335>,
++				<822 3335>,
++				<822 3335>,
++				<822 3335>,
++				<822 3335>;
++			mediatek,resistance-profile-2 = <123 4309>,
++				<123 4292>,
++				<126 4279>,
++				<128 4268>,
++				<131 4258>,
++				<132 4248>,
++				<133 4238>,
++				<132 4229>,
++				<133 4219>,
++				<132 4210>,
++				<134 4201>,
++				<135 4192>,
++				<137 4183>,
++				<139 4174>,
++				<140 4165>,
++				<141 4156>,
++				<140 4147>,
++				<141 4138>,
++				<140 4129>,
++				<143 4120>,
++				<143 4112>,
++				<146 4103>,
++				<147 4095>,
++				<148 4088>,
++				<151 4084>,
++				<153 4080>,
++				<156 4076>,
++				<156 4069>,
++				<154 4056>,
++				<148 4037>,
++				<148 4019>,
++				<147 4005>,
++				<147 3994>,
++				<145 3985>,
++				<146 3978>,
++				<145 3972>,
++				<146 3967>,
++				<148 3964>,
++				<151 3961>,
++				<154 3958>,
++				<155 3955>,
++				<155 3951>,
++				<153 3945>,
++				<154 3939>,
++				<150 3933>,
++				<152 3925>,
++				<149 3917>,
++				<147 3907>,
++				<142 3897>,
++				<138 3888>,
++				<135 3879>,
++				<131 3872>,
++				<129 3865>,
++				<129 3860>,
++				<129 3855>,
++				<127 3850>,
++				<130 3846>,
++				<130 3841>,
++				<131 3837>,
++				<129 3834>,
++				<129 3830>,
++				<129 3826>,
++				<131 3823>,
++				<130 3820>,
++				<132 3817>,
++				<133 3814>,
++				<133 3811>,
++				<134 3808>,
++				<133 3806>,
++				<132 3803>,
++				<133 3801>,
++				<133 3798>,
++				<133 3796>,
++				<135 3794>,
++				<136 3791>,
++				<137 3790>,
++				<136 3788>,
++				<136 3786>,
++				<136 3784>,
++				<137 3783>,
++				<138 3781>,
++				<138 3780>,
++				<141 3779>,
++				<141 3778>,
++				<141 3776>,
++				<140 3774>,
++				<140 3772>,
++				<139 3770>,
++				<140 3767>,
++				<140 3764>,
++				<141 3761>,
++				<143 3758>,
++				<144 3755>,
++				<144 3752>,
++				<143 3749>,
++				<143 3744>,
++				<144 3739>,
++				<144 3734>,
++				<144 3729>,
++				<148 3725>,
++				<151 3719>,
++				<152 3711>,
++				<151 3705>,
++				<154 3702>,
++				<156 3701>,
++				<160 3699>,
++				<164 3698>,
++				<168 3697>,
++				<179 3694>,
++				<182 3686>,
++				<134 3681>,
++				<186 3653>,
++				<207 3612>,
++				<223 3561>,
++				<250 3495>,
++				<285 3400>,
++				<407 3225>,
++				<407 3225>,
++				<407 3225>,
++				<407 3225>;
++			mediatek,resistance-profile-3 = <74 4321>,
++				<74 4304>,
++				<74 4292>,
++				<74 4280>,
++				<74 4270>,
++				<73 4260>,
++				<73 4250>,
++				<73 4240>,
++				<73 4231>,
++				<73 4221>,
++				<74 4212>,
++				<75 4203>,
++				<74 4194>,
++				<75 4184>,
++				<76 4176>,
++				<75 4167>,
++				<76 4158>,
++				<78 4149>,
++				<77 4140>,
++				<77 4131>,
++				<78 4122>,
++				<78 4113>,
++				<78 4104>,
++				<80 4095>,
++				<80 4087>,
++				<80 4079>,
++				<83 4073>,
++				<85 4069>,
++				<85 4065>,
++				<84 4058>,
++				<81 4045>,
++				<78 4029>,
++				<78 4014>,
++				<79 4002>,
++				<79 3992>,
++				<79 3984>,
++				<82 3978>,
++				<84 3974>,
++				<85 3970>,
++				<87 3969>,
++				<86 3966>,
++				<84 3961>,
++				<83 3955>,
++				<84 3948>,
++				<87 3943>,
++				<88 3936>,
++				<90 3930>,
++				<89 3924>,
++				<89 3917>,
++				<89 3909>,
++				<86 3900>,
++				<83 3890>,
++				<77 3879>,
++				<72 3871>,
++				<70 3863>,
++				<69 3858>,
++				<69 3853>,
++				<68 3848>,
++				<68 3843>,
++				<68 3839>,
++				<68 3835>,
++				<68 3831>,
++				<68 3828>,
++				<69 3824>,
++				<68 3820>,
++				<69 3817>,
++				<69 3814>,
++				<70 3811>,
++				<70 3808>,
++				<70 3805>,
++				<72 3803>,
++				<72 3800>,
++				<72 3798>,
++				<73 3796>,
++				<72 3793>,
++				<74 3791>,
++				<73 3789>,
++				<72 3787>,
++				<72 3785>,
++				<73 3783>,
++				<74 3781>,
++				<74 3779>,
++				<74 3777>,
++				<74 3775>,
++				<74 3774>,
++				<72 3770>,
++				<72 3767>,
++				<71 3765>,
++				<71 3762>,
++				<71 3759>,
++				<71 3756>,
++				<71 3752>,
++				<71 3750>,
++				<71 3747>,
++				<72 3744>,
++				<72 3742>,
++				<73 3739>,
++				<74 3736>,
++				<73 3730>,
++				<72 3726>,
++				<74 3721>,
++				<75 3716>,
++				<76 3712>,
++				<74 3706>,
++				<74 3698>,
++				<74 3693>,
++				<74 3691>,
++				<75 3691>,
++				<76 3690>,
++				<76 3688>,
++				<78 3686>,
++				<79 3684>,
++				<80 3678>,
++				<78 3662>,
++				<79 3628>,
++				<83 3586>,
++				<86 3531>,
++				<93 3460>,
++				<105 3352>,
++				<105 3352>;
++			mediatek,resistance-profile-4 = <50 4337>,
++				<50 4321>,
++				<51 4307>,
++				<51 4294>,
++				<51 4282>,
++				<51 4270>,
++				<51 4259>,
++				<51 4249>,
++				<52 4238>,
++				<52 4228>,
++				<52 4219>,
++				<53 4209>,
++				<53 4199>,
++				<53 4190>,
++				<53 4181>,
++				<53 4171>,
++				<54 4162>,
++				<53 4153>,
++				<54 4144>,
++				<54 4135>,
++				<54 4126>,
++				<54 4118>,
++				<54 4109>,
++				<55 4100>,
++				<55 4092>,
++				<55 4084>,
++				<55 4075>,
++				<55 4067>,
++				<55 4059>,
++				<56 4051>,
++				<56 4043>,
++				<56 4036>,
++				<57 4028>,
++				<57 4020>,
++				<57 4013>,
++				<57 4006>,
++				<58 3999>,
++				<58 3992>,
++				<59 3985>,
++				<59 3978>,
++				<60 3972>,
++				<60 3965>,
++				<61 3959>,
++				<61 3953>,
++				<63 3946>,
++				<63 3940>,
++				<64 3934>,
++				<65 3927>,
++				<66 3921>,
++				<66 3914>,
++				<66 3907>,
++				<64 3898>,
++				<61 3888>,
++				<58 3878>,
++				<56 3870>,
++				<56 3863>,
++				<55 3857>,
++				<55 3852>,
++				<55 3847>,
++				<55 3843>,
++				<55 3839>,
++				<55 3834>,
++				<55 3831>,
++				<55 3827>,
++				<55 3823>,
++				<55 3820>,
++				<55 3817>,
++				<55 3813>,
++				<55 3810>,
++				<55 3807>,
++				<56 3804>,
++				<56 3802>,
++				<57 3799>,
++				<57 3796>,
++				<57 3794>,
++				<57 3792>,
++				<58 3789>,
++				<58 3787>,
++				<59 3785>,
++				<59 3783>,
++				<60 3781>,
++				<60 3779>,
++				<60 3777>,
++				<60 3774>,
++				<58 3770>,
++				<56 3764>,
++				<54 3758>,
++				<55 3753>,
++				<55 3749>,
++				<55 3746>,
++				<55 3743>,
++				<55 3739>,
++				<55 3736>,
++				<55 3733>,
++				<55 3730>,
++				<55 3727>,
++				<56 3724>,
++				<56 3721>,
++				<56 3717>,
++				<55 3712>,
++				<55 3707>,
++				<55 3702>,
++				<56 3698>,
++				<56 3692>,
++				<55 3685>,
++				<54 3680>,
++				<55 3679>,
++				<56 3678>,
++				<57 3678>,
++				<57 3676>,
++				<58 3675>,
++				<58 3672>,
++				<59 3666>,
++				<58 3647>,
++				<59 3614>,
++				<61 3572>,
++				<63 3519>,
++				<68 3450>,
++				<79 3350>,
++				<171 3171>;
++		};
++
++		mt6397pin: pinctrl {
++			compatible = "mediatek,mt6397-pinctrl";
++			gpio-controller;
++			#gpio-cells = <2>;
++		};
++
++		/*
++		 * The PMIC's hardware long-press reset (mode 1, its shortest
++		 * duration) is armed as in the binding's example. The vendor
++		 * kernel relies on a 6 s software timer instead; a hardware
++		 * reset that works when the kernel is dead is preferred here.
++		 */
++		mt6397keys: mt6397keys {
++			compatible = "mediatek,mt6397-keys";
++			mediatek,long-press-mode = <1>;
++			power-off-time-sec = <0>;
++
++			power {
++				linux,keycodes = <KEY_POWER>;
++				wakeup-source;
++			};
++		};
++
++		regulators {
++			compatible = "mediatek,mt6397-regulator";
++
++			mt6397_vpca15_reg: buck_vpca15 {
++				regulator-name = "vpca15";
++				regulator-min-microvolt = < 700000>;
++				regulator-max-microvolt = <1350000>;
++				regulator-ramp-delay = <12500>;
++				regulator-always-on;
++			};
++
++			mt6397_vpca7_reg: buck_vpca7 {
++				regulator-name = "vpca7";
++				regulator-min-microvolt = < 700000>;
++				regulator-max-microvolt = <1350000>;
++				regulator-ramp-delay = <12500>;
++				regulator-enable-ramp-delay = <115>;
++			};
++
++			mt6397_vsramca15_reg: buck_vsramca15 {
++				regulator-name = "vsramca15";
++				regulator-min-microvolt = < 700000>;
++				regulator-max-microvolt = <1350000>;
++				regulator-ramp-delay = <12500>;
++				regulator-always-on;
++			};
++
++			/*
++			 * Despite the name this is the A72 cluster's Vsram, not
++			 * the A53's -- see the cpu nodes below. always-on is a
++			 * deliberate deviation from suez_dvt.dts, which leaves
++			 * it off: mediatek-cpufreq drives this rail coupled to
++			 * the A72's Vproc and the rail must not drop while the
++			 * cluster runs. Upstream mt8173-evb.dts and
++			 * mt8173-elm.dtsi both mark it always-on for the same
++			 * reason.
++			 */
++			mt6397_vsramca7_reg: buck_vsramca7 {
++				regulator-name = "vsramca7";
++				regulator-min-microvolt = < 700000>;
++				regulator-max-microvolt = <1350000>;
++				regulator-ramp-delay = <12500>;
++				regulator-always-on;
++			};
++
++			mt6397_vcore_reg: buck_vcore {
++				regulator-name = "vcore";
++				regulator-min-microvolt = < 700000>;
++				regulator-max-microvolt = <1350000>;
++				regulator-ramp-delay = <12500>;
++				regulator-always-on;
++			};
++
++			/*
++			 * 150us, not the 115us that mt8173-evb, mt8173-elm and
++			 * MediaTek's own tb8173p1 reference board use. Amazon
++			 * raised it for this board: suez_evt.dts and
++			 * suez_dvt.dts both say 150 and only the later
++			 * suez_hvt.dts returns to 115. This unit is DVT, so
++			 * take the DVT number -- it is also the safe direction,
++			 * since it only makes the core wait longer for the rail
++			 * to settle before declaring the GPU powered.
++			 */
++			mt6397_vgpu_reg: buck_vgpu {
++				regulator-name = "vgpu";
++				regulator-min-microvolt = < 700000>;
++				regulator-max-microvolt = <1350000>;
++				regulator-ramp-delay = <12500>;
++				regulator-enable-ramp-delay = <150>;
++			};
++
++			mt6397_vdrm_reg: buck_vdrm {
++				regulator-name = "vdrm";
++				regulator-min-microvolt = <1200000>;
++				regulator-max-microvolt = <1400000>;
++				regulator-ramp-delay = <12500>;
++				regulator-always-on;
++			};
++
++			mt6397_vio18_reg: buck_vio18 {
++				regulator-name = "vio18";
++				regulator-min-microvolt = <1620000>;
++				regulator-max-microvolt = <1980000>;
++				regulator-ramp-delay = <12500>;
++				regulator-always-on;
++			};
++
++			mt6397_vtcxo_reg: ldo_vtcxo {
++				regulator-name = "vtcxo";
++				regulator-always-on;
++			};
++
++			mt6397_va28_reg: ldo_va28 {
++				regulator-name = "va28";
++				regulator-always-on;
++			};
++
++			mt6397_vcama_reg: ldo_vcama {
++				regulator-name = "vcama";
++				regulator-min-microvolt = <1500000>;
++				regulator-max-microvolt = <2800000>;
++				regulator-enable-ramp-delay = <218>;
++			};
++
++			mt6397_vio28_reg: ldo_vio28 {
++				regulator-name = "vio28";
++				regulator-always-on;
++			};
++
++			mt6397_vusb_reg: ldo_vusb {
++				regulator-name = "vusb";
++			};
++
++			mt6397_vmc_reg: ldo_vmc {
++				regulator-name = "vmc";
++				regulator-min-microvolt = <1800000>;
++				regulator-max-microvolt = <3300000>;
++				regulator-enable-ramp-delay = <218>;
++			};
++
++			mt6397_vmch_reg: ldo_vmch {
++				regulator-name = "vmch";
++				regulator-min-microvolt = <3000000>;
++				regulator-max-microvolt = <3300000>;
++				regulator-enable-ramp-delay = <218>;
++			};
++
++			mt6397_vemc_3v3_reg: ldo_vemc3v3 {
++				regulator-name = "vemc_3v3";
++				regulator-min-microvolt = <3000000>;
++				regulator-max-microvolt = <3300000>;
++				regulator-enable-ramp-delay = <218>;
++			};
++
++			mt6397_vgp1_reg: ldo_vgp1 {
++				regulator-name = "vcamd";
++				regulator-min-microvolt = <1220000>;
++				regulator-max-microvolt = <3300000>;
++				regulator-enable-ramp-delay = <240>;
++			};
++
++			mt6397_vgp2_reg: ldo_vgp2 {
++				regulator-name = "vcamio";
++				regulator-min-microvolt = <1000000>;
++				regulator-max-microvolt = <3300000>;
++				regulator-enable-ramp-delay = <218>;
++			};
++
++			mt6397_vgp3_reg: ldo_vgp3 {
++				regulator-name = "vcamaf";
++				regulator-min-microvolt = <1200000>;
++				regulator-max-microvolt = <3300000>;
++				regulator-enable-ramp-delay = <218>;
++			};
++
++			mt6397_vgp4_reg: ldo_vgp4 {
++				regulator-name = "vgp4";
++				regulator-min-microvolt = <1200000>;
++				regulator-max-microvolt = <3300000>;
++				regulator-enable-ramp-delay = <218>;
++			};
++
++			/*
++			 * suez_dvt.dts marks vgp5 always-on and never routes it
++			 * to anything -- no node in the vendor DTS has it as a
++			 * supply, and suez_hvt.dts drops the always-on again.
++			 * Left switchable here: the rail reads disabled on a
++			 * fully working device, so nothing we describe needs it.
++			 * If the RT5514 or the cameras are ever ported, check
++			 * whether this is their rail before assuming it is idle.
++			 */
++			mt6397_vgp5_reg: ldo_vgp5 {
++				regulator-name = "vgp5";
++				regulator-min-microvolt = <1200000>;
++				regulator-max-microvolt = <3000000>;
++				regulator-enable-ramp-delay = <218>;
++			};
++
++			mt6397_vgp6_reg: ldo_vgp6 {
++				regulator-name = "vgp6";
++				regulator-min-microvolt = <1200000>;
++				regulator-max-microvolt = <3300000>;
++				regulator-enable-ramp-delay = <218>;
++			};
++
++			mt6397_vibr_reg: ldo_vibr {
++				regulator-name = "vibr";
++				regulator-min-microvolt = <1300000>;
++				regulator-max-microvolt = <3300000>;
++				regulator-enable-ramp-delay = <218>;
++			};
++		};
++	};
++};
++
++/*
++ * The GPU power domain, restored. History, because it bit us twice:
++ *
++ * mtk-power-controller refuses to probe if power-domain@7 (mfg_async) has no
++ * supply, and without the power controller nothing gets power domains at all
++ * - so for most of the bringup this node was /delete-node/'d outright, after
++ * an early attempt at giving it the MT6397 vgpu buck hung the SoC at scpsys
++ * probe (log stopped right after the regulator link was created).
++ *
++ * What changed: Chen-Yu Tsai's mfgtop series (carried in our tree) exists
++ * precisely because mfg_async's clock in mt8173.dtsi was wrong - clk26m
++ * instead of CLK_TOP_AXI_MFG_IN_SEL - and a wrong domain clock during the
++ * scpsys attach/power-sync is a plausible mechanism for that old hang. With
++ * the series applied (clock fixed, gpu + mfgtop nodes in the dtsi), this is
++ * the same wiring mt8173-elm ships upstream (domain-supply = vgpu buck) and
++ * works there. The GPU itself is a PowerVR GX6250 (BVNC 4.40.2.51), driven by
++ * the powervr driver once the mfgtop clock/power glue has probed.
++ */
++&mfg_async {
++	domain-supply = <&mt6397_vgpu_reg>;
++};
++
++/*
++ * The video processor and everything downstream of it, switched off.
++ *
++ * mt8173.dtsi enables the VPU for every board, but it does not work here.
++ * mtk_vpu loads both firmware images into the TCMs, writes VPU_RESET, and the
++ * coprocessor never signals back, on every single boot:
++ *
++ *   mtk_vpu 10020000.vpu: 4GB mode 0
++ *   mtk_vpu 10020000.vpu: wait vpu initialization timeout!
++ *   mtk-mdp 14001000.rdma: vpu_load_firmware failed -62
++ *
++ * Two things that look like the cause are not. It is not the
++ * secos-reserved-memory / vpu-dma-mem@b7000000 overlap the kernel warns about
++ * at boot: mtk_vpu only calls of_reserved_mem_device_init() when enable_4GB is
++ * set, this board has ~1.9 GB and logs "4GB mode 0", so that region is never
++ * attached and the extend memories come from the ordinary DMA allocator. Nor
++ * is it a missing firmware blob -- there is no "Direct firmware load failed",
++ * and both load_requested_vpu() calls succeed. The real cause is unknown.
++ *
++ * The vendor kernel offers no working configuration to work backwards from:
++ * it drives this block as its "md32" DSP (suez_dvt.dts enables the md32 node
++ * at the same 0x10020000) with proprietary firmware and its own driver, and
++ * mtk_vpu's firmware has never run on it.
++ *
++ * Leaving it enabled is not merely untidy, it breaks suspend. mtk_vpu_suspend()
++ * waits for a processor that never ran, times out, and returns -EIO:
++ *
++ *   mtk_vpu 10020000.vpu: vpu idle timeout
++ *   platform_pm_suspend(): mtk_vpu_suspend+0x0/0x120 returns -5
++ *
++ * which aborts every suspend attempt on the board.
++ *
++ * The four consumers go with it. Each one resolves the mediatek,vpu phandle
++ * through vpu_get_plat_device(), which does of_find_device_by_node() and
++ * WARN_ON()s when that returns NULL -- and a disabled node has no platform
++ * device. Disabling the VPU alone would therefore replace one timeout with four
++ * backtraces, from drivers that already fail their probes today. Turning them
++ * off also releases the mtk-power-controller, which otherwise reports
++ * "sync_state() pending due to 16020000.vcodec" (and 18002000, and 19002000)
++ * forever and never gets to disable its unused domains.
++ */
++&vpu {
++	status = "disabled";
++};
++
++&vcodec_dec {
++	status = "disabled";
++};
++
++&vcodec_enc_avc {
++	status = "disabled";
++};
++
++&vcodec_enc_vp8 {
++	status = "disabled";
++};
++
++&mdp_rdma0 {
++	status = "disabled";
++};
++
++&i2c0 {
++	/*
++	 * The capacitive touch controller. The vendor DTS (identical across
++	 * suez hvt/evt/dvt) describes it as:
++	 *
++	 *   cap_touch@38 {
++	 *       compatible = "mediatek,cap_touch";
++	 *       reg = <0x38>;
++	 *       interrupt-parent = <&pio>;
++	 *       interrupts = <14 IRQ_TYPE_EDGE_FALLING>;
++	 *       rst-gpio = <&pio6397 12 0>;
++	 *   };
++	 *
++	 * and the vendor kernel builds it with CONFIG_TOUCHSCREEN_MTK_FT5726,
++	 * i.e. a FocalTech FT5726. Mainline's edt-ft5x06 covers that part under
++	 * the "evervision,ev-ft5726" compatible (mapped to edt_ft5506_data).
++	 *
++	 * Reset is active low: the vendor driver drives the line to 0 to assert
++	 * reset and 1 to release it, so the mainline binding -- which requests
++	 * the GPIO as GPIOD_OUT_HIGH meaning "asserted" -- needs
++	 * GPIO_ACTIVE_LOW. It hangs off the PMIC's own pinctrl, which
++	 * registers a gpiochip (41 GPIOs on mt6397-pinctrl).
++	 *
++	 * Supplies come from the vendor's &touch node: vtouch -> vgp3,
++	 * vtouchio -> vgp4.
++	 *
++	 * i2c0 only needs status = "okay"; mt8173.dtsi already supplies
++	 * pinctrl-0 = <&i2c0_pins_a>.
++	 *
++	 * Deliberately no touchscreen-size-x/y: edt-ft5x06 reads the geometry
++	 * from the chip, and the vendor's tpd-resolution = <720 1280> does not
++	 * match this 1200x1920 panel, so it is not a trustworthy source. Add
++	 * size/inversion/swap properties only if the axes actually come out
++	 * wrong.
++	 */
++	status = "okay";
++	/* vendor &i2c0: 400 kHz */
++	clock-frequency = <400000>;
++
++	touchscreen@38 {
++		compatible = "evervision,ev-ft5726";
++		reg = <0x38>;
++		interrupt-parent = <&pio>;
++		interrupts = <14 IRQ_TYPE_EDGE_FALLING>;
++		reset-gpios = <&mt6397pin 12 GPIO_ACTIVE_LOW>;
++		vcc-supply = <&mt6397_vgp3_reg>;
++		iovcc-supply = <&mt6397_vgp4_reg>;
++
++		/*
++		 * These are not optional on an Evervision part. edt-ft5x06
++		 * sizes its axes as num_x * 64 - 1, and for EV_FT it sets
++		 * reg_num_x/reg_num_y to NO_REGISTER -- there is no register
++		 * it can read the sensor counts from -- so num_x and num_y
++		 * keep EDT_DEFAULT_NUM_X/Y, which are 1024. That reports
++		 * ABS_MT_POSITION_X/Y as 0..65535 on a 1200x1920 panel, and
++		 * every touch lands in the top-left corner: a press at the
++		 * middle of the screen reports ~600, which against a declared
++		 * 65535 is under 1% across.
++		 *
++		 * The chip itself reports native panel coordinates. Measured
++		 * by tapping the four corners and logging the raw events:
++		 * top-left (33..75, 38..107), top-right (1149..1163, 33..80),
++		 * bottom-left (33..85, 1856..1895), bottom-right
++		 * (1178..1184, 1876..1896). So X spans 0..1200 and Y spans
++		 * 0..1920 exactly as the panel does, with no swap and no
++		 * inversion -- only the declared maximum was wrong.
++		 *
++		 * touchscreen_parse_properties() sets max = size - 1, giving
++		 * 1199 and 1919. It runs before input_mt_init_slots(), so the
++		 * single-touch ABS_X/ABS_Y axes inherit the corrected values.
++		 */
++		touchscreen-size-x = <1200>;
++		touchscreen-size-y = <1920>;
++	};
++
++	/*
++	 * The RT5514 "smart microphone" DSP. The internal microphone is an
++	 * analog part on its AMICL input, not on the MT6397 -- which is why
++	 * capturing through the PMIC's own ADDA returns a constant rather than
++	 * audio -- and the RT5514 hands it to the SoC over I2S2. Its PDM pins
++	 * are unused: both DMIC pairs read as a constant.
++	 *
++	 * From suez_dvt.dts, which gives it two buses:
++	 *
++	 *   rt5514: audio-codec@57 { compatible = "realtek,rt5514";
++	 *                            reg = <0x57>;
++	 *                            interrupts = <0 IRQ_TYPE_LEVEL_HIGH>; }
++	 *   rt5514_spi: audio-codec@0 { spi-max-frequency = <18000000>; }
++	 *
++	 * Only the i2c half is described here. The SPI half exists solely to
++	 * load and drive the on-chip DSP for always-on hotword detection;
++	 * plain I2S capture needs neither, so porting it is a separate job.
++	 * Verified fitted on this unit: 0x57 ACKs on i2c-0.
++	 */
++	rt5514: audio-codec@57 {
++		compatible = "realtek,rt5514";
++		reg = <0x57>;
++		interrupt-parent = <&pio>;
++		interrupts = <0 IRQ_TYPE_LEVEL_HIGH>;
++		#sound-dai-cells = <0>;
++	};
++};
++
++&i2c1 {
++	/*
++	 * MT6311 external PMIC. Upstream mt8173-elm/evb feed the A72 cluster
++	 * from a da9211; this board uses an MT6311 instead, which mainline
++	 * already supports (drivers/regulator/mt6311-regulator.c). Values match
++	 * both the vendor DTS and the mainline binding example.
++	 */
++	status = "okay";
++	/* vendor &i2c1 drives the bus push-pull */
++	mediatek,use-push-pull;
++
++	mt6311: pmic@6b {
++		compatible = "mediatek,mt6311-regulator";
++		reg = <0x6b>;
++
++		regulators {
++			/*
++			 * The A72 cluster supply. The vendor calls it
++			 * reg-ext-vpca57-supply; mainline mt8173-evb feeds the
++			 * same rail from a da9211, which this board does not
++			 * have.
++			 *
++			 * Give it the part's true range and let cpufreq do the
++			 * work. mediatek-cpufreq couples this against the A72's
++			 * Vsram (vsramca7) and must keep
++			 * 100mV < Vsram - Vproc < 200mV; constraining Vproc to a
++			 * single voltage defeats mtk_cpufreq_voltage_tracking()
++			 * and makes the machine hang under sustained four-core
++			 * load within a minute. With the real range it runs at
++			 * 2106000 indefinitely.
++			 *
++			 * Note 1400000 -- from both the vendor DTS and the
++			 * mainline binding example -- is NOT reachable: the
++			 * driver's range is 600000 + 6250 * 127 = 1393750.
++			 */
++			mt6311_vcpu_reg: VDVFS {
++				regulator-name = "VDVFS";
++				regulator-min-microvolt = <600000>;
++				regulator-max-microvolt = <1393750>;
++				regulator-ramp-delay = <10000>;
++				/*
++				 * always-on is ours, not the vendor's: this is
++				 * the A72's Vproc, coupled to vsramca7 above,
++				 * and the pair is kept up for the same reason.
++				 */
++				regulator-always-on;
++			};
++
++			/*
++			 * No VBIASN node. mt6311-regulator describes that LDO
++			 * with no n_voltages, min_uV or vsel_reg -- it is
++			 * enable-only -- so the voltage constraints in the
++			 * binding example make regulator_register() return
++			 * -EINVAL and take the whole chip down with it:
++			 *   mt6311 1-006b: Failed to register MT6311 regulator
++			 *   mt6311 1-006b: probe ... failed with error -22
++			 * The regulator is still registered by the driver; it
++			 * simply gets no constraints from DT.
++			 */
++		};
++	};
++};
++
++&mmc0 {
++	status = "okay";
++	pinctrl-names = "default", "state_uhs";
++	pinctrl-0 = <&mmc0_pins_default>;
++	pinctrl-1 = <&mmc0_pins_uhs>;
++	bus-width = <8>;
++	max-frequency = <200000000>;
++	cap-mmc-highspeed;
++	mmc-hs200-1_8v;
++	/*
++	 * HS400. The vendor DTS for this board enables it with exactly the
++	 * delay values below, and upstream mt8173-elm uses the identical set --
++	 * two independent trees agreeing makes these SoC-level rather than
++	 * board-level numbers. The vendor spells them hs400_cmd_int_delay and
++	 * cmd_resp_sel = <0> (0 meaning rising); mainline's names are used here.
++	 *
++	 * Verified on hardware: the controller reports "mmc0: new HS400 MMC
++	 * card" and cold sequential reads roughly double, to 278 MB/s.
++	 */
++	mmc-hs400-1_8v;
++	hs400-ds-delay = <0x14015>;
++	cap-mmc-hw-reset;
++	mediatek,hs200-cmd-int-delay = <30>;
++	mediatek,hs400-cmd-int-delay = <14>;
++	mediatek,hs400-cmd-resp-sel-rising;
++	vmmc-supply = <&mt6397_vemc_3v3_reg>;
++	vqmmc-supply = <&mt6397_vio18_reg>;
++	/*
++	 * Reparent the MSDC50_0 mux to MSDCPLL_D2. Both the vendor DTB for
++	 * this board and upstream mt8173-elm do this; without it the
++	 * controller runs from the mux's power-on parent and the card fails
++	 * to initialise with -EILSEQ (-84) during HS200 tuning.
++	 */
++	assigned-clocks = <&topckgen CLK_TOP_MSDC50_0_SEL>;
++	assigned-clock-parents = <&topckgen CLK_TOP_MSDCPLL_D2>;
++	non-removable;
++};
++
++/*
++ * The microSD slot. The vendor DTS describes it identically to upstream
++ * mt8173-elm: card detect on pio 1, VMCH/VMC from the PMIC, four bits,
++ * SDR50/SDR104. Two independent trees agreeing is what makes these SoC-level
++ * rather than board-level values -- the same reasoning used for the eMMC's
++ * HS400 tuning.
++ *
++ * Note the vendor's &mmc3, also enabled downstream, is NOT this slot: it is
++ * non-removable with no card detect and hosts the MT6630 WiFi/BT combo over
++ * SDIO; see the &mmc3 node below.
++ */
++&mmc1 {
++	status = "okay";
++	pinctrl-names = "default", "state_uhs";
++	pinctrl-0 = <&mmc1_pins_default>;
++	pinctrl-1 = <&mmc1_pins_uhs>;
++	bus-width = <4>;
++	max-frequency = <200000000>;
++	cap-sd-highspeed;
++	sd-uhs-sdr50;
++	sd-uhs-sdr104;
++	/*
++	 * Card present is HIGH on this board. upstream mt8173-elm says
++	 * GPIO_ACTIVE_LOW and the vendor DTS says <&pio 1 0>; the vendor is
++	 * right here. Measured by watching the pin through the pinctrl
++	 * register file: removing the card drove pio 1 from 1 to 0 and
++	 * reinserting it drove 0 to 1.
++	 *
++	 * Getting this backwards is not a no-op -- it inverts the meaning of
++	 * every insertion, so the core powers the slot up and runs the whole
++	 * CMD55/CMD1 identification sequence at the instant the card is
++	 * *removed*, times every command out, and powers back down when one
++	 * is actually inserted.
++	 */
++	cd-gpios = <&pio 1 GPIO_ACTIVE_HIGH>;
++	vmmc-supply = <&mt6397_vmch_reg>;
++	vqmmc-supply = <&mt6397_vmc_reg>;
++	/*
++	 * The vendor gives this slot a command internal delay of 4
++	 * (hs200_cmd_int_delay in suez_dvt.dts); upstream mt8173-elm sets none.
++	 * Despite the HS200 name it is the delay used for SDR104 too -- mtk-sd
++	 * says so where it declares the field -- and this slot runs SDR104, so
++	 * the value applies. Taking the vendor's number rather than leaving the
++	 * field at its zero default.
++	 */
++	mediatek,hs200-cmd-int-delay = <4>;
++};
++
++/*
++ * The MT6630 WiFi/BT/GPS/FM combo chip, on SDIO. The chip enumerates once
++ * its PMU_EN (pio 8) and RST (pio 38) lines are driven high, which the
++ * mmc-pwrseq-mt6630 sequence above does.
++ *
++ * Properties follow the vendor &mmc3 node (suez_dvt.dts): 4-bit,
++ * non-removable, no card detect, no vmmc/vqmmc (the vendor node has none
++ * either; the pads are on an always-on rail and the chip's power is the
++ * PMU_EN GPIO, not a slot regulator). The vendor also claims SDR50/SDR104,
++ * but a 1.8 V signalling switch needs a vqmmc regulator we do not have, so
++ * UHS is left off and the slot runs at high-speed (50 MHz) -- plenty for
++ * bring-up.
++ *
++ * Pin lists are the vendor's (22-25 data, 27 cmd, 26 clk), structured like
++ * mt8173-elm's mmc3 groups.
++ */
++&mmc3 {
++	status = "okay";
++	pinctrl-names = "default", "state_uhs";
++	pinctrl-0 = <&mmc3_pins_default>;
++	pinctrl-1 = <&mmc3_pins_uhs>;
++	bus-width = <4>;
++	max-frequency = <200000000>;
++	cap-sd-highspeed;
++	/* the MT6630 signals RX via the SDIO in-band interrupt (the vendor
++	 * stack registers no EINT for MT6630-on-SDIO); without this cap the
++	 * mmc core's CCCR-INTx poll fallback never fired the handler */
++	cap-sdio-irq;
++	non-removable;
++
++	/*
++	 * Do not power the chip down for system suspend. mmc_sdio_suspend()
++	 * calls mmc_power_off() unless MMC_PM_KEEP_POWER is set, and here that
++	 * runs the pwrseq below and drops PMU_EN and RST -- a full power cycle
++	 * of a chip whose ROM patches and WLAN firmware are downloaded to its
++	 * RAM at probe. Both function drivers request the flag in their
++	 * .suspend, and sdio_set_host_pm_flags() rejects it unless
++	 * host->pm_caps allows it, which is what this property sets.
++	 *
++	 * It is not a fiction on this board: nothing can switch the MT6630's
++	 * supply. The vendor's &mmc3 has no vmmc-supply at all, and its
++	 * connectivity-combo node leaves gpio_combo_ldo_en_pin and
++	 * gpio_combo_pmuv28_en_pin commented out, so PMU_EN and RST are the
++	 * only power control that exists.
++	 */
++	keep-power-in-suspend;
++
++	/*
++	 * A fixed always-on regulator, because the core needs an ocr mask to
++	 * initialise the card and there is no switchable supply to name.
++	 */
++	vmmc-supply = <&wifi_fixed_3v3>;
++	mmc-pwrseq = <&wifi_pwrseq>;
++};
++
++&pio {
++	/*
++	 * I2S2, which is how the RT5514 delivers the internal microphones.
++	 * The pins are the I2S0 group muxed to their I2S2 functions, exactly
++	 * as suez_dvt.dts's audio_pins_default does. MCK is included because
++	 * the RT5514 takes its 12.288 MHz master clock from the SoC.
++	 */
++	audio_pins_default: audio-default-pins {
++		pins-i2s2 {
++			pinmux = <MT8173_PIN_128_I2S0_LRCK__FUNC_I2S2_WS>,
++				 <MT8173_PIN_129_I2S0_BCK__FUNC_I2S2_BCK>,
++				 <MT8173_PIN_130_I2S0_MCK__FUNC_I2S2_MCK>,
++				 <MT8173_PIN_132_I2S0_DATA1__FUNC_I2S2_DI_2>;
++			bias-pull-down;
++		};
++	};
++
++	/*
++	 * microSD pin settings are the vendor's (suez_dvt.dts mmc1 groups):
++	 * pull selects R1R0_01 on cmd/data and R1R0_10 on the clock, and
++	 * 10 mA drive in the UHS state.
++	 */
++	mmc1_pins_default: mmc1-default-pins {
++		pins-cmd-dat {
++			pinmux = <MT8173_PIN_73_MSDC1_DAT0__FUNC_MSDC1_DAT0>,
++				 <MT8173_PIN_74_MSDC1_DAT1__FUNC_MSDC1_DAT1>,
++				 <MT8173_PIN_75_MSDC1_DAT2__FUNC_MSDC1_DAT2>,
++				 <MT8173_PIN_76_MSDC1_DAT3__FUNC_MSDC1_DAT3>,
++				 <MT8173_PIN_78_MSDC1_CMD__FUNC_MSDC1_CMD>;
++			input-enable;
++			drive-strength = <4>;
++			bias-pull-up = <MTK_PUPD_SET_R1R0_01>;
++		};
++
++		pins-clk {
++			pinmux = <MT8173_PIN_77_MSDC1_CLK__FUNC_MSDC1_CLK>;
++			bias-pull-down = <MTK_PUPD_SET_R1R0_10>;
++			drive-strength = <4>;
++		};
++
++		pins-insert {
++			pinmux = <MT8173_PIN_1_EINT1__FUNC_GPIO1>;
++			bias-pull-up;
++		};
++	};
++
++	mmc1_pins_uhs: mmc1-uhs-pins {
++		pins-cmd-dat {
++			pinmux = <MT8173_PIN_73_MSDC1_DAT0__FUNC_MSDC1_DAT0>,
++				 <MT8173_PIN_74_MSDC1_DAT1__FUNC_MSDC1_DAT1>,
++				 <MT8173_PIN_75_MSDC1_DAT2__FUNC_MSDC1_DAT2>,
++				 <MT8173_PIN_76_MSDC1_DAT3__FUNC_MSDC1_DAT3>,
++				 <MT8173_PIN_78_MSDC1_CMD__FUNC_MSDC1_CMD>;
++			input-enable;
++			drive-strength = <10>;
++			bias-pull-up = <MTK_PUPD_SET_R1R0_01>;
++		};
++
++		pins-clk {
++			pinmux = <MT8173_PIN_77_MSDC1_CLK__FUNC_MSDC1_CLK>;
++			drive-strength = <10>;
++			bias-pull-down = <MTK_PUPD_SET_R1R0_10>;
++		};
++	};
++
++	mmc3_pins_default: mmc3-default-pins {
++		pins-cmd-dat {
++			pinmux = <MT8173_PIN_22_MSDC3_DAT0__FUNC_MSDC3_DAT0>,
++				 <MT8173_PIN_23_MSDC3_DAT1__FUNC_MSDC3_DAT1>,
++				 <MT8173_PIN_24_MSDC3_DAT2__FUNC_MSDC3_DAT2>,
++				 <MT8173_PIN_25_MSDC3_DAT3__FUNC_MSDC3_DAT3>,
++				 <MT8173_PIN_27_MSDC3_CMD__FUNC_MSDC3_CMD>;
++			input-enable;
++			drive-strength = <4>;
++			bias-pull-up = <MTK_PUPD_SET_R1R0_10>;
++		};
++
++		pins-clk {
++			pinmux = <MT8173_PIN_26_MSDC3_CLK__FUNC_MSDC3_CLK>;
++			drive-strength = <4>;
++			bias-pull-down = <MTK_PUPD_SET_R1R0_10>;
++		};
++	};
++
++	mmc3_pins_uhs: mmc3-uhs-pins {
++		pins-cmd-dat {
++			pinmux = <MT8173_PIN_22_MSDC3_DAT0__FUNC_MSDC3_DAT0>,
++				 <MT8173_PIN_23_MSDC3_DAT1__FUNC_MSDC3_DAT1>,
++				 <MT8173_PIN_24_MSDC3_DAT2__FUNC_MSDC3_DAT2>,
++				 <MT8173_PIN_25_MSDC3_DAT3__FUNC_MSDC3_DAT3>,
++				 <MT8173_PIN_27_MSDC3_CMD__FUNC_MSDC3_CMD>;
++			input-enable;
++			drive-strength = <4>;
++			bias-pull-up = <MTK_PUPD_SET_R1R0_10>;
++		};
++
++		pins-clk {
++			pinmux = <MT8173_PIN_26_MSDC3_CLK__FUNC_MSDC3_CLK>;
++			drive-strength = <4>;
++			bias-pull-down = <MTK_PUPD_SET_R1R0_10>;
++		};
++	};
++
++	mmc0_pins_default: mmc0-default-pins {
++		pins-cmd-dat {
++			pinmux = <MT8173_PIN_57_MSDC0_DAT0__FUNC_MSDC0_DAT0>,
++				 <MT8173_PIN_58_MSDC0_DAT1__FUNC_MSDC0_DAT1>,
++				 <MT8173_PIN_59_MSDC0_DAT2__FUNC_MSDC0_DAT2>,
++				 <MT8173_PIN_60_MSDC0_DAT3__FUNC_MSDC0_DAT3>,
++				 <MT8173_PIN_61_MSDC0_DAT4__FUNC_MSDC0_DAT4>,
++				 <MT8173_PIN_62_MSDC0_DAT5__FUNC_MSDC0_DAT5>,
++				 <MT8173_PIN_63_MSDC0_DAT6__FUNC_MSDC0_DAT6>,
++				 <MT8173_PIN_64_MSDC0_DAT7__FUNC_MSDC0_DAT7>,
++				 <MT8173_PIN_66_MSDC0_CMD__FUNC_MSDC0_CMD>;
++			input-enable;
++			bias-pull-up;
++		};
++
++		pins-clk {
++			pinmux = <MT8173_PIN_65_MSDC0_CLK__FUNC_MSDC0_CLK>;
++			bias-pull-down;
++		};
++
++		pins-rst {
++			pinmux = <MT8173_PIN_68_MSDC0_RST___FUNC_MSDC0_RSTB>;
++			bias-pull-up;
++		};
++	};
++
++	hall_pins: hall-pins {
++		pins-hall {
++			pinmux = <MT8173_PIN_124_KPCOL2__FUNC_GPIO124>;
++			input-enable;
++			bias-pull-up;
++		};
++	};
++
++	/* vendor bq24297_int_pin: GPIO9, input, pull-up */
++	charger_pins: charger-pins {
++		pins-int {
++			pinmux = <MT8173_PIN_9_EINT9__FUNC_GPIO9>;
++			input-enable;
++			bias-pull-up;
++		};
++	};
++
++	mmc0_pins_uhs: mmc0-uhs-pins {
++		pins-cmd-dat {
++			pinmux = <MT8173_PIN_57_MSDC0_DAT0__FUNC_MSDC0_DAT0>,
++				 <MT8173_PIN_58_MSDC0_DAT1__FUNC_MSDC0_DAT1>,
++				 <MT8173_PIN_59_MSDC0_DAT2__FUNC_MSDC0_DAT2>,
++				 <MT8173_PIN_60_MSDC0_DAT3__FUNC_MSDC0_DAT3>,
++				 <MT8173_PIN_61_MSDC0_DAT4__FUNC_MSDC0_DAT4>,
++				 <MT8173_PIN_62_MSDC0_DAT5__FUNC_MSDC0_DAT5>,
++				 <MT8173_PIN_63_MSDC0_DAT6__FUNC_MSDC0_DAT6>,
++				 <MT8173_PIN_64_MSDC0_DAT7__FUNC_MSDC0_DAT7>,
++				 <MT8173_PIN_66_MSDC0_CMD__FUNC_MSDC0_CMD>;
++			input-enable;
++			drive-strength = <6>;
++			bias-pull-up = <MTK_PUPD_SET_R1R0_01>;
++		};
++
++		pins-clk {
++			pinmux = <MT8173_PIN_65_MSDC0_CLK__FUNC_MSDC0_CLK>;
++			drive-strength = <6>;
++			bias-pull-down = <MTK_PUPD_SET_R1R0_10>;
++		};
++
++		pins-ds {
++			pinmux = <MT8173_PIN_67_MSDC0_DSL__FUNC_MSDC0_DSL>;
++			drive-strength = <8>;
++			bias-pull-down = <MTK_PUPD_SET_R1R0_10>;
++		};
++
++		pins-rst {
++			pinmux = <MT8173_PIN_68_MSDC0_RST___FUNC_MSDC0_RSTB>;
++			bias-pull-up;
++		};
++	};
++};
++
++/*
++ * The vendor runs the port dual-role with ID detection on pio 16. Peripheral
++ * only here: the tablet has one micro-B port, which is also its charging
++ * input, and host mode has not been brought up.
++ */
++&ssusb {
++	vusb33-supply = <&mt6397_vusb_reg>;
++	dr_mode = "peripheral";
++	maximum-speed = "high-speed";
++	status = "okay";
++};
++
++&{/soc} {
++	/*
++	 * mt8173.dtsi has no MCUCFG node, but powering the A72 cluster needs
++	 * CA15L_MISCDBG to deassert ACINACTM. Naming follows mt2712e.dtsi's
++	 * "mediatek,mt2712-mcucfg", "syscon".
++	 */
++	mcucfg: syscon@10200000 {
++		compatible = "mediatek,mt8173-mcucfg", "syscon";
++		reg = <0 0x10200000 0 0x1000>;
++	};
++
++	/*
++	 * The keypad controller, which carries the volume rocker. mt8173.dtsi
++	 * does not describe it at all, and mainline has no mt8173 keypad
++	 * driver -- but mt6779-keypad drives this block unmodified, so the
++	 * node only needs the fallback compatible. Everything below was
++	 * measured on this unit rather than assumed:
++	 *
++	 *   - The block is register-compatible. LK leaves it enabled and the
++	 *     vendor's hal_kpd.h agrees offset for offset (STA 0x00,
++	 *     MEM1..5 0x04..0x14, DEBOUNCE 0x18, SEL 0x20, EN 0x24), and
++	 *     KP_MEM1..4 read 0x0000ffff / KP_MEM5 0x000000ff -- i.e. 16
++	 *     valid bits per register, 72 keys, exactly what mt6779-keypad
++	 *     already assumes and what the vendor spells KPD_NUM_KEYS.
++	 *
++	 *   - Pressing a key clears its bit in eight places at a stride of
++	 *     nine (key 0,9,18..63 for one, 1,10,19..64 for the other), so
++	 *     mt6779-keypad's single-group mapping -- row = key / 9,
++	 *     col = key % 9 -- is right for this SoC too, and both keys sit
++	 *     on row 0.
++	 *
++	 * num-rows/num-columns describe the *bit layout*, not the two keys
++	 * actually fitted. A press asserts all eight row slots of its column
++	 * even when KP_SEL enables a single row (verified by reprogramming
++	 * KP_SEL and re-measuring), and the interrupt handler maps every
++	 * changed bit through MATRIX_SCAN_CODE before looking it up. Declaring
++	 * one row would therefore index past the end of the keymap; 8x9 keeps
++	 * every possible (row, col) inside it, and the unfitted positions stay
++	 * KEY_RESERVED and are dropped by the input core. Enabling the full
++	 * geometry costs nothing: with KP_SEL at 0xfff0 the idle state is
++	 * still all ones, so no unconnected line reads as pressed.
++	 *
++	 * The keys are the other way round from the vendor's
++	 * mediatek,kpd-hw-init-map, which maps hw key 0 to KEY_VOLUMEUP and
++	 * hw key 1 to KEY_VOLUMEDOWN. On this unit pressing volume up moved
++	 * column 1 and volume down moved column 0. The measurement is used
++	 * here; if it ever feels inverted, swap these two lines and confirm
++	 * with evtest -- that is the whole fix.
++	 *
++	 * debounce-delay-ms is LK's KP_DEBOUNCE of 0x400 expressed in the
++	 * driver's units: it writes debounce * 32, and 32 * 32 = 1024, which
++	 * is also the vendor's mediatek,kpd-key-debounce.
++	 */
++	keypad: keypad@10010000 {
++		compatible = "mediatek,mt8173-keypad",
++			     "mediatek,mt6779-keypad";
++		reg = <0 0x10010000 0 0x1000>;
++		interrupts = <GIC_SPI 154 IRQ_TYPE_EDGE_FALLING>;
++		clocks = <&infracfg CLK_INFRA_KP>;
++		clock-names = "kpd";
++		wakeup-source;
++		debounce-delay-ms = <32>;
++		keypad,num-rows = <8>;
++		keypad,num-columns = <9>;
++		linux,keymap = <MATRIX_KEY(0, 0, KEY_VOLUMEDOWN)
++				MATRIX_KEY(0, 1, KEY_VOLUMEUP)>;
++	};
++};
++
++&cpu0 {
++	proc-supply = <&mt6397_vpca15_reg>;
++};
++
++&cpu1 {
++	proc-supply = <&mt6397_vpca15_reg>;
++
++	/*
++	 * PSCI CPU_ON alone does not start this core. The firmware sets the
++	 * entry point but leaves the core's MTCMOS power domain off, so it
++	 * never runs:
++	 *   CPU1: failed to come online
++	 *   CPU1: failed in unknown state : 0x0
++	 * (plain "spin-table" at the vendor's cpu-release-addr fails the same
++	 * way, because the core is powered down rather than parked.)
++	 *
++	 * The vendor kernel's "mt-boot" is just PSCI CPU_ON followed by
++	 * spm_mtcmos_ctrl_cpu(cpu, STA_POWER_ON, 1); mt8173-smp-mtcmos.patch
++	 * adds that as a mainline enable-method. Boards with real ARM Trusted
++	 * Firmware (mt8173-elm) do not need it because BL31 powers the domain.
++	 *
++	 * The A72s below use the same method; their cluster sequence differs
++	 * (shared SPM_CA15_L1_PWR_CON, CPUTOP and L2 domains) and their supply
++	 * is the MT6311 on i2c1.
++	 */
++	enable-method = "mediatek,mt8173-smp";
++};
++
++/*
++ * The A72s. proc-supply is the MT6311 above, matching what mt8173-evb does with
++ * its da9211; sram-supply is vsramca7, as on evb. The MT6311 is an i2c
++ * regulator whose driver probes long after smp_init(), so the cores first run
++ * at the voltage the bootloader left on the rail; cpufreq takes over once the
++ * regulator is up.
++ */
++&cpu2 {
++	proc-supply = <&mt6311_vcpu_reg>;
++	sram-supply = <&mt6397_vsramca7_reg>;
++	enable-method = "mediatek,mt8173-smp";
++};
++
++&cpu3 {
++	proc-supply = <&mt6311_vcpu_reg>;
++	sram-supply = <&mt6397_vsramca7_reg>;
++	enable-method = "mediatek,mt8173-smp";
++};
++
++/*
++ * Display.
++ *
++ * mt8173.dtsi ships dsi0 and dpi0 as status = "disabled", and mediatek-drm
++ * will not build a CRTC without them:
++ *
++ *   Not creating crtc 0 because component 14 is disabled or missing
++ *   Not creating crtc 0 because component 10 is disabled or missing
++ *   Need at least one OVL device
++ *
++ * Component 14 is DDP_COMPONENT_DSI0 and 10 is DDP_COMPONENT_DPI0; the rest of
++ * mt8173's main path (ovl0, color0, aal0, od0, rdma0, ufoe) is already enabled
++ * by the dtsi and binds. Only dsi0 is enabled here -- dpi0 feeds the HDMI
++ * bridge, which this board does not bring out.
++ *
++ * The simple-framebuffer in /chosen stays alongside this: mediatek-drm is a
++ * module, so the bootloader's framebuffer is the console until it loads, and a
++ * panel that fails to light does not also cost the console.
++ */
++
++/ {
++	/*
++	 * The backlight's enable pin hangs off the PMIC's own GPIO 14 (vendor
++	 * gpio_en = <&pio6397 14 0>). lp855x wants an enable *regulator*
++	 * rather than a GPIO, so wrap the pin in a fixed regulator.
++	 */
++	backlight_enable: regulator-backlight-enable {
++		compatible = "regulator-fixed";
++		regulator-name = "backlight_enable";
++		gpio = <&mt6397pin 14 GPIO_ACTIVE_HIGH>;
++		enable-active-high;
++	};
++};
++
++/*
++ * Sensors and charger.
++ *
++ * Every part below was confirmed on the live device by reading its ID register
++ * over /dev/i2c before any of this was written, rather than trusting the vendor
++ * DTS -- which lists parts this board does not fit:
++ *
++ *   BMA253   i2c2 @0x18   CHIP_ID 0xfa
++ *   BQ24297  i2c3 @0x6b   REG0A 0x20; REG08 read 0x6c with the cable in, i.e.
++ *                         "VBUS = USB host, fast charging, power good"
++ *   LTR559   i2c4 @0x23   PART_ID 0x92, MANUFAC_ID 0x05 (Lite-On)
++ *
++ * The vendor also describes an STK3x1x alsps at i2c4 0x48 and a camera at
++ * i2c3 0x3c. Neither answers on this unit, so neither is described here.
++ */
++&i2c2 {
++	status = "okay";
++	clock-frequency = <400000>;
++
++	/*
++	 * Bosch BMA253. The vendor calls it "mediatek,gsensor" and selects it
++	 * with CONFIG_MTK_BMA253; mainline's bmc150-accel covers the part.
++	 * No interrupt is described: the vendor node has none, and the driver
++	 * is happy polling.
++	 */
++	accelerometer@18 {
++		compatible = "bosch,bma253";
++		reg = <0x18>;
++		/*
++		 * Derived empirically (guided rotation test, 2026-08-30): the
++		 * chip is mounted rotated 180 degrees about the (1,-1,0) axis
++		 * relative to the panel. Raw readings were +X = g when the
++		 * tablet is upright and -Z = g face-up; with this matrix
++		 * iio-sensor-proxy reports normal/left-up correctly. Consistent
++		 * with the vendor's hwmsen "direction = <5>" (swap X/Y,
++		 * invert Z) once the Android landscape frame is rotated into
++		 * this panel's portrait frame.
++		 */
++		mount-matrix = "0", "-1", "0",
++			       "-1", "0", "0",
++			       "0", "0", "-1";
++	};
++};
++
++&i2c3 {
++	status = "okay";
++
++	/*
++	 * TI BQ24297 charger. The vendor compatible "ti,bq24297" is also
++	 * exactly what mainline's bq24190_charger matches on, so this node is
++	 * the vendor's, minus its MTK-specific properties.
++	 */
++	bq24297: charger@6b {
++		compatible = "ti,bq24297";
++		reg = <0x6b>;
++		interrupt-parent = <&pio>;
++		interrupts = <9 IRQ_TYPE_EDGE_FALLING>;
++		pinctrl-names = "default";
++		pinctrl-0 = <&charger_pins>;
++
++		/*
++		 * Suppress the driver's deprecated "battery" power supply.
++		 * bq24190_charger.c registers it purely for backwards
++		 * compatibility and offers this property to hide it:
++		 *
++		 *     the battery class is deprecated and will be removed;
++		 *     in the interim, this property hides it --
++		 *     if (!device_property_read_bool(dev, "omit-battery-class"))
++		 *
++		 * Hiding it matters here because it is a phantom: this part is
++		 * a charger with no fuel gauge, so bq24190-battery exposes
++		 * status and scope and nothing else -- no present, no capacity,
++		 * no energy_*. upower 1.91 still counts it as a real battery
++		 * ("present: yes, energy-full: 0 Wh"), computes
++		 * energy / energy_full = 0 / 0, and logs
++		 *   value "nan" ... is invalid or out of range for 'percentage'
++		 * twice every five seconds forever. That polling is also what
++		 * generates the endless kernel warning
++		 *   bq24190-charger 3-006b: warning: .../bq24190-battery is deprecated
++		 * -- 120 of them in 890 s, measured.
++		 *
++		 * The real gauge is mt6397-battery, which reports properly.
++		 */
++		omit-battery-class;
++	};
++};
++
++&i2c4 {
++	/*
++	 * TI LP8557 backlight. Every value here is from the vendor's
++	 * &lp8557_bl node: register-based control (mode = <1>), dev-ctrl 0x47
++	 * (LP8557_COMB2_CONFIG | LP8557_PWM_FILTER | LP8557_DISABLE_LEDS), and
++	 * the six EEPROM registers it programs at init.
++	 *
++	 * LK already lights the backlight, so this mostly takes over a running
++	 * part. What it buys is brightness control and a defined state across
++	 * a DPMS cycle.
++	 */
++	status = "okay";
++	clock-frequency = <400000>;
++
++	backlight_lcd: backlight@2c {
++		compatible = "ti,lp8557";
++		reg = <0x2c>;
++		enable-supply = <&backlight_enable>;
++
++		dev-ctrl = /bits/ 8 <0x47>;
++		init-brt = /bits/ 8 <0x64>;
++
++		/* full-scale LED current 23 mA */
++		rom-11h {
++			rom-addr = /bits/ 8 <0x11>;
++			rom-val = /bits/ 8 <0x06>;
++		};
++		/* 4 V OV, 4 output LED strings enabled */
++		rom-14h {
++			rom-addr = /bits/ 8 <0x14>;
++			rom-val = /bits/ 8 <0x0f>;
++		};
++		/* boost frequency 1 MHz */
++		rom-13h {
++			rom-addr = /bits/ 8 <0x13>;
++			rom-val = /bits/ 8 <0x01>;
++		};
++		/* 19.5 kHz */
++		rom-12h {
++			rom-addr = /bits/ 8 <0x12>;
++			rom-val = /bits/ 8 <0x2b>;
++		};
++		/* light smoothing, 100 ms */
++		rom-15h {
++			rom-addr = /bits/ 8 <0x15>;
++			rom-val = /bits/ 8 <0x42>;
++		};
++		/* max boost voltage 28 V, adaptive */
++		rom-16h {
++			rom-addr = /bits/ 8 <0x16>;
++			rom-val = /bits/ 8 <0xe0>;
++		};
++	};
++
++	/*
++	 * Lite-On LTR-559 ambient light + proximity.
++	 *
++	 * The vendor wires its interrupt to pio 6, level low, but that is
++	 * deliberately not described yet: the proximity threshold interrupt is
++	 * optional for this driver, and a level-triggered line with the wrong
++	 * polarity would sit asserted and storm. Add it once it can be watched.
++	 */
++	light-sensor@23 {
++		compatible = "liteon,ltr559";
++		reg = <0x23>;
++	};
++};
++
++/*
++ * The DSI D-PHY. mt8173.dtsi ships it disabled, and it is also the "hs" clock
++ * provider for dsi0:
++ *
++ *   clocks = <&mmsys CLK_MM_DSI0_ENGINE>, <&mmsys CLK_MM_DSI0_DIGITAL>,
++ *            <&mipi_tx0>;
++ *   clock-names = "engine", "digital", "hs";
++ *
++ * so leaving it disabled costs the clock, not just the PHY, and mtk-dsi fails
++ * its probe outright:
++ *
++ *   mtk-dsi 1401b000.dsi: error -ENOENT: Failed to get hs clock
++ *   mtk-dsi 1401b000.dsi: probe with driver mtk-dsi failed with error -2
++ *
++ * mt8173-elm enables it the same way, with nothing but a status.
++ */
++&mipi_tx0 {
++	status = "okay";
++};
++
++/*
++ * The display PWM. Nothing on this board uses it -- the LP8557 backlight is
++ * driven over I2C in register mode, and the vendor left its PWM-based variant
++ * commented out -- but mediatek-drm still needs the node to exist.
++ *
++ * mt8173's main display path is
++ *   OVL0 -> COLOR0 -> AAL0 -> OD0 -> RDMA0 -> UFOE -> DSI0 -> PWM0
++ * and mtk_ddp_path_available() requires a device node for *every* component in
++ * it. With pwm0 disabled the whole path is unavailable, so the DSI is not in
++ * any path mediatek-drm knows about and its bind fails:
++ *
++ *   [drm] Failed to find comp in ddp table, ret = -22
++ *   mediatek-drm: failed to bind 1401b000.dsi: -22
++ *
++ * OD0 and UFOE need no driver, so they never show up in the component match
++ * list; only their nodes matter, and mt8173.dtsi already enables those.
++ */
++&pwm0 {
++	status = "okay";
++};
++
++&dsi0 {
++	status = "okay";
++	#address-cells = <1>;
++	#size-cells = <0>;
++
++	panel@0 {
++		compatible = "novatek,nt51021";
++		reg = <0>;
++
++		/* vendor &lcm: reg-lcm-supply = <&mt6397_vgp6_reg>, 3V3_LCM_VCC33 */
++		power-supply = <&mt6397_vgp6_reg>;
++
++		/*
++		 * Vendor gpio_lcm_rst_en = <&pio 105 0>, driven low to assert
++		 * reset and high to release it, i.e. active low.
++		 */
++		reset-gpios = <&pio 105 GPIO_ACTIVE_LOW>;
++
++		/*
++		 * Panel-vendor ID straps, in the order <id0>, <id1>: vendor
++		 * lcm_id0_gpio = <&pio 102 0>, lcm_id1_gpio = <&pio 103 0>.
++		 * The driver reads them to choose between the Innolux and BOE
++		 * register sets, exactly as the vendor LCM driver does. suez
++		 * shipped with both panels, so this cannot be settled by the
++		 * compatible string.
++		 *
++		 * These are otherwise-unused MSDC2 pads; nothing else in this
++		 * DTS claims pio 102-105. The vendor also watches pio 104 as
++		 * the panel's ESD line; the driver has no ESD recovery, so it
++		 * is not described.
++		 */
++		lcm-id-gpios = <&pio 102 GPIO_ACTIVE_HIGH>,
++			       <&pio 103 GPIO_ACTIVE_HIGH>;
++
++		backlight = <&backlight_lcd>;
++
++		port {
++			panel_in: endpoint {
++				remote-endpoint = <&dsi0_out>;
++			};
++		};
++	};
++
++	port {
++		dsi0_out: endpoint {
++			remote-endpoint = <&panel_in>;
++		};
++	};
++};

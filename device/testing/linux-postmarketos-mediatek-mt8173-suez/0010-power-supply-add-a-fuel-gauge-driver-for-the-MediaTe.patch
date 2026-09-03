@@ -1,0 +1,1500 @@
+From 2e172535df951817412cf39c6b35647a3c2588b2 Mon Sep 17 00:00:00 2001
+From: Ryan Brue <ryanbrue.dev@gmail.com>
+Date: Thu, 3 Sep 2026 14:08:03 -0500
+Subject: [PATCH] power: supply: add a fuel gauge driver for the MediaTek
+ MT6397 PMIC
+
+The MT6397 contains a fuel gauge (FGADC) that measures battery current
+across a board-provided sense resistor and integrates it in hardware into a
+charge accumulation register (CAR). This driver runs the same battery-meter
+algorithm MediaTek's downstream kernels run on top of that hardware
+(drivers/power/mt81xx, CONFIG_SOC_BY_HW_FG), so that a board ported from
+such a kernel reports the same state of charge it did before:
+
+ - At boot the state of charge is seeded from the open-circuit voltage the
+   PMIC latched by itself at power-on, cross-checked against the live
+   voltage compensated for I*R, and against the value the previous boot
+   left in an RTC spare register.
+ - From then on it is coulomb counted: DOD1 = DOD0 - CAR / Qmax, where
+   Qmax is interpolated from per-temperature capacities and reduced for
+   the load actually drawn.
+ - The OCV, internal-resistance and Qmax tables are all per temperature and
+   re-interpolated as the pack temperature (from an NTC on the PMIC's
+   auxiliary ADC) moves.
+ - A charger reporting full re-anchors the counter at 100 %, and the
+   displayed percentage moves towards the computed one by at most one point
+   per step, so it never jumps. It sits at 99 % until the charger says full,
+   ramps to 100 % over the vendor's 60 s steps once it does, and holds
+   100 % through the charger's recharge cycles while the cable stays in.
+
+Every register, scaling constant and table comes from the vendor's own
+meter (mt6397_fgadc.c, mt_battery_meter.c) or the battery vendor's
+characterisation in the board's device tree; nothing here is measured or
+estimated by this driver. Two details are easy to get wrong and are worth
+recording: the 36-bit accumulator is read as the vendor does, a 16-bit
+window of bits 29:14 taken from CON3[15:14] and CON2[13:0] with the sign
+in CON1 bit 3 and an all-ones window meaning zero; and the hardware OCV is
+read from the register the power-path (SWCHR) build of the vendor uses,
+ADC20, not the non-power-path one.
+
+The state of charge is persisted in bits 14:8 of the RTC alarm-hour
+register, which the alarm never uses; the vendor's RTC does the same, and
+rtc-mt6397 masks the hour to five bits so the field survives an alarm being
+set. The driver issues the RTC's write trigger itself after the write.
+
+Tested on the Amazon Fire HD 10 (2017) with the Desay pack's tables.
+
+Signed-off-by: Ryan Brue <ryanbrue.dev@gmail.com>
+---
+ drivers/power/supply/Kconfig          |   12 +
+ drivers/power/supply/Makefile         |    1 +
+ drivers/power/supply/mt6397-battery.c | 1405 +++++++++++++++++++++++++
+ 3 files changed, 1418 insertions(+)
+ create mode 100644 drivers/power/supply/mt6397-battery.c
+
+diff --git a/drivers/power/supply/Kconfig b/drivers/power/supply/Kconfig
+index f0ede1cec..4511b3d51 100644
+--- a/drivers/power/supply/Kconfig
++++ b/drivers/power/supply/Kconfig
+@@ -38,6 +38,18 @@ config APM_POWER
+ config ADC_BATTERY_HELPER
+ 	tristate
+ 
++config BATTERY_MT6397
++	tristate "MediaTek MT6397 PMIC fuel gauge support"
++	depends on MFD_MT6397 || COMPILE_TEST
++	depends on IIO
++	help
++	  Say Y here to enable support for the fuel gauge in the MediaTek
++	  MT6397 PMIC. It coulomb-counts with the PMIC's hardware charge
++	  accumulator and runs MediaTek's battery-meter algorithm on top,
++	  with per-temperature OCV, resistance and capacity tables from the
++	  device tree, so a board ported from a MediaTek kernel reports the
++	  same state of charge it did there.
++
+ config GENERIC_ADC_BATTERY
+ 	tristate "Generic battery support using IIO"
+ 	depends on IIO
+diff --git a/drivers/power/supply/Makefile b/drivers/power/supply/Makefile
+index 31fe4a145..6aa0d51ae 100644
+--- a/drivers/power/supply/Makefile
++++ b/drivers/power/supply/Makefile
+@@ -8,6 +8,7 @@ power_supply-$(CONFIG_LEDS_TRIGGERS)	+= power_supply_leds.o
+ obj-$(CONFIG_POWER_SUPPLY)	+= power_supply.o
+ obj-$(CONFIG_POWER_SUPPLY_HWMON) += power_supply_hwmon.o
+ obj-$(CONFIG_ADC_BATTERY_HELPER) += adc-battery-helper.o
++obj-$(CONFIG_BATTERY_MT6397)	+= mt6397-battery.o
+ obj-$(CONFIG_GENERIC_ADC_BATTERY)	+= generic-adc-battery.o
+ 
+ obj-$(CONFIG_APM_POWER)		+= apm_power.o
+diff --git a/drivers/power/supply/mt6397-battery.c b/drivers/power/supply/mt6397-battery.c
+new file mode 100644
+index 000000000..b28f5b4b8
+--- /dev/null
++++ b/drivers/power/supply/mt6397-battery.c
+@@ -0,0 +1,1405 @@
++// SPDX-License-Identifier: GPL-2.0-only
++/*
++ * Battery driver for the MediaTek MT6397 PMIC's fuel gauge
++ *
++ * The PMIC contains a fuel gauge (FGADC) that measures battery current across
++ * a board-provided sense resistor and integrates it in hardware into a charge
++ * accumulation register (CAR). This driver runs the same battery-meter
++ * algorithm MediaTek's downstream kernels run on top of that hardware
++ * (drivers/power/mt81xx, CONFIG_SOC_BY_HW_FG), so that a board ported from
++ * such a kernel reports the same state of charge it did before:
++ *
++ *  - At boot the state of charge is seeded from the open-circuit voltage the
++ *    PMIC latched by itself at power-on, cross-checked against the live
++ *    voltage compensated for I*R, and against the value the previous boot
++ *    left in an RTC spare register.
++ *  - From then on it is coulomb counted: DOD1 = DOD0 - CAR / Qmax, where
++ *    Qmax is interpolated from per-temperature capacities.
++ *  - The OCV, internal-resistance and Qmax tables are all per temperature and
++ *    re-interpolated as the pack temperature (from an NTC on the PMIC's
++ *    auxiliary ADC) moves.
++ *  - A charger reporting full re-anchors the counter at 100 %, and the
++ *    displayed percentage moves towards the computed one by at most one point
++ *    per step, so it never jumps.
++ *
++ * Every table and constant is taken from the vendor's own tuning for the
++ * battery fitted; nothing here is measured or estimated by this driver.
++ *
++ * Copyright (C) 2026 Ryan Brue <ryanbrue.dev@gmail.com>
++ */
++
++#include <linux/bitfield.h>
++#include <linux/bitops.h>
++#include <linux/cleanup.h>
++#include <linux/delay.h>
++#include <linux/devm-helpers.h>
++#include <linux/iio/consumer.h>
++#include <linux/math64.h>
++#include <linux/minmax.h>
++#include <linux/mfd/mt6397/core.h>
++#include <linux/mod_devicetable.h>
++#include <linux/module.h>
++#include <linux/mutex.h>
++#include <linux/platform_device.h>
++#include <linux/power_supply.h>
++#include <linux/property.h>
++#include <linux/regmap.h>
++#include <linux/slab.h>
++#include <linux/workqueue.h>
++
++/* Clock gates for the gauge; it runs from the RTC's 32 kHz oscillator. */
++#define MT6397_TOP_CKPDN		0x0102
++#define MT6397_TOP_CKPDN_FGADC_CK	(BIT(6) | BIT(5))
++
++#define MT6397_FGADC_CON0		0x0618
++#define MT6397_FGADC_CON0_MODE		GENMASK(7, 0)
++#define MT6397_FGADC_CON0_MODE_SETUP	0x28
++#define MT6397_FGADC_CON0_MODE_ON	0x29
++#define MT6397_FGADC_CON0_LATCHED	BIT(10)
++#define MT6397_FGADC_CON0_CMD		GENMASK(15, 8)
++#define MT6397_FGADC_CON0_CMD_IDLE	0x00
++#define MT6397_FGADC_CON0_CMD_LATCH	0x02
++#define MT6397_FGADC_CON0_CMD_CLEAR	0x08
++#define MT6397_FGADC_CON0_CMD_RESET	0x71
++#define MT6397_FGADC_CON0_CMD_RESET_LATCH 0x73
++
++/*
++ * The charge accumulator is a 36-bit register, CAR[35:0], spread over three
++ * 16-bit words: CON1 holds bits 35:32 in its low nibble, CON2 bits 31:16 and
++ * CON3 bits 15:0. The vendor's meter reads a 16-bit window of it, bits 29:14
++ * (CON3[15:14] as the low two bits, CON2[13:0] above them), and takes the
++ * sign from bit 35.
++ */
++#define MT6397_FGADC_CON1		0x061a
++#define MT6397_FGADC_CON1_CAR_SIGN	BIT(3)
++#define MT6397_FGADC_CON2		0x061c
++#define MT6397_FGADC_CON2_CAR_HIGH	GENMASK(13, 0)
++#define MT6397_FGADC_CON3		0x061e
++#define MT6397_FGADC_CON3_CAR_LOW	GENMASK(15, 14)
++
++#define MT6397_FGADC_CON8		0x0628
++
++#define MT6397_FGADC_TIMEOUT_US		100000
++
++/*
++ * One LSB is 158.122 nA * 1000 across a 20 mOhm sense resistor, and scales
++ * inversely with the resistor a board actually fits.
++ */
++#define MT6397_FGADC_NA_PER_LSB		158122
++#define MT6397_FGADC_REF_SENSE_MOHM	20
++
++/* One accumulator LSB, likewise referred to a 20 mOhm sense resistor. */
++#define MT6397_FGADC_NAH_PER_LSB	359860
++
++/*
++ * The auxiliary ADC latches a conversion of the battery channel when the PMIC
++ * powers on, before any load is applied: the "hardware OCV". 10 bits over
++ * 1.2 V behind the same 1:4 divider as the live channel, plus the vendor's
++ * fixed per-chip correction.
++ */
++#define MT6397_AUXADC_ADC20		0x053c
++#define MT6397_AUXADC_ADC20_VAL		GENMASK(9, 0)
++#define MT6397_AUXADC_FULL_SCALE_MV	1200
++#define MT6397_AUXADC_PRECISION		1024
++#define MT6397_AUXADC_VBAT_DIVIDER	4
++#define MT6397_BAT_HW_OCV_TUNE_MV	8
++
++/*
++ * The vendor keeps the last state of charge in the RTC's alarm-hour register,
++ * bits 8..14, which the alarm never uses; it survives a reboot and is how a
++ * restart avoids a jump. The RTC needs a write-trigger after any register
++ * write, as rtc-mt6397 does.
++ */
++#define MT6397_RTC_BASE			0xe000
++#define MT6397_RTC_BBPU			(MT6397_RTC_BASE + 0x0000)
++#define MT6397_RTC_BBPU_CBUSY		BIT(6)
++#define MT6397_RTC_AL_HOU		(MT6397_RTC_BASE + 0x001c)
++#define MT6397_RTC_AL_HOU_SOC		GENMASK(14, 8)
++#define MT6397_RTC_WRTGR		(MT6397_RTC_BASE + 0x003c)
++#define MT6397_RTC_TIMEOUT_US		100000
++
++/* The battery-meter task period and its tunables, as the vendor ships them. */
++#define MT6397_BAT_PERIOD_S		10
++#define MT6397_BAT_SYSTEM_OFF_MV	3400
++#define MT6397_BAT_VBAT_AVG_SIZE	18
++#define MT6397_BAT_MIN_ERROR_OFFSET_MV	1000
++#define MT6397_BAT_TEMP_AVG_SIZE	12
++#define MT6397_BAT_R_COMP_ITERATIONS	5
++#define MT6397_BAT_POWERON_DELTA_CAP	45
++#define MT6397_BAT_SYNC_TO_REAL_S	30
++/*
++ * The 100 % ramp step. This is the vendor's cust_soc_jeita_sync_time, which
++ * is what its meter uses with JEITA support built in (as it is for this
++ * board); the 10 s onehundred_percent_tracking_time is the non-JEITA path.
++ */
++#define MT6397_BAT_FULL_TRACK_S		60
++#define MT6397_BAT_MAX_PROFILES		5
++
++struct mt6397_bat_point {
++	s32 x;		/* depth of discharge in %, or resistance in mOhm */
++	s32 mv;
++};
++
++struct mt6397_bat_ntc_point {
++	s32 temp_c;
++	s32 ohm;
++};
++
++struct mt6397_bat_profile {
++	int temp_c;
++	int qmax_mah;
++	int qmax_hc_mah;	/* Qmax under the table's load current */
++	struct mt6397_bat_point *ocv;
++	struct mt6397_bat_point *res;
++};
++
++struct mt6397_battery {
++	struct device *dev;
++	struct regmap *regmap;
++	struct iio_channel *vbat;
++	struct iio_channel *ntc;
++	struct power_supply *psy;
++	struct power_supply *charger;
++	struct power_supply_battery_info *info;
++	struct delayed_work work;
++	struct mutex lock;
++
++	/* board and battery data */
++	u32 sense_mohm;
++	u32 car_tune;
++	bool ocv2cv;
++	int step_of_qmax_mah;
++	int cv_current_01ma;
++	int poweron_low_cap_tol;
++	u32 ntc_pullup_ohm;
++	u32 ntc_pullup_mv;
++	u32 ntc_pulldown_ohm;
++	struct mt6397_bat_ntc_point *ntc_tbl;
++	int nntc;
++	struct mt6397_bat_profile prof[MT6397_BAT_MAX_PROFILES];
++	int nprof;
++	int npts;
++	/* the tables re-interpolated for the present temperature */
++	struct mt6397_bat_point *ocv_t;
++	struct mt6397_bat_point *res_t;
++
++	/* temperature */
++	int temp_c;
++	int temp_buf[MT6397_BAT_TEMP_AVG_SIZE];
++	int temp_sum, temp_idx, temp_last_avg;
++	bool temp_init;
++
++	/* voltage and current */
++	int vbat_mv;		/* live terminal voltage */
++	int zcv_mv;		/* compensated and averaged open-circuit voltage */
++	int vavg_buf[MT6397_BAT_VBAT_AVG_SIZE];
++	int vavg_sum, vavg_idx, vavg_mv;
++	int cur_01ma;		/* magnitude, in 0.1 mA like the vendor */
++	bool charging;		/* sign of the current */
++	int cur_factor;		/* average load as a percentage of cv_current */
++	int cur_buf[MT6397_BAT_TEMP_AVG_SIZE];
++	int cur_sum, cur_idx;
++	bool cur_init;
++	int car_uah;		/* since the last accumulator reset */
++	int rbat_mohm;
++	int comp_mv;
++
++	/* the gauge */
++	int qmax_mah, qmax_aging_mah, qmax_hc_mah;
++	int dod0, dod1;
++	int cap_by_v, cap_by_c;
++	int soc;		/* after the load compensation */
++	int ui_soc;		/* what is reported; -1 until the first pass */
++	unsigned int sync_counter;
++	unsigned int full_counter;
++	bool refresh_ui;
++	bool full;
++	bool full_reset_pending;
++	bool reached_full;	/* showed 100 % on this charger session */
++	bool charger_online;
++	int status;
++	int hw_ocv_mv, sw_ocv_mv, rtc_soc;
++};
++
++/* ------------------------------------------------------------------------ */
++/* Fuel gauge hardware access                                               */
++
++static int mt6397_battery_fg_cmd(struct mt6397_battery *bat, unsigned int cmd)
++{
++	return regmap_update_bits(bat->regmap, MT6397_FGADC_CON0,
++				  MT6397_FGADC_CON0_CMD,
++				  FIELD_PREP(MT6397_FGADC_CON0_CMD, cmd));
++}
++
++static int mt6397_battery_fg_latch(struct mt6397_battery *bat, unsigned int cmd)
++{
++	unsigned int reg;
++	int ret;
++
++	ret = mt6397_battery_fg_cmd(bat, cmd);
++	if (ret)
++		return ret;
++
++	return regmap_read_poll_timeout(bat->regmap, MT6397_FGADC_CON0, reg,
++					reg & MT6397_FGADC_CON0_LATCHED,
++					100, MT6397_FGADC_TIMEOUT_US);
++}
++
++static int mt6397_battery_fg_release(struct mt6397_battery *bat)
++{
++	unsigned int reg;
++	int ret;
++
++	ret = mt6397_battery_fg_cmd(bat, MT6397_FGADC_CON0_CMD_CLEAR);
++	if (ret)
++		return ret;
++
++	ret = regmap_read_poll_timeout(bat->regmap, MT6397_FGADC_CON0, reg,
++				       !(reg & MT6397_FGADC_CON0_LATCHED),
++				       100, MT6397_FGADC_TIMEOUT_US);
++	if (ret)
++		return ret;
++
++	return mt6397_battery_fg_cmd(bat, MT6397_FGADC_CON0_CMD_IDLE);
++}
++
++/* Signed, positive into the battery, in uA. */
++static int mt6397_battery_read_current(struct mt6397_battery *bat, int *curr_ua)
++{
++	unsigned int reg;
++	int raw, ret;
++
++	ret = mt6397_battery_fg_latch(bat, MT6397_FGADC_CON0_CMD_LATCH);
++	if (ret)
++		return ret;
++
++	ret = regmap_read(bat->regmap, MT6397_FGADC_CON8, &reg);
++	if (ret)
++		return ret;
++
++	/* Not two's complement: a magnitude with the sign folded in as 65535 - raw. */
++	raw = reg > 32767 ? -(65535 - (int)reg) : (int)reg;
++
++	*curr_ua = div_s64((s64)raw * MT6397_FGADC_NA_PER_LSB *
++			   MT6397_FGADC_REF_SENSE_MOHM * bat->car_tune,
++			   (s64)bat->sense_mohm * 1000 * 100);
++
++	return mt6397_battery_fg_release(bat);
++}
++
++static int mt6397_battery_read_car_raw(struct mt6397_battery *bat,
++				       unsigned int cmd, int *raw)
++{
++	unsigned int con1, con2, con3, car;
++	int ret;
++
++	ret = mt6397_battery_fg_latch(bat, cmd);
++	if (ret)
++		return ret;
++
++	ret = regmap_read(bat->regmap, MT6397_FGADC_CON1, &con1);
++	if (ret)
++		return ret;
++
++	ret = regmap_read(bat->regmap, MT6397_FGADC_CON2, &con2);
++	if (ret)
++		return ret;
++
++	ret = regmap_read(bat->regmap, MT6397_FGADC_CON3, &con3);
++	if (ret)
++		return ret;
++
++	car = FIELD_GET(MT6397_FGADC_CON2_CAR_HIGH, con2) << 2 |
++	      FIELD_GET(MT6397_FGADC_CON3_CAR_LOW, con3);
++
++	/*
++	 * Not two's complement: the window is a magnitude, and CAR[35] says
++	 * whether the accumulator has gone negative, i.e. net discharge, in
++	 * which case the vendor reads it as (window - 0xffff). An all-ones
++	 * window is treated as zero, as the vendor does.
++	 */
++	if (car == 0xffff)
++		*raw = 0;
++	else if (con1 & MT6397_FGADC_CON1_CAR_SIGN)
++		*raw = (int)car - 0xffff;
++	else
++		*raw = car;
++
++	return mt6397_battery_fg_release(bat);
++}
++
++/* Signed, positive for charge that went into the battery, in uAh. */
++static int mt6397_battery_read_car(struct mt6397_battery *bat, int *charge_uah)
++{
++	int raw, ret;
++
++	ret = mt6397_battery_read_car_raw(bat, MT6397_FGADC_CON0_CMD_LATCH, &raw);
++	if (ret)
++		return ret;
++
++	*charge_uah = div_s64((s64)raw * MT6397_FGADC_NAH_PER_LSB *
++			      MT6397_FGADC_REF_SENSE_MOHM * bat->car_tune,
++			      (s64)bat->sense_mohm * 1000 * 100);
++
++	return 0;
++}
++
++/* Zero the accumulator, as the vendor does whenever it re-anchors the gauge. */
++static int mt6397_battery_reset_car(struct mt6397_battery *bat)
++{
++	int i, raw, ret;
++
++	for (i = 0; i < 10; i++) {
++		ret = mt6397_battery_fg_cmd(bat, MT6397_FGADC_CON0_CMD_RESET);
++		if (ret)
++			return ret;
++
++		ret = mt6397_battery_read_car_raw(bat,
++						  MT6397_FGADC_CON0_CMD_RESET_LATCH,
++						  &raw);
++		if (ret)
++			return ret;
++
++		if (!raw)
++			return 0;
++	}
++
++	dev_warn(bat->dev, "charge accumulator would not reset (%d)\n", raw);
++	return -EIO;
++}
++
++static int mt6397_battery_fg_enable(struct mt6397_battery *bat)
++{
++	int ret;
++
++	ret = regmap_clear_bits(bat->regmap, MT6397_TOP_CKPDN,
++				MT6397_TOP_CKPDN_FGADC_CK);
++	if (ret)
++		return ret;
++
++	/* current mode, auto-calibration, 32 kHz; then enable */
++	ret = regmap_update_bits(bat->regmap, MT6397_FGADC_CON0,
++				 MT6397_FGADC_CON0_MODE,
++				 FIELD_PREP(MT6397_FGADC_CON0_MODE,
++					    MT6397_FGADC_CON0_MODE_SETUP));
++	if (ret)
++		return ret;
++
++	ret = regmap_update_bits(bat->regmap, MT6397_FGADC_CON0,
++				 MT6397_FGADC_CON0_MODE,
++				 FIELD_PREP(MT6397_FGADC_CON0_MODE,
++					    MT6397_FGADC_CON0_MODE_ON));
++	if (ret)
++		return ret;
++
++	return mt6397_battery_reset_car(bat);
++}
++
++static int mt6397_battery_read_hw_ocv(struct mt6397_battery *bat, int *mv)
++{
++	unsigned int reg;
++	int ret;
++
++	ret = regmap_read(bat->regmap, MT6397_AUXADC_ADC20, &reg);
++	if (ret)
++		return ret;
++
++	*mv = FIELD_GET(MT6397_AUXADC_ADC20_VAL, reg) * MT6397_AUXADC_VBAT_DIVIDER *
++	      MT6397_AUXADC_FULL_SCALE_MV / MT6397_AUXADC_PRECISION +
++	      MT6397_BAT_HW_OCV_TUNE_MV;
++
++	return 0;
++}
++
++static int mt6397_battery_rtc_get_soc(struct mt6397_battery *bat)
++{
++	unsigned int reg;
++
++	if (regmap_read(bat->regmap, MT6397_RTC_AL_HOU, &reg))
++		return 0;
++
++	return FIELD_GET(MT6397_RTC_AL_HOU_SOC, reg);
++}
++
++static void mt6397_battery_rtc_set_soc(struct mt6397_battery *bat, int soc)
++{
++	unsigned int reg;
++	int ret;
++
++	soc = clamp(soc, 0, 100);
++
++	ret = regmap_read(bat->regmap, MT6397_RTC_AL_HOU, &reg);
++	if (ret || FIELD_GET(MT6397_RTC_AL_HOU_SOC, reg) == soc)
++		return;
++
++	/*
++	 * rtc-mt6397 masks the alarm hour to its low 5 bits on write, so this
++	 * field survives alarms being set; the two drivers can still interleave
++	 * a write and a trigger, which is harmless because a trigger commits
++	 * whatever is pending and both sides wait for it.
++	 */
++	ret = regmap_update_bits(bat->regmap, MT6397_RTC_AL_HOU,
++				 MT6397_RTC_AL_HOU_SOC,
++				 FIELD_PREP(MT6397_RTC_AL_HOU_SOC, soc));
++	if (ret)
++		return;
++
++	ret = regmap_write(bat->regmap, MT6397_RTC_WRTGR, 1);
++	if (ret)
++		return;
++
++	regmap_read_poll_timeout(bat->regmap, MT6397_RTC_BBPU, reg,
++				 !(reg & MT6397_RTC_BBPU_CBUSY),
++				 100, MT6397_RTC_TIMEOUT_US);
++}
++
++/* ------------------------------------------------------------------------ */
++/* Tables                                                                   */
++
++/*
++ * The profiles are ordered by falling voltage. Given a voltage, interpolate
++ * the other column; beyond either end return that end's value, which for the
++ * OCV tables is 0 and 100 % depth of discharge, and for the resistance tables
++ * the end resistance, exactly as the vendor's lookups do.
++ */
++static int mt6397_bat_x_by_mv(const struct mt6397_bat_point *pts, int n, int mv)
++{
++	int i;
++
++	if (mv > pts[0].mv)
++		return pts[0].x;
++	if (mv < pts[n - 1].mv)
++		return pts[n - 1].x;
++
++	for (i = 0; i < n - 1; i++) {
++		if (mv <= pts[i].mv && mv >= pts[i + 1].mv) {
++			if (pts[i].mv == pts[i + 1].mv)
++				return pts[i].x;
++			return pts[i].x + (pts[i].mv - mv) *
++			       (pts[i + 1].x - pts[i].x) /
++			       (pts[i].mv - pts[i + 1].mv);
++		}
++	}
++
++	return pts[n - 1].x;
++}
++
++static int mt6397_bat_lerp(int lo, int hi, int t, int t_lo, int t_hi)
++{
++	if (t_hi == t_lo)
++		return lo;
++	return lo + (t - t_lo) * (hi - lo) / (t_hi - t_lo);
++}
++
++/* Pick the two profiles bracketing a temperature, clamping to the ends. */
++static void mt6397_bat_bracket(struct mt6397_battery *bat, int *temp_c,
++			       int *lo, int *hi)
++{
++	int i;
++
++	if (*temp_c <= bat->prof[0].temp_c) {
++		*temp_c = bat->prof[0].temp_c;
++		*lo = 0;
++		*hi = bat->nprof > 1 ? 1 : 0;
++		return;
++	}
++
++	for (i = 1; i < bat->nprof; i++) {
++		if (*temp_c <= bat->prof[i].temp_c) {
++			*lo = i - 1;
++			*hi = i;
++			return;
++		}
++	}
++
++	*temp_c = bat->prof[bat->nprof - 1].temp_c;
++	*lo = bat->nprof > 1 ? bat->nprof - 2 : 0;
++	*hi = bat->nprof - 1;
++}
++
++static void mt6397_bat_construct_tables(struct mt6397_battery *bat, int temp_c)
++{
++	int lo, hi, i;
++
++	mt6397_bat_bracket(bat, &temp_c, &lo, &hi);
++
++	for (i = 0; i < bat->npts; i++) {
++		bat->ocv_t[i].x = bat->prof[hi].ocv[i].x;
++		bat->ocv_t[i].mv = mt6397_bat_lerp(bat->prof[lo].ocv[i].mv,
++						   bat->prof[hi].ocv[i].mv,
++						   temp_c, bat->prof[lo].temp_c,
++						   bat->prof[hi].temp_c);
++		bat->res_t[i].x = mt6397_bat_lerp(bat->prof[lo].res[i].x,
++						  bat->prof[hi].res[i].x,
++						  temp_c, bat->prof[lo].temp_c,
++						  bat->prof[hi].temp_c);
++		bat->res_t[i].mv = mt6397_bat_lerp(bat->prof[lo].res[i].mv,
++						   bat->prof[hi].res[i].mv,
++						   temp_c, bat->prof[lo].temp_c,
++						   bat->prof[hi].temp_c);
++	}
++}
++
++static int mt6397_bat_qmax(struct mt6397_battery *bat, int temp_c, bool hc)
++{
++	int lo, hi;
++
++	mt6397_bat_bracket(bat, &temp_c, &lo, &hi);
++
++	if (hc)
++		return mt6397_bat_lerp(bat->prof[lo].qmax_hc_mah,
++				       bat->prof[hi].qmax_hc_mah, temp_c,
++				       bat->prof[lo].temp_c, bat->prof[hi].temp_c);
++
++	return mt6397_bat_lerp(bat->prof[lo].qmax_mah, bat->prof[hi].qmax_mah,
++			       temp_c, bat->prof[lo].temp_c, bat->prof[hi].temp_c);
++}
++
++static void mt6397_bat_update_qmax(struct mt6397_battery *bat)
++{
++	bat->qmax_mah = mt6397_bat_qmax(bat, bat->temp_c, false);
++	bat->qmax_hc_mah = mt6397_bat_qmax(bat, bat->temp_c, true);
++	bat->qmax_aging_mah = bat->qmax_mah;
++}
++
++/* Capacity in % from an open-circuit voltage, at the present temperature. */
++static int mt6397_bat_cap_by_mv(struct mt6397_battery *bat, int mv)
++{
++	return 100 - mt6397_bat_x_by_mv(bat->ocv_t, bat->npts, mv);
++}
++
++/*
++ * The vendor's ZCV tables were taken under a fixed load (cv_current). With a
++ * heavier average load the pack reaches the system-off voltage sooner, so its
++ * effective Qmax is smaller: walk the table until OCV - I*R drops below the
++ * cut-off and count the steps.
++ */
++static int mt6397_bat_qmax_by_current(struct mt6397_battery *bat, int i_01ma)
++{
++	int idx, qmax = bat->qmax_hc_mah;
++
++	if (!bat->res_t[0].x || !bat->ocv_t[0].mv)
++		return qmax;
++
++	for (idx = 0; idx < bat->npts - 1; idx++) {
++		int vdrop = i_01ma * bat->res_t[idx].x / 10000;
++
++		if (bat->ocv_t[idx].mv - vdrop < MT6397_BAT_SYSTEM_OFF_MV) {
++			qmax = idx <= 1 ? bat->step_of_qmax_mah :
++					  (idx - 1) * bat->step_of_qmax_mah;
++			break;
++		}
++	}
++
++	return qmax;
++}
++
++/* ------------------------------------------------------------------------ */
++/* Measurements                                                             */
++
++/*
++ * I*R in mV for the present current at a given terminal voltage, iterating
++ * because the resistance itself is looked up by voltage. Negative while
++ * charging, so that voltage + compensation is the open-circuit voltage
++ * either way.
++ */
++static int mt6397_bat_compensate(struct mt6397_battery *bat, int mv)
++{
++	int v2 = mv, comp = 0, i;
++
++	for (i = 0; i <= MT6397_BAT_R_COMP_ITERATIONS; i++) {
++		bat->rbat_mohm = mt6397_bat_x_by_mv(bat->res_t, bat->npts, v2);
++		comp = DIV_ROUND_CLOSEST(bat->cur_01ma *
++					 (bat->rbat_mohm + (int)bat->sense_mohm),
++					 10000);
++		if (bat->charging)
++			comp = -comp;
++		v2 = mv + comp;
++	}
++
++	bat->comp_mv = comp;
++	return comp;
++}
++
++static int mt6397_bat_read_temp(struct mt6397_battery *bat, int *temp_c)
++{
++	s64 r, r_tmp, crit;
++	int mv, i, ret;
++
++	if (!bat->ntc)
++		return -ENODEV;
++
++	ret = iio_read_channel_processed(bat->ntc, &mv);
++	if (ret < 0)
++		return ret;
++
++	/*
++	 * The NTC's ground return is the sense resistor's far side, so the
++	 * voltage across it shifts the reading by I*R_sense.
++	 */
++	if (bat->charging)
++		mv -= bat->cur_01ma / 10 * (int)bat->sense_mohm / 1000;
++	else
++		mv += bat->cur_01ma / 10 * (int)bat->sense_mohm / 1000;
++
++	crit = (s64)bat->ntc_tbl[0].ohm * bat->ntc_pullup_mv;
++	crit = div_s64(crit, bat->ntc_tbl[0].ohm + bat->ntc_pullup_mv);
++	if (mv >= crit) {
++		r_tmp = bat->ntc_tbl[0].ohm;
++	} else {
++		r_tmp = (s64)bat->ntc_pullup_ohm * mv;
++		r_tmp = div_s64(r_tmp, (int)bat->ntc_pullup_mv - mv);
++	}
++	r = r_tmp * bat->ntc_pulldown_ohm;
++	r = div_s64(r, abs((s64)bat->ntc_pulldown_ohm - r_tmp));
++
++	if (r >= bat->ntc_tbl[0].ohm) {
++		*temp_c = bat->ntc_tbl[0].temp_c;
++	} else if (r <= bat->ntc_tbl[bat->nntc - 1].ohm) {
++		*temp_c = bat->ntc_tbl[bat->nntc - 1].temp_c;
++	} else {
++		for (i = 1; i < bat->nntc; i++) {
++			if (r >= bat->ntc_tbl[i].ohm) {
++				s64 r1 = bat->ntc_tbl[i - 1].ohm, r2 = bat->ntc_tbl[i].ohm;
++				int t1 = bat->ntc_tbl[i - 1].temp_c, t2 = bat->ntc_tbl[i].temp_c;
++
++				*temp_c = div_s64((r - r2) * t1 + (r1 - r) * t2,
++						  (s32)(r1 - r2));
++				break;
++			}
++		}
++	}
++
++	return 0;
++}
++
++static void mt6397_bat_update_temp(struct mt6397_battery *bat)
++{
++	int temp_c, avg, i;
++
++	if (mt6397_bat_read_temp(bat, &temp_c))
++		temp_c = bat->temp_c;
++	bat->temp_c = temp_c;
++
++	if (!bat->temp_init) {
++		for (i = 0; i < MT6397_BAT_TEMP_AVG_SIZE; i++)
++			bat->temp_buf[i] = temp_c;
++		bat->temp_sum = temp_c * MT6397_BAT_TEMP_AVG_SIZE;
++		bat->temp_last_avg = temp_c;
++		bat->temp_init = true;
++		mt6397_bat_construct_tables(bat, temp_c);
++		mt6397_bat_update_qmax(bat);
++	}
++
++	bat->temp_sum -= bat->temp_buf[bat->temp_idx];
++	bat->temp_sum += temp_c;
++	bat->temp_buf[bat->temp_idx] = temp_c;
++	avg = bat->temp_sum / MT6397_BAT_TEMP_AVG_SIZE;
++	bat->temp_idx = (bat->temp_idx + 1) % MT6397_BAT_TEMP_AVG_SIZE;
++
++	if (avg != bat->temp_last_avg) {
++		mt6397_bat_construct_tables(bat, temp_c);
++		mt6397_bat_update_qmax(bat);
++		bat->temp_last_avg = avg;
++	}
++}
++
++static int mt6397_bat_read_vi(struct mt6397_battery *bat)
++{
++	int mv, ua, ret;
++
++	ret = iio_read_channel_processed(bat->vbat, &mv);
++	if (ret < 0)
++		return ret;
++
++	ret = mt6397_battery_read_current(bat, &ua);
++	if (ret)
++		return ret;
++
++	bat->vbat_mv = mv;
++	bat->charging = ua > 0;
++	bat->cur_01ma = abs(ua) / 100;
++
++	return 0;
++}
++
++static void mt6397_bat_update_current_factor(struct mt6397_battery *bat)
++{
++	int i, avg;
++
++	if (bat->charging) {
++		bat->cur_init = false;
++		bat->cur_factor = 100;
++		return;
++	}
++
++	if (!bat->cur_init) {
++		for (i = 0; i < MT6397_BAT_TEMP_AVG_SIZE; i++)
++			bat->cur_buf[i] = bat->cur_01ma;
++		bat->cur_sum = bat->cur_01ma * MT6397_BAT_TEMP_AVG_SIZE;
++		bat->cur_init = true;
++	}
++
++	bat->cur_sum -= bat->cur_buf[bat->cur_idx];
++	bat->cur_sum += bat->cur_01ma;
++	bat->cur_buf[bat->cur_idx] = bat->cur_01ma;
++	avg = bat->cur_sum / MT6397_BAT_TEMP_AVG_SIZE;
++	bat->cur_idx = (bat->cur_idx + 1) % MT6397_BAT_TEMP_AVG_SIZE;
++
++	bat->cur_factor = bat->cv_current_01ma ?
++			  avg * 100 / bat->cv_current_01ma : 100;
++}
++
++/* ------------------------------------------------------------------------ */
++/* The gauge                                                                */
++
++static int mt6397_bat_dod1(struct mt6397_battery *bat)
++{
++	int dod1;
++
++	bat->dod0 = clamp(bat->dod0, 0, 100);
++	dod1 = bat->dod0 - (int)div_s64((s64)bat->car_uah * 100,
++					(s64)bat->qmax_aging_mah * 1000);
++
++	return clamp(dod1, 0, 100);
++}
++
++/* Scale a depth of discharge by how much load has shrunk the usable Qmax. */
++static int mt6397_bat_transform_dod(struct mt6397_battery *bat, int d)
++{
++	int c_0ma = bat->qmax_mah, c_load;
++
++	if (!bat->charging && bat->cur_factor > 100) {
++		int i_avg = bat->cur_factor * (bat->cv_current_01ma / 100);
++
++		c_load = min(bat->qmax_hc_mah,
++			     mt6397_bat_qmax_by_current(bat, i_avg));
++	} else {
++		c_load = bat->qmax_hc_mah;
++	}
++
++	if (c_0ma > c_load && c_load)
++		d += (c_0ma - c_load) * d / c_load;
++
++	return min(d, 100);
++}
++
++static void mt6397_bat_meter_run(struct mt6397_battery *bat)
++{
++	int i, zcv, offset;
++
++	mt6397_bat_update_temp(bat);
++
++	if (mt6397_bat_read_vi(bat))
++		return;
++
++	zcv = bat->vbat_mv + mt6397_bat_compensate(bat, bat->vbat_mv);
++
++	if (bat->ocv2cv)
++		mt6397_bat_update_current_factor(bat);
++
++	if (mt6397_battery_read_car(bat, &bat->car_uah))
++		return;
++
++	/* The vendor's sliding average of the compensated voltage. */
++	if (!bat->vavg_mv) {
++		for (i = 0; i < MT6397_BAT_VBAT_AVG_SIZE; i++)
++			bat->vavg_buf[i] = zcv;
++		bat->vavg_sum = zcv * MT6397_BAT_VBAT_AVG_SIZE;
++		bat->vavg_mv = zcv;
++	}
++	offset = abs(zcv - bat->vavg_mv);
++	if (offset <= MT6397_BAT_MIN_ERROR_OFFSET_MV) {
++		bat->vavg_sum -= bat->vavg_buf[bat->vavg_idx];
++		bat->vavg_sum += zcv;
++		bat->vavg_buf[bat->vavg_idx] = zcv;
++		bat->vavg_mv = bat->vavg_sum / MT6397_BAT_VBAT_AVG_SIZE;
++		bat->vavg_idx = (bat->vavg_idx + 1) % MT6397_BAT_VBAT_AVG_SIZE;
++	}
++	bat->zcv_mv = bat->vavg_mv;
++
++	bat->cap_by_v = mt6397_bat_cap_by_mv(bat, bat->zcv_mv);
++
++	bat->dod1 = mt6397_bat_dod1(bat);
++	bat->cap_by_c = max(100 - bat->dod1, 1);
++
++	if (bat->ocv2cv)
++		bat->soc = 100 - mt6397_bat_transform_dod(bat, 100 - bat->cap_by_c);
++	else
++		bat->soc = bat->cap_by_c;
++}
++
++/* Re-anchor the coulomb counter at the displayed percentage. */
++static void mt6397_bat_meter_reset(struct mt6397_battery *bat, int ui_soc)
++{
++	if (!mt6397_battery_reset_car(bat))
++		bat->car_uah = 0;
++	bat->dod0 = 100 - ui_soc;
++	bat->dod1 = bat->dod0;
++}
++
++static void mt6397_bat_read_charger(struct mt6397_battery *bat)
++{
++	union power_supply_propval val;
++	bool was_full = bat->full;
++
++	bat->charger_online = false;
++	bat->full = false;
++	bat->status = POWER_SUPPLY_STATUS_DISCHARGING;
++
++	if (!bat->charger)
++		return;
++
++	if (!power_supply_get_property(bat->charger, POWER_SUPPLY_PROP_ONLINE, &val))
++		bat->charger_online = val.intval;
++
++	if (!bat->charger_online) {
++		bat->reached_full = false;
++		return;
++	}
++
++	if (!power_supply_get_property(bat->charger, POWER_SUPPLY_PROP_STATUS, &val)) {
++		bat->status = val.intval;
++		bat->full = val.intval == POWER_SUPPLY_STATUS_FULL;
++	} else {
++		bat->status = POWER_SUPPLY_STATUS_CHARGING;
++	}
++
++	/* A pack that already reads 100 % when the cable goes in is full. */
++	if (bat->ui_soc == 100)
++		bat->full = true;
++
++	if (bat->full && !was_full)
++		bat->full_reset_pending = true;
++}
++
++/*
++ * The displayed percentage. It only ever moves one point at a time towards
++ * the gauge's value, sits at 99 % until the charger says full, ramps to 100 %
++ * once it does and re-anchors the counter there, and never shows 0 % while
++ * the pack is above the system-off voltage.
++ */
++static void mt6397_bat_update_ui(struct mt6397_battery *bat)
++{
++	bool reset = false;
++
++	if (bat->ui_soc < 0)
++		bat->ui_soc = bat->soc;
++
++	if (bat->charger_online) {
++		if (bat->vbat_mv <= MT6397_BAT_SYSTEM_OFF_MV) {
++			if (bat->ui_soc > 0)
++				bat->ui_soc--;
++			reset = true;
++		} else if (bat->full) {
++			if (bat->ui_soc >= 100) {
++				bat->ui_soc = 100;
++				bat->reached_full = true;
++				if (bat->full_reset_pending) {
++					reset = true;
++					bat->full_reset_pending = false;
++				}
++			} else {
++				bat->full_counter += MT6397_BAT_PERIOD_S;
++				if (bat->full_counter >= MT6397_BAT_FULL_TRACK_S) {
++					bat->full_counter = 0;
++					bat->ui_soc++;
++					reset = true;
++				}
++			}
++		} else {
++			/*
++			 * Once the pack has been reported full, the charger
++			 * cycling back into a top-up charge is not a reason to
++			 * show 99 %: the vendor keeps 100 % through its
++			 * recharging state, and so does this.
++			 */
++			if (bat->ui_soc >= 99 && bat->charging && !bat->reached_full)
++				bat->ui_soc = 99;
++			bat->full_counter = 0;
++		}
++	} else if (bat->vbat_mv <= MT6397_BAT_SYSTEM_OFF_MV) {
++		if (bat->ui_soc > 0)
++			bat->ui_soc--;
++		reset = true;
++	}
++
++	if (reset) {
++		mt6397_bat_meter_reset(bat, bat->ui_soc);
++	} else if (!bat->full) {
++		if (bat->ui_soc > bat->soc && bat->ui_soc != 1) {
++			bat->sync_counter += MT6397_BAT_PERIOD_S;
++			if (bat->refresh_ui ||
++			    bat->sync_counter >= MT6397_BAT_SYNC_TO_REAL_S) {
++				bat->ui_soc--;
++				bat->sync_counter = 0;
++				bat->refresh_ui = false;
++			}
++		} else {
++			bat->sync_counter = 0;
++			if (bat->charger_online && bat->ui_soc < bat->soc) {
++				if (bat->soc - bat->ui_soc > 1)
++					bat->ui_soc++;
++				else
++					bat->ui_soc = bat->soc;
++			}
++		}
++
++		if (bat->ui_soc == 100 && !bat->reached_full)
++			bat->ui_soc = 99;
++		if (bat->ui_soc <= 0)
++			bat->ui_soc = 1;
++	}
++
++	mt6397_battery_rtc_set_soc(bat, max(bat->cap_by_c, 1));
++}
++
++static void mt6397_bat_work(struct work_struct *work)
++{
++	struct mt6397_battery *bat = container_of(to_delayed_work(work),
++						  struct mt6397_battery, work);
++	int ui_before, status_before;
++
++	scoped_guard(mutex, &bat->lock) {
++		ui_before = bat->ui_soc;
++		status_before = bat->status;
++
++		mt6397_bat_read_charger(bat);
++		mt6397_bat_meter_run(bat);
++		mt6397_bat_update_ui(bat);
++
++		dev_dbg(bat->dev,
++			"t=%d v=%d zcv=%d i=%s%d.%d car=%d rbat=%d dod0=%d dod1=%d capv=%d capc=%d soc=%d ui=%d qmax=%d/%d f=%d\n",
++			bat->temp_c, bat->vbat_mv, bat->zcv_mv,
++			bat->charging ? "+" : "-", bat->cur_01ma / 10,
++			bat->cur_01ma % 10, bat->car_uah, bat->rbat_mohm,
++			bat->dod0, bat->dod1, bat->cap_by_v, bat->cap_by_c,
++			bat->soc, bat->ui_soc, bat->qmax_mah, bat->qmax_hc_mah,
++			bat->cur_factor);
++	}
++
++	if (ui_before != bat->ui_soc || status_before != bat->status)
++		power_supply_changed(bat->psy);
++
++	schedule_delayed_work(&bat->work, MT6397_BAT_PERIOD_S * HZ);
++}
++
++/*
++ * Boot: seed the depth of discharge. Three candidates, in the vendor's order
++ * of trust -- the hardware-latched power-on OCV, the live voltage compensated
++ * for load (which wins if the two disagree by more than 5 %), and what the
++ * previous boot left in the RTC (which wins if it is within tolerance of
++ * either, so a reboot does not jump).
++ */
++static void mt6397_bat_init_soc(struct mt6397_battery *bat)
++{
++	int hw_cap, sw_cap, cap, rtc;
++
++	mt6397_bat_update_temp(bat);
++	mt6397_bat_read_charger(bat);
++
++	if (mt6397_bat_read_vi(bat)) {
++		bat->vbat_mv = 3800;
++		bat->cur_01ma = 0;
++	}
++	bat->sw_ocv_mv = bat->vbat_mv + mt6397_bat_compensate(bat, bat->vbat_mv);
++	sw_cap = mt6397_bat_cap_by_mv(bat, bat->sw_ocv_mv);
++
++	if (mt6397_battery_read_hw_ocv(bat, &bat->hw_ocv_mv))
++		bat->hw_ocv_mv = bat->sw_ocv_mv;
++	hw_cap = mt6397_bat_cap_by_mv(bat, bat->hw_ocv_mv);
++
++	cap = hw_cap;
++	if (abs(sw_cap - hw_cap) > 5)
++		cap = sw_cap;
++
++	rtc = mt6397_battery_rtc_get_soc(bat);
++	bat->rtc_soc = rtc;
++	if (rtc > 1 && rtc >= sw_cap + 15) {
++		rtc--;
++		mt6397_battery_rtc_set_soc(bat, rtc);
++	}
++	if (bat->charger_online && rtc > 1 && sw_cap - rtc > 10) {
++		rtc++;
++		mt6397_battery_rtc_set_soc(bat, rtc);
++	}
++
++	if (rtc &&
++	    (abs(rtc - cap) < MT6397_BAT_POWERON_DELTA_CAP ||
++	     abs(rtc - sw_cap) < MT6397_BAT_POWERON_DELTA_CAP) &&
++	    (cap > bat->poweron_low_cap_tol || bat->charger_online))
++		cap = rtc;
++
++	if (!cap && bat->charger_online)
++		cap = 1;
++
++	dev_info(bat->dev,
++		 "hw_ocv=%d mV (%d%%) sw_ocv=%d mV (%d%%) rtc=%d%% -> %d%%, t=%d C, qmax=%d mAh\n",
++		 bat->hw_ocv_mv, hw_cap, bat->sw_ocv_mv, sw_cap, bat->rtc_soc,
++		 cap, bat->temp_c, bat->qmax_mah);
++
++	bat->dod0 = 100 - cap;
++	bat->dod1 = bat->dod0;
++	bat->cap_by_c = cap;
++	bat->cap_by_v = cap;
++	bat->soc = cap;
++	bat->ui_soc = -1;
++	bat->cur_factor = 100;
++}
++
++/* ------------------------------------------------------------------------ */
++/* power_supply                                                             */
++
++static const enum power_supply_property mt6397_battery_properties[] = {
++	POWER_SUPPLY_PROP_STATUS,
++	POWER_SUPPLY_PROP_PRESENT,
++	POWER_SUPPLY_PROP_TECHNOLOGY,
++	POWER_SUPPLY_PROP_VOLTAGE_NOW,
++	POWER_SUPPLY_PROP_VOLTAGE_OCV,
++	POWER_SUPPLY_PROP_CURRENT_NOW,
++	POWER_SUPPLY_PROP_CAPACITY,
++	POWER_SUPPLY_PROP_CHARGE_COUNTER,
++	POWER_SUPPLY_PROP_CHARGE_FULL,
++	POWER_SUPPLY_PROP_CHARGE_FULL_DESIGN,
++	POWER_SUPPLY_PROP_CHARGE_NOW,
++	POWER_SUPPLY_PROP_TEMP,
++	POWER_SUPPLY_PROP_SCOPE,
++};
++
++static int mt6397_battery_get_property(struct power_supply *psy,
++				       enum power_supply_property psp,
++				       union power_supply_propval *val)
++{
++	struct mt6397_battery *bat = power_supply_get_drvdata(psy);
++	int ret = 0;
++
++	guard(mutex)(&bat->lock);
++
++	switch (psp) {
++	case POWER_SUPPLY_PROP_STATUS:
++		val->intval = bat->status;
++		break;
++	case POWER_SUPPLY_PROP_PRESENT:
++		val->intval = 1;
++		break;
++	case POWER_SUPPLY_PROP_TECHNOLOGY:
++		val->intval = POWER_SUPPLY_TECHNOLOGY_LION;
++		break;
++	case POWER_SUPPLY_PROP_VOLTAGE_NOW:
++		val->intval = bat->vbat_mv * 1000;
++		break;
++	case POWER_SUPPLY_PROP_VOLTAGE_OCV:
++		val->intval = bat->zcv_mv * 1000;
++		break;
++	case POWER_SUPPLY_PROP_CURRENT_NOW: {
++		int ua;
++
++		ret = mt6397_battery_read_current(bat, &ua);
++		val->intval = ua;
++		break;
++	}
++	case POWER_SUPPLY_PROP_CAPACITY:
++		val->intval = bat->ui_soc < 0 ? bat->soc : bat->ui_soc;
++		break;
++	case POWER_SUPPLY_PROP_CHARGE_COUNTER:
++		ret = mt6397_battery_read_car(bat, &val->intval);
++		break;
++	case POWER_SUPPLY_PROP_CHARGE_FULL:
++		val->intval = bat->qmax_aging_mah * 1000;
++		break;
++	case POWER_SUPPLY_PROP_CHARGE_FULL_DESIGN:
++		if (bat->info && bat->info->charge_full_design_uah > 0)
++			val->intval = bat->info->charge_full_design_uah;
++		else
++			val->intval = mt6397_bat_qmax(bat, 25, false) * 1000;
++		break;
++	case POWER_SUPPLY_PROP_CHARGE_NOW:
++		val->intval = bat->qmax_aging_mah * 1000 / 100 * bat->cap_by_c;
++		break;
++	case POWER_SUPPLY_PROP_TEMP:
++		val->intval = bat->temp_c * 10;
++		break;
++	case POWER_SUPPLY_PROP_SCOPE:
++		val->intval = POWER_SUPPLY_SCOPE_SYSTEM;
++		break;
++	default:
++		ret = -EINVAL;
++	}
++
++	return ret;
++}
++
++static void mt6397_battery_external_power_changed(struct power_supply *psy)
++{
++	struct mt6397_battery *bat = power_supply_get_drvdata(psy);
++
++	/* re-run now so a plug or unplug is reflected without waiting a period */
++	mod_delayed_work(system_wq, &bat->work, HZ);
++}
++
++static const struct power_supply_desc mt6397_battery_desc = {
++	.name			= "mt6397-battery",
++	.type			= POWER_SUPPLY_TYPE_BATTERY,
++	.get_property		= mt6397_battery_get_property,
++	.external_power_changed	= mt6397_battery_external_power_changed,
++	.properties		= mt6397_battery_properties,
++	.num_properties		= ARRAY_SIZE(mt6397_battery_properties),
++};
++
++/* ------------------------------------------------------------------------ */
++/* Device tree                                                              */
++
++static int mt6397_bat_read_pairs(struct device *dev, const char *name,
++				 s32 **out, int *count)
++{
++	int n, ret;
++	u32 *buf;
++
++	n = device_property_count_u32(dev, name);
++	if (n < 0)
++		return n;
++	if (n < 4 || n & 1)
++		return dev_err_probe(dev, -EINVAL, "%s: needs value pairs\n", name);
++
++	buf = devm_kcalloc(dev, n, sizeof(*buf), GFP_KERNEL);
++	if (!buf)
++		return -ENOMEM;
++
++	ret = device_property_read_u32_array(dev, name, buf, n);
++	if (ret)
++		return ret;
++
++	*out = (s32 *)buf;
++	*count = n / 2;
++	return 0;
++}
++
++static int mt6397_bat_parse_dt(struct mt6397_battery *bat)
++{
++	struct device *dev = bat->dev;
++	u32 temps[MT6397_BAT_MAX_PROFILES], qmax[MT6397_BAT_MAX_PROFILES];
++	u32 qmax_hc[MT6397_BAT_MAX_PROFILES], v;
++	char name[40];
++	s32 *pairs;
++	int n, i, ret;
++
++	ret = device_property_read_u32(dev, "mediatek,sense-resistor-milli-ohms",
++				       &bat->sense_mohm);
++	if (ret || !bat->sense_mohm)
++		return dev_err_probe(dev, ret ?: -EINVAL,
++				     "missing mediatek,sense-resistor-milli-ohms\n");
++
++	bat->car_tune = 100;
++	device_property_read_u32(dev, "mediatek,car-tune-value", &bat->car_tune);
++
++	bat->ocv2cv = device_property_read_bool(dev, "mediatek,ocv2cv-transform");
++
++	v = 54;
++	device_property_read_u32(dev, "mediatek,step-of-qmax-milliamp-hours", &v);
++	bat->step_of_qmax_mah = v;
++
++	v = 600000;
++	device_property_read_u32(dev, "mediatek,cv-current-microamp", &v);
++	bat->cv_current_01ma = v / 100;
++
++	v = 0;
++	device_property_read_u32(dev, "mediatek,poweron-low-capacity-tolerance", &v);
++	bat->poweron_low_cap_tol = v;
++
++	/* the NTC */
++	if (!device_property_read_u32(dev, "mediatek,ntc-pull-up-ohms",
++				      &bat->ntc_pullup_ohm)) {
++		bat->ntc_pullup_mv = 1200;
++		device_property_read_u32(dev, "mediatek,ntc-pull-up-millivolt",
++					 &bat->ntc_pullup_mv);
++		bat->ntc_pulldown_ohm = 100000000;
++		device_property_read_u32(dev, "mediatek,ntc-pull-down-ohms",
++					 &bat->ntc_pulldown_ohm);
++
++		ret = mt6397_bat_read_pairs(dev, "mediatek,ntc-table", &pairs, &n);
++		if (ret)
++			return ret;
++		bat->ntc_tbl = (struct mt6397_bat_ntc_point *)pairs;
++		bat->nntc = n;
++	}
++
++	/* the per-temperature profiles */
++	n = device_property_count_u32(dev, "mediatek,profile-temperatures");
++	if (n < 1 || n > MT6397_BAT_MAX_PROFILES)
++		return dev_err_probe(dev, -EINVAL,
++				     "mediatek,profile-temperatures: 1..%d entries\n",
++				     MT6397_BAT_MAX_PROFILES);
++	bat->nprof = n;
++
++	ret = device_property_read_u32_array(dev, "mediatek,profile-temperatures",
++					     temps, n);
++	if (ret)
++		return ret;
++	ret = device_property_read_u32_array(dev, "mediatek,qmax-milliamp-hours",
++					     qmax, n);
++	if (ret)
++		return dev_err_probe(dev, ret, "mediatek,qmax-milliamp-hours\n");
++	ret = device_property_read_u32_array(dev,
++					     "mediatek,qmax-high-current-milliamp-hours",
++					     qmax_hc, n);
++	if (ret)
++		memcpy(qmax_hc, qmax, sizeof(qmax));
++
++	for (i = 0; i < n; i++) {
++		int npts;
++
++		bat->prof[i].temp_c = (s32)temps[i];
++		bat->prof[i].qmax_mah = qmax[i];
++		bat->prof[i].qmax_hc_mah = qmax_hc[i];
++
++		if (i && bat->prof[i].temp_c <= bat->prof[i - 1].temp_c)
++			return dev_err_probe(dev, -EINVAL,
++					     "profile temperatures must ascend\n");
++
++		snprintf(name, sizeof(name), "mediatek,ocv-profile-%d", i);
++		ret = mt6397_bat_read_pairs(dev, name, &pairs, &npts);
++		if (ret)
++			return dev_err_probe(dev, ret, "%s\n", name);
++		bat->prof[i].ocv = (struct mt6397_bat_point *)pairs;
++		if (!i)
++			bat->npts = npts;
++		else if (npts != bat->npts)
++			return dev_err_probe(dev, -EINVAL,
++					     "%s: %d points, expected %d\n",
++					     name, npts, bat->npts);
++
++		snprintf(name, sizeof(name), "mediatek,resistance-profile-%d", i);
++		ret = mt6397_bat_read_pairs(dev, name, &pairs, &npts);
++		if (ret)
++			return dev_err_probe(dev, ret, "%s\n", name);
++		bat->prof[i].res = (struct mt6397_bat_point *)pairs;
++		if (npts != bat->npts)
++			return dev_err_probe(dev, -EINVAL,
++					     "%s: %d points, expected %d\n",
++					     name, npts, bat->npts);
++	}
++
++	bat->ocv_t = devm_kcalloc(dev, bat->npts, sizeof(*bat->ocv_t), GFP_KERNEL);
++	bat->res_t = devm_kcalloc(dev, bat->npts, sizeof(*bat->res_t), GFP_KERNEL);
++	if (!bat->ocv_t || !bat->res_t)
++		return -ENOMEM;
++
++	return 0;
++}
++
++static int mt6397_battery_probe(struct platform_device *pdev)
++{
++	struct power_supply_config psy_cfg = {};
++	struct device *dev = &pdev->dev;
++	struct mt6397_chip *chip = dev_get_drvdata(dev->parent);
++	struct mt6397_battery *bat;
++	int ret;
++
++	bat = devm_kzalloc(dev, sizeof(*bat), GFP_KERNEL);
++	if (!bat)
++		return -ENOMEM;
++
++	bat->dev = dev;
++	bat->regmap = chip->regmap;
++	bat->temp_c = 25;
++
++	ret = devm_mutex_init(dev, &bat->lock);
++	if (ret)
++		return ret;
++
++	ret = mt6397_bat_parse_dt(bat);
++	if (ret)
++		return ret;
++
++	bat->vbat = devm_iio_channel_get(dev, "voltage");
++	if (IS_ERR(bat->vbat))
++		return dev_err_probe(dev, PTR_ERR(bat->vbat),
++				     "failed to get the voltage channel\n");
++
++	if (bat->ntc_tbl) {
++		bat->ntc = devm_iio_channel_get(dev, "temperature");
++		if (IS_ERR(bat->ntc))
++			return dev_err_probe(dev, PTR_ERR(bat->ntc),
++					     "failed to get the temperature channel\n");
++	}
++
++	/* the charger tells us whether it is there and whether it is done */
++	bat->charger = devm_power_supply_get_by_reference(dev, "power-supplies");
++	if (IS_ERR(bat->charger)) {
++		if (PTR_ERR(bat->charger) == -EPROBE_DEFER)
++			return -EPROBE_DEFER;
++		bat->charger = NULL;
++	}
++
++	ret = mt6397_battery_fg_enable(bat);
++	if (ret)
++		return dev_err_probe(dev, ret, "failed to start the fuel gauge\n");
++
++	psy_cfg.drv_data = bat;
++	psy_cfg.fwnode = dev_fwnode(dev);
++	bat->psy = devm_power_supply_register(dev, &mt6397_battery_desc, &psy_cfg);
++	if (IS_ERR(bat->psy))
++		return dev_err_probe(dev, PTR_ERR(bat->psy),
++				     "failed to register the power supply\n");
++
++	if (power_supply_get_battery_info(bat->psy, &bat->info))
++		bat->info = NULL;
++
++	ret = devm_delayed_work_autocancel(dev, &bat->work, mt6397_bat_work);
++	if (ret)
++		return ret;
++
++	scoped_guard(mutex, &bat->lock)
++		mt6397_bat_init_soc(bat);
++
++	platform_set_drvdata(pdev, bat);
++	schedule_delayed_work(&bat->work, 0);
++
++	return 0;
++}
++
++static int mt6397_battery_suspend(struct device *dev)
++{
++	struct mt6397_battery *bat = dev_get_drvdata(dev);
++
++	cancel_delayed_work_sync(&bat->work);
++	return 0;
++}
++
++static int mt6397_battery_resume(struct device *dev)
++{
++	struct mt6397_battery *bat = dev_get_drvdata(dev);
++
++	/*
++	 * The accumulator counted through the sleep; the vendor lets the
++	 * display drop straight away after a resume rather than waiting out
++	 * the 30 s sync period.
++	 */
++	scoped_guard(mutex, &bat->lock)
++		bat->refresh_ui = true;
++	schedule_delayed_work(&bat->work, 0);
++	return 0;
++}
++
++static DEFINE_SIMPLE_DEV_PM_OPS(mt6397_battery_pm_ops,
++				mt6397_battery_suspend, mt6397_battery_resume);
++
++static const struct of_device_id mt6397_battery_of_match[] = {
++	{ .compatible = "mediatek,mt6397-battery" },
++	{ }
++};
++MODULE_DEVICE_TABLE(of, mt6397_battery_of_match);
++
++static struct platform_driver mt6397_battery_driver = {
++	.driver = {
++		.name = "mt6397-battery",
++		.of_match_table = mt6397_battery_of_match,
++		.pm = pm_sleep_ptr(&mt6397_battery_pm_ops),
++	},
++	.probe = mt6397_battery_probe,
++};
++module_platform_driver(mt6397_battery_driver);
++
++MODULE_AUTHOR("Ryan Brue <ryanbrue.dev@gmail.com>");
++MODULE_DESCRIPTION("MediaTek MT6397 PMIC fuel gauge battery driver");
++MODULE_LICENSE("GPL");
