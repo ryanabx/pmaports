@@ -3,7 +3,7 @@ maintainer="Ryan Brue <ryanbrue.dev@gmail.com>"
 pkgname=device-amazon-suez-mainline
 pkgdesc="Amazon Fire HD 10 (2017) (mainline)"
 pkgver=1
-pkgrel=42
+pkgrel=43
 url="https://postmarketos.org"
 license="MIT"
 arch="aarch64"
@@ -19,6 +19,7 @@ depends="
 "
 makedepends="devicepkg-dev"
 source="
+	50-powervr-vulkan.conf
 	61-powervr-mutter-ignore.rules
 	99-suez-charge-voltage.rules
 	amazon-suez-gpu.service
@@ -102,13 +103,20 @@ package() {
 	install -Dm644 "$srcdir"/61-powervr-mutter-ignore.rules \
 		"$pkgdir"/usr/lib/udev/rules.d/61-powervr-mutter-ignore.rules
 
-	# Bind the GPU once boot has settled -- the unit's comments explain why
-	# the late timing is load-bearing (early binding wedges the SoC).
+	# Bind the GPU after multi-user.target and before the display manager,
+	# so the compositor finds the render node and composites on it. The
+	# unit's comments explain why the timing is load-bearing in both
+	# directions (sysinit wedges the SoC; after the shell means llvmpipe).
 	install -Dm644 "$srcdir"/amazon-suez-gpu.service \
 		"$pkgdir"/usr/lib/systemd/system/amazon-suez-gpu.service
 	install -d "$pkgdir"/usr/lib/systemd/system/graphical.target.wants
 	ln -s ../amazon-suez-gpu.service \
 		"$pkgdir"/usr/lib/systemd/system/graphical.target.wants/amazon-suez-gpu.service
+
+	# Let Mesa's PowerVR Vulkan driver accept the GX6250 in every user
+	# session; the file explains. Without it the desktop is on llvmpipe.
+	install -Dm644 "$srcdir"/50-powervr-vulkan.conf \
+		"$pkgdir"/usr/lib/environment.d/50-powervr-vulkan.conf
 
 	# SUSPEND POLICY
 	#
@@ -205,9 +213,10 @@ package() {
 }
 
 sha512sums="
+008683b77d7215f613cfcca3e18b631042cb98c8d0e2ae59498a8f87ef82a1abfe469f209b74837f3b1fb95aa7be100b9e6d86c86126c8dd71d159d960125867  50-powervr-vulkan.conf
 24175a01baf284dfbb2393745f88ec8610c0e0fc828d65b50194cbed7e0013005d6584d6412dfbcc043d3882e6a8c5dec20449e0464b1fd8ec5f532ddb25a099  61-powervr-mutter-ignore.rules
 7c0bc0904e64d096c2218264352ef0788afbebb633616c58fafbd186805a06959bf8a160ca9768a1b11b1e57d15e0886f85bdfbc44382d034e8d3984e550f829  99-suez-charge-voltage.rules
-acbd142eb5a789d740ecfffed67f65e827fadc29f47e04bf4084e97152381ffc897f6f12b62fafc28ba8e4d12cacecdcc8b4c0b421fde9ce1261cf5c4889f043  amazon-suez-gpu.service
+08b50e637f68ab450867fbc08e7e9e6a0688dd02a0e2c442bb1058dd4ddc2c868c93a6f638ca3ae613aecf832329694fbffb98dc545bd9e1cf98725601c86775  amazon-suez-gpu.service
 a1c7602bfd1eb0b431c1e96d592dfaf5da7e5498c3adfad756b6d73fe37b7889ea6c6d0fb681727796a3c95cbd247040d764ba6f477354a43cf8836887ecbedd  deviceinfo
 5bb871570c94633d5a53107bcf9e2aa1285328a16a53b80b99c41761c84eeb9ca0af2cc78f9f4ecd75fdbb350b46397b10c0a7e43e5c109213adaa4f1e551b74  kernel-cmdline.conf
 d89fa6205d2ec177514a6e47877f27c7c69745d30994e36597ac6940c114a71868940d7050ba67dc5a260dc338ca5d789c521e35c37d7f2d3645762ab02101a9  modules-initfs
