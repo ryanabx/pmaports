@@ -1,0 +1,37 @@
+[Unit]
+# Alpine's pipewire-systemd package ships pipewire-pulse.socket but NOT the
+# pipewire-pulse.service the socket triggers, so socket activation is dead on
+# arrival: the socket unit is enabled yet stays inactive (systemd will not
+# start a socket whose service cannot be loaded), and every libpulse client
+# gets "Connection refused". PipeWire itself is fine -- wpctl shows the sink
+# and source -- but GNOME Shell and the Settings sound panel reach audio
+# through libpulse, so the desktop shows NO audio devices at all.
+#
+# This is a verbatim copy of upstream PipeWire's unit, hardened to match the
+# sibling units Alpine does ship. It lives in /etc/systemd/user on purpose:
+# /usr/lib/systemd/user/pipewire-pulse.service belongs to pipewire-systemd,
+# and putting a file there would be an apk file conflict the day Alpine fixes
+# this. Drop this file once they do.
+Description=PipeWire PulseAudio
+Documentation=man:pipewire-pulse(1)
+Requires=pipewire-pulse.socket
+ConditionUser=!root
+Wants=pipewire.service pipewire-session-manager.service
+After=pipewire.service pipewire-session-manager.service
+Conflicts=pulseaudio.service
+
+[Service]
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+NoNewPrivileges=yes
+RestrictNamespaces=yes
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+Type=simple
+ExecStart=/usr/bin/pipewire-pulse
+Restart=on-failure
+Slice=session.slice
+
+[Install]
+Also=pipewire-pulse.socket
+WantedBy=default.target
