@@ -12,7 +12,7 @@ diff --git a/arch/arm64/boot/dts/mediatek/Makefile b/arch/arm64/boot/dts/mediate
 diff --git a/arch/arm64/boot/dts/mediatek/mt8173-amazon-suez.dts b/arch/arm64/boot/dts/mediatek/mt8173-amazon-suez.dts
 --- a/arch/arm64/boot/dts/mediatek/mt8173-amazon-suez.dts
 +++ b/arch/arm64/boot/dts/mediatek/mt8173-amazon-suez.dts
-@@ -0,0 +1,1573 @@
+@@ -0,0 +1,1576 @@
 +// SPDX-License-Identifier: (GPL-2.0 OR MIT)
 +/*
 + * Copyright (c) 2026 Ryan Brue <ryanbrue.dev@gmail.com>
@@ -316,6 +316,9 @@ diff --git a/arch/arm64/boot/dts/mediatek/mt8173-amazon-suez.dts b/arch/arm64/bo
 +	 */
 +	spm_suspend: spm-suspend {
 +		compatible = "mediatek,mt8173-spm-suspend";
++
++		/* SPM IRQ0, as the vendor's scpsys node has it (155..160). */
++		interrupts = <GIC_SPI 155 IRQ_TYPE_LEVEL_LOW>;
 +
 +		/* MP0_AXI_CONFIG, for ACINACTM around the WFI */
 +		mediatek,mcucfg = <&mcucfg>;

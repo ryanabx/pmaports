@@ -1,4 +1,3 @@
-diff -urN a/drivers/soc/mediatek/Kconfig b/drivers/soc/mediatek/Kconfig
 --- a/drivers/soc/mediatek/Kconfig	2026-09-01 21:47:05.259648286 -0500
 +++ b/drivers/soc/mediatek/Kconfig	2026-09-01 21:47:05.280881778 -0500
 @@ -79,6 +79,21 @@
@@ -34,7 +33,7 @@ diff -urN a/drivers/soc/mediatek/Makefile b/drivers/soc/mediatek/Makefile
 diff -urN a/drivers/soc/mediatek/mtk-spm-suspend.c b/drivers/soc/mediatek/mtk-spm-suspend.c
 --- a/drivers/soc/mediatek/mtk-spm-suspend.c	1969-12-31 18:00:00.000000000 -0600
 +++ b/drivers/soc/mediatek/mtk-spm-suspend.c
-@@ -0,0 +1,998 @@
+@@ -0,0 +1,1031 @@
 +// SPDX-License-Identifier: GPL-2.0-only
 +/*
 + * MediaTek MT8173 System Power Manager -- suspend to RAM.
@@ -84,6 +83,7 @@ diff -urN a/drivers/soc/mediatek/mtk-spm-suspend.c b/drivers/soc/mediatek/mtk-sp
 +#include <linux/clk.h>
 +#include <linux/delay.h>
 +#include <linux/dma-mapping.h>
++#include <linux/interrupt.h>
 +#include <linux/io.h>
 +#include <linux/mfd/mt6397/core.h>
 +#include <linux/mfd/mt6397/registers.h>
@@ -453,29 +453,6 @@ diff -urN a/drivers/soc/mediatek/mtk-spm-suspend.c b/drivers/soc/mediatek/mtk-sp
 +module_param(spm_flags, uint, 0644);
 +MODULE_PARM_DESC(spm_flags, "SPM PCM flags; SPM_CPU_PDN_DIS|SPM_INFRA_PDN_DIS are forced on");
 +
-+/*
-+ * A backstop wakeup from the SPM's own timer, in seconds, and DISABLED by
-+ * default. While the wake sources were unproven this defaulted to 30, so that a
-+ * suspend nothing else could end still returned; that is what made the driver
-+ * safe to iterate on. It is also a periodic wakeup, so shipping it enabled means
-+ * every real suspend ends after 30 s whether the user asked or not -- measured
-+ * on hardware as "woke by PCM_TIMER, slept 983219 ticks" (30.005 s) on a suspend
-+ * the user expected to hold.
-+ *
-+ * The wake sources are now proven, which is the condition this was waiting on:
-+ * the power key wakes the board from a real suspend-to-RAM ("woke by EINT,
-+ * raw_sta = 0x40"), and so does an RTC alarm, both through the PMIC EINT. Two
-+ * independent paths, so nothing needs a periodic timer to be rescuable.
-+ *
-+ * The vendor does arm one (SPM_PWAKE_EN, 600 s), but Android wakes periodically
-+ * for its own housekeeping and we do not; a wakeup every ten minutes would give
-+ * back much of what suspend is for. Non-zero remains one echo away for bringing
-+ * up a new wake source.
-+ */
-+static unsigned int pcm_timer_sec;
-+module_param(pcm_timer_sec, uint, 0644);
-+MODULE_PARM_DESC(pcm_timer_sec, "SPM PCM backstop wakeup in seconds, 0 to disable");
-+
 +struct mtk_spm {
 +	struct device *dev;
 +	struct regmap *spm;
@@ -620,13 +597,16 @@ diff -urN a/drivers/soc/mediatek/mtk-spm-suspend.c b/drivers/soc/mediatek/mtk-sp
 +
 +static void spm_set_wakeup_event(struct mtk_spm *s)
 +{
-+	u32 val = pcm_timer_sec ? pcm_timer_sec * 32768 : PCM_TIMER_MAX;
 +	u32 isr;
 +
-+	if (val > PCM_TIMER_MAX)
-+		val = PCM_TIMER_MAX;
-+
-+	spm_write(s, SPM_PCM_TIMER_VAL, val);
++	/*
++	 * The PCM timer is set to its maximum (~36 h), as the vendor does when
++	 * its periodic wake is disabled. It is not a usable backstop here, see
++	 * the comment above spm_report_wakeup(); the PCM watchdog is armed at
++	 * this value + 30 s in spm_kick_pcm_to_run(), which is what makes a
++	 * shorter value dangerous rather than merely useless.
++	 */
++	spm_write(s, SPM_PCM_TIMER_VAL, PCM_TIMER_MAX);
 +	spm_write(s, SPM_PCM_CON1,
 +		  spm_read(s, SPM_PCM_CON1) | CON1_CFG_KEY | CON1_PCM_TIMER_EN);
 +
@@ -686,6 +666,29 @@ diff -urN a/drivers/soc/mediatek/mtk-spm-suspend.c b/drivers/soc/mediatek/mtk-sp
 +	spm_write(s, SPM_PCM_SW_INT_CLEAR, PCM_SW_INT_ALL);
 +}
 +
++/*
++ * On the PCM timer, and why there is no module parameter for it any more.
++ *
++ * The CPU stays powered on this path (SPM_CPU_PDN_DIS) and waits in WFI with
++ * interrupts masked, so only a pending GIC interrupt can bring it back. The
++ * EINT-routed wake sources (power key, RTC alarm, charger) have their own GIC
++ * lines and work. The PCM timer does not: its expiry stops PCM_TIMER_OUT at the
++ * programmed value and sets WAKE_MISC_PCM_TIMER in the firmware's r12, and the
++ * CPU stays in WFI. Measured 2026-09-02 on amazon-suez with the timer at 30 s
++ * and an RTC alarm at 45 s: the board returned at 44 s, every time, and this
++ * function then reported "woke by PCM_TIMER, slept 30.005 s" for a wake the
++ * RTC had done. Neither requesting the SPM's own interrupt (GIC SPI 155, which
++ * is still requested because the vendor does and it costs nothing) nor
++ * unmasking WAKE_SRC_SPM_MERGE changed that. The vendor's periodic timer wake
++ * relies on the CPU being powered down and re-entering through its reset
++ * vector, which is the dormant path this driver deliberately does not take.
++ *
++ * Worse than useless: the PCM watchdog is armed at timer + 30 s in reset mode,
++ * and a suspend whose only real wake source (the RTC) was later than that never
++ * returned -- power-button recovery. So the timer is pinned at PCM_TIMER_MAX
++ * and tests must arm an RTC alarm. The PCM_TIMER line below is kept only so a
++ * future firmware that does deliver the event is recognisable.
++ */
 +static void spm_report_wakeup(struct mtk_spm *s)
 +{
 +	u32 r12 = spm_read(s, SPM_PCM_REG12_DATA);
@@ -934,6 +937,26 @@ diff -urN a/drivers/soc/mediatek/mtk-spm-suspend.c b/drivers/soc/mediatek/mtk-sp
 +	return s->pmic ? 0 : -EPROBE_DEFER;
 +}
 +
++/*
++ * Normally never runs: the wake path acks the SPM's status and software
++ * interrupt in spm_clean_after_wakeup() before interrupts are re-enabled. The
++ * line is requested because the vendor does (all six, IRQF_NO_SUSPEND) and so
++ * that a firmware-raised SPM interrupt has an owner; it acks defensively.
++ */
++static irqreturn_t mtk_spm_irq(int irq, void *data)
++{
++	struct mtk_spm *s = data;
++	u32 isr = spm_read(s, SPM_SLEEP_ISR_STATUS);
++
++	spm_write(s, SPM_SLEEP_ISR_MASK,
++		  spm_read(s, SPM_SLEEP_ISR_MASK) | ISRM_ALL_EXC_TWAM);
++	spm_write(s, SPM_SLEEP_ISR_STATUS, isr);
++	spm_write(s, SPM_PCM_SW_INT_CLEAR, PCM_SW_INT_ALL);
++
++	dev_dbg(s->dev, "SPM irq outside the wake path, isr = 0x%x\n", isr);
++	return IRQ_HANDLED;
++}
++
 +static int mtk_spm_probe(struct platform_device *pdev)
 +{
 +	struct device *dev = &pdev->dev;
@@ -998,6 +1021,15 @@ diff -urN a/drivers/soc/mediatek/mtk-spm-suspend.c b/drivers/soc/mediatek/mtk-sp
 +				     GFP_KERNEL);
 +	if (!s->pcm)
 +		return -ENOMEM;
++
++	/* Optional: SPM IRQ0, trigger type from the DT. */
++	ret = platform_get_irq_optional(pdev, 0);
++	if (ret > 0) {
++		ret = devm_request_irq(dev, ret, mtk_spm_irq, IRQF_NO_SUSPEND,
++				       "mtk-spm-suspend", s);
++		if (ret)
++			return dev_err_probe(dev, ret, "cannot request the SPM irq\n");
++	}
 +	memcpy(s->pcm, spm_suspend_pcm, sizeof(spm_suspend_pcm));
 +
 +	spm_ctx = s;
