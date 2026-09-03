@@ -47,7 +47,7 @@ diff --git a/drivers/power/supply/Makefile b/drivers/power/supply/Makefile
 diff --git a/drivers/power/supply/mt6397-battery.c b/drivers/power/supply/mt6397-battery.c
 --- a/drivers/power/supply/mt6397-battery.c
 +++ b/drivers/power/supply/mt6397-battery.c
-@@ -0,0 +1,240 @@
+@@ -0,0 +1,347 @@
 +// SPDX-License-Identifier: GPL-2.0-only
 +/*
 + * Battery driver for the MediaTek MT6397 PMIC's fuel gauge
@@ -62,15 +62,19 @@ diff --git a/drivers/power/supply/mt6397-battery.c b/drivers/power/supply/mt6397
 + * lithium discharge curve is flat enough that tens of millivolts of I*R are
 + * tens of percent of indicated charge.
 + *
-+ * The charge accumulator is deliberately not used. Integrating it properly
++ * The charge accumulator is exposed as CHARGE_COUNTER but is deliberately not
++ * used to derive the reported capacity. Integrating it into a gauge properly
 + * means handling initialisation from a rested OCV, drift correction, capacity
 + * learning and accumulation across suspend, which is a great deal more than
-+ * this driver does.
++ * this driver does. As a raw counter it is still worth having: it accumulates
++ * in hardware, so unlike current_now it keeps counting across a suspend, when
++ * nothing is running to sample anything.
 + *
 + * Copyright (C) 2026 Ryan Brue <ryanbrue.dev@gmail.com>
 + */
 +
 +#include <linux/bitfield.h>
++#include <linux/cleanup.h>
 +#include <linux/iio/consumer.h>
 +#include <linux/math64.h>
 +#include <linux/mfd/mt6397/core.h>
@@ -98,6 +102,16 @@ diff --git a/drivers/power/supply/mt6397-battery.c b/drivers/power/supply/mt6397
 +#define MT6397_FGADC_CON0_CMD_CLEAR	0x08
 +#define MT6397_FGADC_CON0_CMD_RESET	0x71
 +
++/*
++ * The charge accumulator is a 16-bit signed field split awkwardly across two
++ * registers: CON1 holds its low 2 bits in its top 2, and CON2 the other 14 in
++ * its low 14.
++ */
++#define MT6397_FGADC_CON1		0x061a
++#define MT6397_FGADC_CON1_CAR_LOW	GENMASK(15, 14)
++#define MT6397_FGADC_CON2		0x061c
++#define MT6397_FGADC_CON2_CAR_HIGH	GENMASK(13, 0)
++
 +#define MT6397_FGADC_CON8		0x0628
 +
 +#define MT6397_FGADC_TIMEOUT_US		100000
@@ -108,6 +122,9 @@ diff --git a/drivers/power/supply/mt6397-battery.c b/drivers/power/supply/mt6397
 + */
 +#define MT6397_FGADC_NA_PER_LSB		158122
 +#define MT6397_FGADC_REF_SENSE_MOHM	20
++
++/* One accumulator LSB, likewise referred to a 20 mOhm sense resistor. */
++#define MT6397_FGADC_NAH_PER_LSB	359860
 +
 +struct mt6397_battery {
 +	/* Must be first, the helper casts the drvdata straight to it. */
@@ -150,18 +167,50 @@ diff --git a/drivers/power/supply/mt6397-battery.c b/drivers/power/supply/mt6397
 +	return mt6397_battery_fg_cmd(bat, MT6397_FGADC_CON0_CMD_RESET);
 +}
 +
-+static int mt6397_battery_read_current(struct mt6397_battery *bat, int *curr_ua)
++/*
++ * Every gauge output is sampled into its holding registers by one LATCH
++ * command and released again by CLEAR, so anything reading more than one of
++ * them has to do it inside a single window. Both are serialised by the
++ * helper's lock, which every caller already holds.
++ */
++static int mt6397_battery_fg_latch(struct mt6397_battery *bat)
 +{
 +	unsigned int reg;
-+	int raw, ret;
++	int ret;
 +
 +	ret = mt6397_battery_fg_cmd(bat, MT6397_FGADC_CON0_CMD_LATCH);
 +	if (ret)
 +		return ret;
 +
++	return regmap_read_poll_timeout(bat->regmap, MT6397_FGADC_CON0, reg,
++					reg & MT6397_FGADC_CON0_LATCHED,
++					100, MT6397_FGADC_TIMEOUT_US);
++}
++
++static int mt6397_battery_fg_release(struct mt6397_battery *bat)
++{
++	unsigned int reg;
++	int ret;
++
++	ret = mt6397_battery_fg_cmd(bat, MT6397_FGADC_CON0_CMD_CLEAR);
++	if (ret)
++		return ret;
++
 +	ret = regmap_read_poll_timeout(bat->regmap, MT6397_FGADC_CON0, reg,
-+				       reg & MT6397_FGADC_CON0_LATCHED,
++				       !(reg & MT6397_FGADC_CON0_LATCHED),
 +				       100, MT6397_FGADC_TIMEOUT_US);
++	if (ret)
++		return ret;
++
++	return mt6397_battery_fg_cmd(bat, MT6397_FGADC_CON0_CMD_IDLE);
++}
++
++static int mt6397_battery_read_current(struct mt6397_battery *bat, int *curr_ua)
++{
++	unsigned int reg;
++	int raw, ret;
++
++	ret = mt6397_battery_fg_latch(bat);
 +	if (ret)
 +		return ret;
 +
@@ -181,17 +230,41 @@ diff --git a/drivers/power/supply/mt6397-battery.c b/drivers/power/supply/mt6397
 +			   MT6397_FGADC_REF_SENSE_MOHM,
 +			   (s64)bat->sense_mohm * 1000);
 +
-+	ret = mt6397_battery_fg_cmd(bat, MT6397_FGADC_CON0_CMD_CLEAR);
++	return mt6397_battery_fg_release(bat);
++}
++
++static int mt6397_battery_read_charge_counter(struct mt6397_battery *bat,
++					      int *charge_uah)
++{
++	unsigned int con1, con2;
++	int raw, ret;
++
++	ret = mt6397_battery_fg_latch(bat);
 +	if (ret)
 +		return ret;
 +
-+	ret = regmap_read_poll_timeout(bat->regmap, MT6397_FGADC_CON0, reg,
-+				       !(reg & MT6397_FGADC_CON0_LATCHED),
-+				       100, MT6397_FGADC_TIMEOUT_US);
++	ret = regmap_read(bat->regmap, MT6397_FGADC_CON1, &con1);
 +	if (ret)
 +		return ret;
 +
-+	return mt6397_battery_fg_cmd(bat, MT6397_FGADC_CON0_CMD_IDLE);
++	ret = regmap_read(bat->regmap, MT6397_FGADC_CON2, &con2);
++	if (ret)
++		return ret;
++
++	raw = FIELD_GET(MT6397_FGADC_CON2_CAR_HIGH, con2) << 2 |
++	      FIELD_GET(MT6397_FGADC_CON1_CAR_LOW, con1);
++
++	/*
++	 * This one is plain two's complement, positive for charge that went
++	 * into the battery. The zero point is wherever the RESET at probe left
++	 * it, so only differences mean anything.
++	 */
++	*charge_uah = div_s64((s64)sign_extend32(raw, 15) *
++			      MT6397_FGADC_NAH_PER_LSB *
++			      MT6397_FGADC_REF_SENSE_MOHM,
++			      (s64)bat->sense_mohm * 1000);
++
++	return mt6397_battery_fg_release(bat);
 +}
 +
 +static int mt6397_battery_get_voltage_and_current_now(struct power_supply *psy,
@@ -209,13 +282,47 @@ diff --git a/drivers/power/supply/mt6397-battery.c b/drivers/power/supply/mt6397
 +	return mt6397_battery_read_current(bat, curr_ua);
 +}
 +
++/*
++ * The helper's list plus the accumulator. It has to be spelled out rather than
++ * appended to, because adc_battery_helper_properties is a plain extern array;
++ * the assert below is what keeps the copy honest if the helper gains one.
++ */
++static const enum power_supply_property mt6397_battery_properties[] = {
++	POWER_SUPPLY_PROP_STATUS,
++	POWER_SUPPLY_PROP_VOLTAGE_NOW,
++	POWER_SUPPLY_PROP_VOLTAGE_OCV,
++	POWER_SUPPLY_PROP_CURRENT_NOW,
++	POWER_SUPPLY_PROP_CAPACITY,
++	POWER_SUPPLY_PROP_PRESENT,
++	POWER_SUPPLY_PROP_SCOPE,
++	POWER_SUPPLY_PROP_CHARGE_COUNTER,
++};
++
++static_assert(ARRAY_SIZE(mt6397_battery_properties) ==
++	      ADC_HELPER_NUM_PROPERTIES + 1);
++
++static int mt6397_battery_get_property(struct power_supply *psy,
++				       enum power_supply_property psp,
++				       union power_supply_propval *val)
++{
++	struct mt6397_battery *bat = power_supply_get_drvdata(psy);
++
++	if (psp != POWER_SUPPLY_PROP_CHARGE_COUNTER)
++		return adc_battery_helper_get_property(psy, psp, val);
++
++	/* The same lock the helper takes: one gauge, one latch at a time. */
++	guard(mutex)(&bat->helper.lock);
++
++	return mt6397_battery_read_charge_counter(bat, &val->intval);
++}
++
 +static const struct power_supply_desc mt6397_battery_desc = {
 +	.name			= "mt6397-battery",
 +	.type			= POWER_SUPPLY_TYPE_BATTERY,
-+	.get_property		= adc_battery_helper_get_property,
++	.get_property		= mt6397_battery_get_property,
 +	.external_power_changed	= adc_battery_helper_external_power_changed,
-+	.properties		= adc_battery_helper_properties,
-+	.num_properties		= ADC_HELPER_NUM_PROPERTIES,
++	.properties		= mt6397_battery_properties,
++	.num_properties		= ARRAY_SIZE(mt6397_battery_properties),
 +};
 +
 +static int mt6397_battery_probe(struct platform_device *pdev)
