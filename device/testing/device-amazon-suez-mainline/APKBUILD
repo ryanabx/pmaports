@@ -3,7 +3,7 @@ maintainer="Ryan Brue <ryanbrue.dev@gmail.com>"
 pkgname=device-amazon-suez-mainline
 pkgdesc="Amazon Fire HD 10 (2017) (mainline)"
 pkgver=1
-pkgrel=7
+pkgrel=8
 url="https://postmarketos.org"
 license="MIT"
 arch="aarch64"
@@ -114,6 +114,64 @@ package() {
 	# session; the file explains. Without it the desktop is on llvmpipe.
 	install -Dm644 "$srcdir"/50-powervr-vulkan.conf \
 		"$pkgdir"/usr/lib/environment.d/50-powervr-vulkan.conf
+
+	# SUSPEND POLICY
+	#
+	# Suspend-to-RAM works on this board and every known blocker is fixed and
+	# measured, so nothing here blocks it any more. The history matters,
+	# because for a long time three files in this package existed only to
+	# prevent suspend, and they were removed one condition at a time:
+	#
+	#   * no suspend state at all -- the firmware is PSCI 0.2 and
+	#     SYSTEM_SUSPEND is PSCI 1.0. Fixed by the SPM suspend driver in
+	#     kernel 7.2.2; /sys/power/mem_sleep now reads "s2idle [deep]".
+	#   * mtk_vpu aborted every attempt with -EIO. Fixed by disabling the VPU
+	#     and its four consumers in the board dts (7.2.2-r12).
+	#   * a successful suspend killed the MT6630 until reboot, for want of PM
+	#     ops on its two SDIO functions. Fixed in 7.2.2-r14
+	#     (MMC_PM_KEEP_POWER + keep-power-in-suspend).
+	#   * the GPU wedged after a resume, and could hang the suspend outright.
+	#     Fixed in 7.2.2-r20 -- mfgtop's genpd power_on was calling the clk
+	#     API on a gate its own device provides, which is -EACCES at _noirq.
+	#
+	# Verified on hardware after all of that: the power key wakes the board
+	# from a real suspend ("woke by EINT, raw_sta = 0x40" after 11.2 s, with
+	# the RTC backstop at 90 s and the SPM timer at 200 s, so nothing else
+	# could have done it), the panel comes back, and Wi-Fi, Bluetooth and the
+	# GPU all survive.
+	#
+	# So the lid, the power key and the idle timeout are all left at their
+	# upstream defaults now -- suspend on close, suspend on tap, and
+	# gnome-shell's own idle handling -- which is why 99-suez-lid.conf and
+	# 99-suez-no-idle-suspend.conf are gone, and why the power-button-action
+	# override is gone (GNOME's default for it is already 'suspend').
+	#
+	# HIBERNATION STAYS MASKED, and that is not a matter of taste. The only
+	# swap on this device is 2.6 GB of zram, and there is no resume= on the
+	# kernel cmdline, so there is nowhere to write a hibernation image and no
+	# way to find it again. /sys/power/disk offers only "[shutdown] reboot
+	# suspend test_resume". An unmasked hibernate.target would hand users an
+	# action that cannot work.
+	#
+	# Masking belongs in /etc/systemd/system, NOT /usr/lib/systemd/system,
+	# because systemd's own package owns the unit files there and shipping
+	# symlinks over them is a file conflict. Same idiom as the
+	# nftables.service mask below.
+	#
+	# If you ever need to block system sleep again, mask the targets -- do not
+	# reach for logind's SleepOperation=. It looks like exactly the right knob
+	# and it is a real key, but on systemd 261.2 an empty SleepOperation= does
+	# NOT gate suspend: r35 shipped that and CanSuspend still answered "yes".
+	# Verify any change with, and only with:
+	#   busctl call org.freedesktop.login1 /org/freedesktop/login1 \
+	#          org.freedesktop.login1.Manager CanSuspend
+	# Checking `systemctl suspend` over SSH proves nothing, because sshd holds
+	# a block inhibitor ("Active PAM session") and the call is refused for that
+	# reason instead.
+	install -d "$pkgdir"/etc/systemd/system
+	for _t in hibernate.target hybrid-sleep.target suspend-then-hibernate.target; do
+		ln -sf /dev/null "$pkgdir"/etc/systemd/system/"$_t"
+	done
 
 	# The board's only persistent kernel log. ramoops cannot work here --
 	# no reset preserves DRAM -- so crash records go to the eMMC instead.
