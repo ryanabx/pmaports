@@ -1,0 +1,15 @@
+# The PowerVR GX6250 is a render-only GPU (no display outputs). Mutter must
+# not try to adopt its card node as a secondary GPU: when it does, its cogl
+# buffer handling starts failing (cogl_buffer_impl_gl_map_range assertions,
+# "Failed to lock front buffer on /dev/dri/card1"), and the next screen fade
+# kills the frame clock ("clutter_frame_clock_notify_ready: code should not
+# be reached"), leaving the panel permanently black with the backlight off.
+# Verified on hardware 2026-08-30: the first cogl failure landed five
+# seconds after the powervr driver bound. Vulkan clients open the render
+# node (/dev/dri/renderD128) directly; hiding the card node from mutter
+# costs nothing.
+# mutter-mobile checks the udev TAG "mutter-device-ignore" (its hotplug path
+# never reads the MUTTER_DEVICE_IGNORE property -- learned the hard way: a
+# mutter already running when the GPU binds would try to adopt card0, fail,
+# corrupt its EGL context, and die at the next screen fade). Set both forms.
+SUBSYSTEM=="drm", KERNEL=="card*", DRIVERS=="powervr", TAG+="mutter-device-ignore", ENV{MUTTER_DEVICE_IGNORE}="1"

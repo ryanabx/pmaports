@@ -1,0 +1,37 @@
+[Unit]
+Description=Bind the PowerVR GX6250 GPU
+# The desktop renders on this GPU: Mesa's zink driver chains the display-only
+# mediatek KMS device to the PowerVR Vulkan driver over the render node, so
+# gnome-shell's GBM renderer on /dev/dri/card1 comes up hardware accelerated,
+# provided /dev/dri/renderD128 exists when the shell probes it. Otherwise the
+# zink probe fails and mutter silently falls back to llvmpipe for the whole
+# session. Hence Before=display-manager.service: the bind must finish before
+# any compositor starts. Ordering alone is enough, because graphical.target
+# pulls in both this unit and the display manager.
+#
+# TIMING IS LOAD-BEARING. Binding at sysinit (modules-load.d) hard-wedged the
+# SoC within seconds, before the journal could flush -- verified on hardware
+# 2026-08-30, on every boot until the modules were blacklisted from the boot
+# image. Binding after multi-user.target (~18 s) is verified fine, on hardware
+# 2026-09-03, and so was the earlier graphical.target + 30 s (~46 s) anchor.
+# The safe boundary lies somewhere between sysinit and multi-user.target and
+# has not been narrowed further; do not move this earlier without a gated,
+# single-shot experiment (a ConditionPathExists flag that the unit removes
+# before it does anything, so a wedged boot cannot repeat).
+After=multi-user.target systemd-user-sessions.service
+Before=display-manager.service
+
+[Service]
+Type=oneshot
+# powervr is already loaded by udev coldplug (its probe then fails on the BVNC
+# allowlist -- "Unknown GPU! Set 'exp_hw_support'" -- and hits the deferred
+# probe timeout), so a modprobe with a parameter would be a silent no-op: set
+# exp_hw_support via sysfs and re-trigger the probe explicitly instead.
+# GX6250 (BVNC 4.40.2.51) is not in the driver's allowlist; Mesa rates
+# Series6XT partially supported. Do NOT move the parameter to modprobe.d:
+# that would make the coldplug load bind the GPU at sysinit, which is the
+# timing that wedges the SoC (see above).
+ExecStart=/bin/sh -c 'modprobe clk-mt8173-mfgtop; modprobe powervr; echo Y > /sys/module/powervr/parameters/exp_hw_support; echo 13000000.gpu > /sys/bus/platform/drivers_probe'
+
+[Install]
+WantedBy=graphical.target
