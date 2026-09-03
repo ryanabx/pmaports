@@ -3,7 +3,7 @@ maintainer="Ryan Brue <ryanbrue.dev@gmail.com>"
 pkgname=device-amazon-suez-mainline
 pkgdesc="Amazon Fire HD 10 (2017) (mainline)"
 pkgver=1
-pkgrel=3
+pkgrel=4
 url="https://postmarketos.org"
 license="MIT"
 arch="aarch64"
@@ -36,6 +36,17 @@ build() {
 
 package() {
 	devicepkg_package $startdir $pkgname
+
+	# Mask nftables. This kernel is deliberately built without IPv6, so
+	# NF_TABLES_INET -- which selects NF_TABLES_IPV6 -- does not exist, and
+	# the shipped rule set cannot load its "table inet" rules:
+	#   nft add table inet t  ->  Error: Could not process rule: Not supported
+	# A firewall buys little on a USB-only link, so the unit is masked here
+	# rather than spending the image budget on IPv6. The mask lives in /etc
+	# on purpose: /usr/lib/systemd/system/nftables.service belongs to the
+	# nftables package and putting a symlink there would be a file conflict.
+	install -d "$pkgdir"/etc/systemd/system
+	ln -s /dev/null "$pkgdir"/etc/systemd/system/nftables.service
 
 	# Recovery fallback: the initramfs hook arms LK's bootloader control
 	# block, and the service clears it once the boot has succeeded. See the
