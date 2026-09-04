@@ -1,4 +1,4 @@
-From a9dacddc538e4459ac5d6a835d8e86c931fee02d Mon Sep 17 00:00:00 2001
+From 8c8dba2d254c54918c95074e940c9af61bee3d87 Mon Sep 17 00:00:00 2001
 From: Ryan Brue <ryanbrue.dev@gmail.com>
 Date: Thu, 3 Sep 2026 14:10:14 -0500
 Subject: [PATCH] arm64: dts: mediatek: mt8173: give DISP_OVL0 its MMSYS reset

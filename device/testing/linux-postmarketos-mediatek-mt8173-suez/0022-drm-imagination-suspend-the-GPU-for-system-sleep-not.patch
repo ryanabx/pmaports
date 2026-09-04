@@ -1,4 +1,4 @@
-From 2d8ab659ef19d443a0759206202e63c067c676ba Mon Sep 17 00:00:00 2001
+From c4a6f4e72a2d57b4448ea3159784f03b706b2995 Mon Sep 17 00:00:00 2001
 From: Ryan Brue <ryanbrue.dev@gmail.com>
 Date: Thu, 3 Sep 2026 14:14:58 -0500
 Subject: [PATCH] drm/imagination: suspend the GPU for system sleep, not just
@@ -40,6 +40,7 @@ held by the ioctl that called pvr_power_reset()) is a separate problem and is
 not addressed here; this change only stops the system-sleep path from
 triggering it.
 
+Fixes: 727538a4bbff ("drm/imagination: Implement power management")
 Signed-off-by: Ryan Brue <ryanbrue.dev@gmail.com>
 ---
  drivers/gpu/drm/imagination/pvr_drv.c | 1 +

@@ -1,4 +1,4 @@
-From 6da04f6769730d31324a574efc4722010b628746 Mon Sep 17 00:00:00 2001
+From b0277b102727d7cb0287f1731a97ab7dcebe6c65 Mon Sep 17 00:00:00 2001
 From: Ryan Brue <ryanbrue.dev@gmail.com>
 Date: Fri, 4 Sep 2026 00:16:43 -0500
 Subject: [PATCH] arm64: dts: mediatek: mt8173: add the frequency hopping

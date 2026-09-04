@@ -1,4 +1,4 @@
-From d575df2bc1c04db0d39237739e07208aad60cb34 Mon Sep 17 00:00:00 2001
+From ec165aa33aa4d4a0b1c1316dc5abdc00202d92c0 Mon Sep 17 00:00:00 2001
 From: Ryan Brue <ryanbrue.dev@gmail.com>
 Date: Thu, 3 Sep 2026 14:10:14 -0500
 Subject: [PATCH] drm/mediatek: ovl: take the block reset at probe when one is

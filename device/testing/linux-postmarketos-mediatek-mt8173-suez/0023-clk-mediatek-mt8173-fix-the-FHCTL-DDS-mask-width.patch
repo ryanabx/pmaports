@@ -1,4 +1,4 @@
-From 3f82f9f32a30bfb182a54cdf1ee422a4314ea15c Mon Sep 17 00:00:00 2001
+From 1fb2e95ad0e9911bf927c976ce2b26a8b07e8d16 Mon Sep 17 00:00:00 2001
 From: Ryan Brue <ryanbrue.dev@gmail.com>
 Date: Fri, 4 Sep 2026 00:28:51 -0500
 Subject: [PATCH] clk: mediatek: mt8173: fix the FHCTL DDS mask width
