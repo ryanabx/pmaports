@@ -24,6 +24,27 @@ deviceinfo_screen_height="1920"
 # whether /dev/fb0 exists early enough for the initramfs splash.
 deviceinfo_drm="true"
 
+# zram swap at 50% of RAM, not postmarketOS's 150% default.
+#
+# zram keeps its compressed pages IN RAM, so on a 1.8 GB board a 2.7 GB zram
+# does not add memory -- it competes for it, and it wins, because
+# vm.swappiness is 180 here. Measured during a phosh login loop on 2026-09-03,
+# from the kernel's own OOM report:
+#
+#   zspages:1367172kB      <- 1.37 GB of 1.8 GB eaten by compressed pages
+#   Free swap = 214072kB   <- of 2764796kB
+#   free:111332kB
+#
+# i.e. the system OOM-killed the session because of its own swap, with the
+# shell restarting three times per boot. zstd measured only ~1.85:1 on this
+# workload, so a 2.7 GB zram can claim ~1.5 GB of RAM -- 83% of the machine.
+#
+# At 50% the device is ~900 MB of zram, bounded to roughly 490 MB of RAM at
+# that compression ratio, which leaves ~1.3 GB for the session. The upstream
+# 150% default comes from pmaports#4250 and is reasonable on devices with more
+# headroom; it is not reasonable here.
+deviceinfo_zram_swap_pct="50"
+
 # The initramfs waits 10 s for /dev/fb0, twice (stage 1 and stage 2), and it
 # never appears: DRM_SIMPLEDRM is a module, so fb0 only shows up once systemd
 # loads it, long after the initramfs is done. There is therefore no splash to
