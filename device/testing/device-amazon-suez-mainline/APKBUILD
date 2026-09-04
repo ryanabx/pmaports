@@ -182,7 +182,7 @@ package() {
 	# Verify any change with, and only with:
 	#   busctl call org.freedesktop.login1 /org/freedesktop/login1 \
 	#          org.freedesktop.login1.Manager CanSuspend
-	# Checking `systemctl suspend` over SSH proves nothing, because sshd holds
+	# Running systemctl suspend over SSH proves nothing, because sshd holds
 	# a block inhibitor ("Active PAM session") and the call is refused for that
 	# reason instead.
 	install -d "$pkgdir"/etc/systemd/system
