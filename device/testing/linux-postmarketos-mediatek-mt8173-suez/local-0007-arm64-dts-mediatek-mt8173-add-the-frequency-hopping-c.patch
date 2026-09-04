@@ -1,0 +1,62 @@
+From 6f7c927907c21af26bbd47012026657f4e3eadca Mon Sep 17 00:00:00 2001
+From: Ryan Brue <ryanbrue.dev@gmail.com>
+Date: Fri, 4 Sep 2026 00:16:43 -0500
+Subject: [PATCH 7/7] arm64: dts: mediatek: mt8173: add the frequency hopping
+ controller
+
+MT8173 has an FHCTL block at 0x10209e00 and both the binding
+(mediatek,mt8173-fhctl, already listed in
+Documentation/devicetree/bindings/clock/mediatek,mt8186-fhctl.yaml) and the
+driver support for it already exist -- clk-mt8173-apmixedsys.c has carried a
+pllfhs[] table naming every hoppable PLL, including
+FH(CLK_APMIXED_MMPLL, FH_MMPLL, 0x9c), since it was written. Only the DT node
+was missing, so fhctl_parse_dt() never found anything, every PLL registered
+with plain mtk_pll_ops, and the hopping path was dead code.
+
+That is not merely a missing feature: on this SoC it makes clk_set_rate() on
+MMPLL silently do nothing. mtk_pll_set_rate() writes a freshly computed pcw
+into MMPLL CON1, but the hardware only accepts a CON1 pcw that the frequency
+hopping engine has actually ramped the PLL to. Verified on an MT8173 board
+(Amazon Fire HD 10 2017): a direct write of an arbitrary pcw to CON1 is
+silently dropped, both from the kernel and from /dev/mem, while a write of the
+value that FHCTL's MON register currently holds is accepted. So clk_set_rate()
+returns 0, mtk_pll_recalc_rate() reads back the old value, and the caller is
+told nothing went wrong -- the GPU clock, whose only consumer is mfg_sel, was
+pinned at its bootloader rate of 455 MHz with no way to change it.
+
+With this node, MMPLL registers with mtk_pllfh_ops instead, and
+hopping_hw_flow() does what the vendor's mt_gpufreq/mt_freqhopping does: sync
+CON1 into the FHCTL DDS, take the PLL under hopping control, request the new
+DDS, poll MON, write the achieved value back into CON1 and release control.
+Measured on that board via the same register sequence: the GPU clock moves and
+the change persists after control returns to CON1 (glmark2 build 68 fps at
+253 MHz, 87 at 455, 91 at 598).
+
+Only MMPLL is listed. The other hoppable PLLs are left alone because nothing in
+mainline asks to retune them and MMPLL is the one that is actually broken;
+SSC is left off (hopping-ssc-percent 0) to keep this a pure fix.
+---
+ arch/arm64/boot/dts/mediatek/mt8173.dtsi | 7 +++++++
+ 1 file changed, 7 insertions(+)
+
+diff --git a/arch/arm64/boot/dts/mediatek/mt8173.dtsi b/arch/arm64/boot/dts/mediatek/mt8173.dtsi
+index a5942be13..3de9ba91f 100644
+--- a/arch/arm64/boot/dts/mediatek/mt8173.dtsi
++++ b/arch/arm64/boot/dts/mediatek/mt8173.dtsi
+@@ -618,6 +618,13 @@ apmixedsys: clock-controller@10209000 {
+ 			#clock-cells = <1>;
+ 		};
+ 
++		fhctl: clock-controller@10209e00 {
++			compatible = "mediatek,mt8173-fhctl";
++			reg = <0 0x10209e00 0 0x200>;
++			clocks = <&apmixedsys CLK_APMIXED_MMPLL>;
++			mediatek,hopping-ssc-percent = <0>;
++		};
++
+ 		hdmi_phy: hdmi-phy@10209100 {
+ 			compatible = "mediatek,mt8173-hdmi-phy";
+ 			reg = <0 0x10209100 0 0x24>;
+-- 
+2.55.0
+

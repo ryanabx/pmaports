@@ -11,7 +11,7 @@
 maintainer="Ryan Brue <ryanbrue.dev@gmail.com>"
 pkgname=linux-postmarketos-mediatek-mt8173-suez
 pkgver=7.2.2
-pkgrel=45
+pkgrel=48
 pkgdesc="Mainline kernel fork for the Amazon Fire HD 10 (2017)"
 arch="aarch64"
 _carch="arm64"
@@ -115,6 +115,8 @@ source="
 	local-0003-drm-mediatek-ovl-take-the-block-reset-at-probe-when-.patch
 	local-0004-mmc-pwrseq_sd8787-add-the-MT6630-power-on-sequence.patch
 	local-0005-misc-add-a-bring-up-driver-for-the-MediaTek-MT6630-c.patch
+	local-0006-clk-mediatek-mt8173-fix-the-FHCTL-DDS-mask-width.patch
+	local-0007-arm64-dts-mediatek-mt8173-add-the-frequency-hopping-c.patch
 "
 builddir="$srcdir/linux-${_kernver//_/-}"
 
@@ -179,4 +181,6 @@ ac8878d3179ae65522f900c7e9e86dcd64aaa4db1ddb62905e27b2f4d62594347179104e9f4636d7
 9594587840dd75d4f3a0f3b77cfc6706b2219b5f514fa0a47921406a9208b2978406a0bccb3e8b4b1364c3e755feee837ce6adf146af116d7cc10b77a969ee23  local-0003-drm-mediatek-ovl-take-the-block-reset-at-probe-when-.patch
 b0d76b81e3742f1db8afeb7b0fba170fa2935ea0f514847fca7a273bc5bf78c887c06894584666d263800b8ea8250bcd52f97ce01e60b8b9840310614d74aeb1  local-0004-mmc-pwrseq_sd8787-add-the-MT6630-power-on-sequence.patch
 7ef6fc76eb526c2ac9816bcab38c29775e793dea997547056e8d6712e7d3a4b7782df202ee129ab9319a1fbc34fc6ef5369809a73c7ad7f14456643b6a930622  local-0005-misc-add-a-bring-up-driver-for-the-MediaTek-MT6630-c.patch
+6882f412444037b52db591aec689567e496b924c9ad386ba9473c4925a2a8a87410fe4907940d8ace76cac61a1e8401a2d057649de0b4d4dc702b7601aaa4b53  local-0006-clk-mediatek-mt8173-fix-the-FHCTL-DDS-mask-width.patch
+4ed0041e0489375e4cebff2054cc3d1a4f058f075e8f745bd409bacd31666ad7a37c827a3e524efe12253b97fbcd42032b48e2e39984edb1be68e5322dc1bb3e  local-0007-arm64-dts-mediatek-mt8173-add-the-frequency-hopping-c.patch
 "
