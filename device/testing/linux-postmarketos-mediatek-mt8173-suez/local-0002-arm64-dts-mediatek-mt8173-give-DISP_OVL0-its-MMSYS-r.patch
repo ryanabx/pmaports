@@ -1,4 +1,4 @@
-From 0977ee127095d6f3863067d5f23a5c048557ae0a Mon Sep 17 00:00:00 2001
+From a9dacddc538e4459ac5d6a835d8e86c931fee02d Mon Sep 17 00:00:00 2001
 From: Ryan Brue <ryanbrue.dev@gmail.com>
 Date: Thu, 3 Sep 2026 14:10:14 -0500
 Subject: [PATCH] arm64: dts: mediatek: mt8173: give DISP_OVL0 its MMSYS reset
@@ -21,10 +21,10 @@ Signed-off-by: Ryan Brue <ryanbrue.dev@gmail.com>
  2 files changed, 2 insertions(+)
 
 diff --git a/arch/arm64/boot/dts/mediatek/mt8173.dtsi b/arch/arm64/boot/dts/mediatek/mt8173.dtsi
-index 169ba4fd1..a5942be13 100644
+index 9faeb01a2..3de9ba91f 100644
 --- a/arch/arm64/boot/dts/mediatek/mt8173.dtsi
 +++ b/arch/arm64/boot/dts/mediatek/mt8173.dtsi
-@@ -1118,6 +1118,7 @@ ovl0: ovl@1400c000 {
+@@ -1125,6 +1125,7 @@ ovl0: ovl@1400c000 {
  			power-domains = <&spm MT8173_POWER_DOMAIN_MM>;
  			clocks = <&mmsys CLK_MM_DISP_OVL0>;
  			iommus = <&iommu M4U_PORT_DISP_OVL0>;

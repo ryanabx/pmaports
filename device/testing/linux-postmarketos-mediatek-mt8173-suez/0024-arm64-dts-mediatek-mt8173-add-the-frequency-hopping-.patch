@@ -1,7 +1,7 @@
-From 6f7c927907c21af26bbd47012026657f4e3eadca Mon Sep 17 00:00:00 2001
+From 6da04f6769730d31324a574efc4722010b628746 Mon Sep 17 00:00:00 2001
 From: Ryan Brue <ryanbrue.dev@gmail.com>
 Date: Fri, 4 Sep 2026 00:16:43 -0500
-Subject: [PATCH 7/7] arm64: dts: mediatek: mt8173: add the frequency hopping
+Subject: [PATCH] arm64: dts: mediatek: mt8173: add the frequency hopping
  controller
 
 MT8173 has an FHCTL block at 0x10209e00 and both the binding
@@ -40,7 +40,7 @@ SSC is left off (hopping-ssc-percent 0) to keep this a pure fix.
  1 file changed, 7 insertions(+)
 
 diff --git a/arch/arm64/boot/dts/mediatek/mt8173.dtsi b/arch/arm64/boot/dts/mediatek/mt8173.dtsi
-index a5942be13..3de9ba91f 100644
+index 169ba4fd1..9faeb01a2 100644
 --- a/arch/arm64/boot/dts/mediatek/mt8173.dtsi
 +++ b/arch/arm64/boot/dts/mediatek/mt8173.dtsi
 @@ -618,6 +618,13 @@ apmixedsys: clock-controller@10209000 {
@@ -57,6 +57,3 @@ index a5942be13..3de9ba91f 100644
  		hdmi_phy: hdmi-phy@10209100 {
  			compatible = "mediatek,mt8173-hdmi-phy";
  			reg = <0 0x10209100 0 0x24>;
--- 
-2.55.0
-

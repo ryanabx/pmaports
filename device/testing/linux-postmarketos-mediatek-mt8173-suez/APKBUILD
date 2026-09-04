@@ -72,7 +72,7 @@ case $pkgver in
 esac
 # The patch series is git-format-patch output from a git tree of the pristine
 # tarball (one commit per patch, submission order), in three groups:
-#   0001-0022      upstream-facing: bindings, drivers, fixes and the board DTS,
+#   0001-0024      upstream-facing: bindings, drivers, fixes and the board DTS,
 #                  one logical system per patch; 0009 needs 0006 (both add an
 #                  MFD cell to mt6397-core.c) and 0021 needs backport-0002
 #   backport-*     Chen-Yu Tsai's mt8173 mfgtop/GPU series, merged in 7.3-rc1;
@@ -110,13 +110,13 @@ source="
 	backport-0005-arm64-dts-mediatek-mt8173-Add-GPU-device-nodes.patch
 	0021-clk-mediatek-mt8173-mfgtop-do-not-use-the-clk-API-fr.patch
 	0022-drm-imagination-suspend-the-GPU-for-system-sleep-not.patch
+	0023-clk-mediatek-mt8173-fix-the-FHCTL-DDS-mask-width.patch
+	0024-arm64-dts-mediatek-mt8173-add-the-frequency-hopping-.patch
 	local-0001-resolve_btfids-preserve-parameter-names-when-process.patch
 	local-0002-arm64-dts-mediatek-mt8173-give-DISP_OVL0-its-MMSYS-r.patch
 	local-0003-drm-mediatek-ovl-take-the-block-reset-at-probe-when-.patch
 	local-0004-mmc-pwrseq_sd8787-add-the-MT6630-power-on-sequence.patch
 	local-0005-misc-add-a-bring-up-driver-for-the-MediaTek-MT6630-c.patch
-	local-0006-clk-mediatek-mt8173-fix-the-FHCTL-DDS-mask-width.patch
-	local-0007-arm64-dts-mediatek-mt8173-add-the-frequency-hopping-c.patch
 "
 builddir="$srcdir/linux-${_kernver//_/-}"
 
@@ -176,11 +176,11 @@ d27513b804be7fd43ba351816f2692eedfafe1f40fc28d78465ed5517c3a1d1e34e266aadb0bc440
 08cb1f62a04375235aefbdc9779a106781050f8e4362e8311d9dea9d0692b679d19921f2cd18c9b1619d361190db50a1262441ad5b8c8d2dc540a01153579626  backport-0005-arm64-dts-mediatek-mt8173-Add-GPU-device-nodes.patch
 0b7db40b305f4c02841192a8738a5e11d238ddb406b2cf256d0b616aa9d6e9466ae7758047318c3ed64fef8d3c78f0b2b757688eb62a624fe54777f862ff27a7  0021-clk-mediatek-mt8173-mfgtop-do-not-use-the-clk-API-fr.patch
 515e7725dcb2b86f7f4d06389bbfe658a6d33af438d2a21087013c52d9f0bb3026a2562ba0999416a0f217318a47c1c887aa945dca9f7dc72e1c254cf12fbff4  0022-drm-imagination-suspend-the-GPU-for-system-sleep-not.patch
+e8f43218753c057ab2a35a71b19f4d32329abf33ce582b1c097b75671a3a396f2444b3946baf0cdcc83dae4ebe141978e3793721164d691b29064eecd57399be  0023-clk-mediatek-mt8173-fix-the-FHCTL-DDS-mask-width.patch
+000658d9ef8dc82edb8273ac16694b1223d34a6553f7c377b54960b809fdd90b5dbafd25aaa474f9b105989e6a729f5068cb005dfbf7f5082f0505cd0d8fde3d  0024-arm64-dts-mediatek-mt8173-add-the-frequency-hopping-.patch
 753278f273a7a533da0157a5a89ea829a9369e0e628db159642491b4fa8c052171b32e485565c6f08f0398f84796ec642ad0f9bc6f2155b9b7822f407598aa3c  local-0001-resolve_btfids-preserve-parameter-names-when-process.patch
-ac8878d3179ae65522f900c7e9e86dcd64aaa4db1ddb62905e27b2f4d62594347179104e9f4636d7dd571782c7a2551cb7f09c4d6cfdd48bfc3fe0f8349fed5e  local-0002-arm64-dts-mediatek-mt8173-give-DISP_OVL0-its-MMSYS-r.patch
+f2aaf541308bd99a9fe7c3919a516db1a0f1b410d6ee71d3f2558b015e62c299ae1aed37cbbb7e7d62ff37c405c003810040544e2f60469caa3bb94cef2b30a6  local-0002-arm64-dts-mediatek-mt8173-give-DISP_OVL0-its-MMSYS-r.patch
 9594587840dd75d4f3a0f3b77cfc6706b2219b5f514fa0a47921406a9208b2978406a0bccb3e8b4b1364c3e755feee837ce6adf146af116d7cc10b77a969ee23  local-0003-drm-mediatek-ovl-take-the-block-reset-at-probe-when-.patch
 b0d76b81e3742f1db8afeb7b0fba170fa2935ea0f514847fca7a273bc5bf78c887c06894584666d263800b8ea8250bcd52f97ce01e60b8b9840310614d74aeb1  local-0004-mmc-pwrseq_sd8787-add-the-MT6630-power-on-sequence.patch
 7ef6fc76eb526c2ac9816bcab38c29775e793dea997547056e8d6712e7d3a4b7782df202ee129ab9319a1fbc34fc6ef5369809a73c7ad7f14456643b6a930622  local-0005-misc-add-a-bring-up-driver-for-the-MediaTek-MT6630-c.patch
-6882f412444037b52db591aec689567e496b924c9ad386ba9473c4925a2a8a87410fe4907940d8ace76cac61a1e8401a2d057649de0b4d4dc702b7601aaa4b53  local-0006-clk-mediatek-mt8173-fix-the-FHCTL-DDS-mask-width.patch
-4ed0041e0489375e4cebff2054cc3d1a4f058f075e8f745bd409bacd31666ad7a37c827a3e524efe12253b97fbcd42032b48e2e39984edb1be68e5322dc1bb3e  local-0007-arm64-dts-mediatek-mt8173-add-the-frequency-hopping-c.patch
 "

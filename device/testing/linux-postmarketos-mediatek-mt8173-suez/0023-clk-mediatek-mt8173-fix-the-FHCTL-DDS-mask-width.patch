@@ -1,7 +1,7 @@
-From 748acdb19e92a7b4d2172d7dd37fcdb7de83457b Mon Sep 17 00:00:00 2001
+From 3f82f9f32a30bfb182a54cdf1ee422a4314ea15c Mon Sep 17 00:00:00 2001
 From: Ryan Brue <ryanbrue.dev@gmail.com>
 Date: Fri, 4 Sep 2026 00:28:51 -0500
-Subject: [PATCH 6/7] clk: mediatek: mt8173: fix the FHCTL DDS mask width
+Subject: [PATCH] clk: mediatek: mt8173: fix the FHCTL DDS mask width
 
 MT8173's PLLs carry pcwbits = 21, so the frequency hopping controller's DDS
 field is bits 20:0. The FH() macro declares .dds_mask = GENMASK(21, 0), which
@@ -48,6 +48,3 @@ index d7d416172..327240cd3 100644
  			.slope0_value = 0x6003c97,			\
  			.slope1_value = 0x6003c97,			\
  			.sfstrx_en = BIT(2),				\
--- 
-2.55.0
-
