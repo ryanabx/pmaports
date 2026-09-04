@@ -1,4 +1,4 @@
-From 2c1e7171ed359322eb8cf3c03d6bdd46c284d394 Mon Sep 17 00:00:00 2001
+From 6d245bb071ecbb9c00ed74df92f4c55b7b9932e9 Mon Sep 17 00:00:00 2001
 From: Aelin Reidel <aelin@mainlining.org>
 Date: Wed, 17 Jun 2026 00:38:17 +0200
 Subject: [PATCH] resolve_btfids: preserve parameter names when processing

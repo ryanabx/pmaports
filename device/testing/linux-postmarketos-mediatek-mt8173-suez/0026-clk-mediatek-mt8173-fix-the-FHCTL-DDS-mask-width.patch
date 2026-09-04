@@ -1,4 +1,4 @@
-From 1fb2e95ad0e9911bf927c976ce2b26a8b07e8d16 Mon Sep 17 00:00:00 2001
+From 3360a60ad50655c8296087bf828d672b8b221a5e Mon Sep 17 00:00:00 2001
 From: Ryan Brue <ryanbrue.dev@gmail.com>
 Date: Fri, 4 Sep 2026 00:28:51 -0500
 Subject: [PATCH] clk: mediatek: mt8173: fix the FHCTL DDS mask width
@@ -31,6 +31,9 @@ to pcw.
 
 Only mt8173 is changed. The other users of this macro (mt6795, mt8186, mt8192,
 mt8195) have 22-bit pcw fields and are left alone.
+
+Fixes: 45a5cbe05d1f ("clk: mediatek: mt8173: Add support for frequency hopping through FHCTL")
+Signed-off-by: Ryan Brue <ryanbrue.dev@gmail.com>
 ---
  drivers/clk/mediatek/clk-mt8173-apmixedsys.c | 2 +-
  1 file changed, 1 insertion(+), 1 deletion(-)

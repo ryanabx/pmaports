@@ -1,0 +1,28 @@
+From cd680c99ff73994c1caa28fb4e9dc3ebad479ebf Mon Sep 17 00:00:00 2001
+From: Ryan Brue <ryanbrue.dev@gmail.com>
+Date: Fri, 4 Sep 2026 16:21:22 -0500
+Subject: [PATCH] dt-bindings: arm: mediatek: add the Amazon Fire HD 10 (2017)
+
+The 2017 Amazon Fire HD 10, codename "suez", is an MT8173 tablet. Add its
+board compatible so the DTS that follows matches a schema.
+
+Signed-off-by: Ryan Brue <ryanbrue.dev@gmail.com>
+---
+ Documentation/devicetree/bindings/arm/mediatek.yaml | 4 ++++
+ 1 file changed, 4 insertions(+)
+
+diff --git a/Documentation/devicetree/bindings/arm/mediatek.yaml b/Documentation/devicetree/bindings/arm/mediatek.yaml
+index 382d0eb4d..ccce9accc 100644
+--- a/Documentation/devicetree/bindings/arm/mediatek.yaml
++++ b/Documentation/devicetree/bindings/arm/mediatek.yaml
+@@ -132,6 +132,10 @@ properties:
+           - enum:
+               - mediatek,mt8167-pumpkin
+           - const: mediatek,mt8167
++      - description: Amazon Fire HD 10 (2017)
++        items:
++          - const: amazon,suez
++          - const: mediatek,mt8173
+       - description: Google Elm (Acer Chromebook R13)
+         items:
+           - const: google,elm-rev8

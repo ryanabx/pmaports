@@ -1,4 +1,4 @@
-From d79b35bbce56355aff469a43523c0c1d674ba81b Mon Sep 17 00:00:00 2001
+From 69a901855810df26c86bc84db355fe2684884575 Mon Sep 17 00:00:00 2001
 From: Ryan Brue <ryanbrue.dev@gmail.com>
 Date: Thu, 3 Sep 2026 14:09:45 -0500
 Subject: [PATCH] ASoC: mediatek: mt8173: add the ADDA DAI towards the PMIC

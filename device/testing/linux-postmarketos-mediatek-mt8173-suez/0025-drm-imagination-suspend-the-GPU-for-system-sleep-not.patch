@@ -1,4 +1,4 @@
-From c4a6f4e72a2d57b4448ea3159784f03b706b2995 Mon Sep 17 00:00:00 2001
+From 7e91b3cdb7192686a11114e791d47439a2aec769 Mon Sep 17 00:00:00 2001
 From: Ryan Brue <ryanbrue.dev@gmail.com>
 Date: Thu, 3 Sep 2026 14:14:58 -0500
 Subject: [PATCH] drm/imagination: suspend the GPU for system sleep, not just

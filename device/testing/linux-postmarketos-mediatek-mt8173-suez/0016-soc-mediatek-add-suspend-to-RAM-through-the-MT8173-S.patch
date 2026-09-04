@@ -1,4 +1,4 @@
-From d8714bf6545a5cccee238782f896e975fcf2bc6a Mon Sep 17 00:00:00 2001
+From 2cb8559f1bb362591c08603dc342c72f1dcba4de Mon Sep 17 00:00:00 2001
 From: Ryan Brue <ryanbrue.dev@gmail.com>
 Date: Thu, 3 Sep 2026 14:09:45 -0500
 Subject: [PATCH] soc: mediatek: add suspend-to-RAM through the MT8173 SPM

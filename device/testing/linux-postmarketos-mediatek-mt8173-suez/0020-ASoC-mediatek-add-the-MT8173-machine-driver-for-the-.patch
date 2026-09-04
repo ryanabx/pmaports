@@ -1,4 +1,4 @@
-From 9847d41e3d18f40b9d2b04610f53fab39fe189e1 Mon Sep 17 00:00:00 2001
+From 37e84ab93bbc63cbdc6bb01cc366c1c240ef73d3 Mon Sep 17 00:00:00 2001
 From: Ryan Brue <ryanbrue.dev@gmail.com>
 Date: Thu, 3 Sep 2026 14:09:46 -0500
 Subject: [PATCH] ASoC: mediatek: add the MT8173 machine driver for the MT6391

@@ -1,4 +1,4 @@
-From 674a06f18179efcb0d24ed7e658f25659b5f549e Mon Sep 17 00:00:00 2001
+From c32f5de528a5e2c7287040814462cdbec3742020 Mon Sep 17 00:00:00 2001
 From: Ryan Brue <ryanbrue.dev@gmail.com>
 Date: Thu, 3 Sep 2026 14:09:44 -0500
 Subject: [PATCH] dt-bindings: soc: mediatek: add the MT8173 SPM suspend-to-RAM
@@ -22,12 +22,36 @@ normally runs from.
 It is a board-level node on purpose: boards with ARM Trusted Firmware must
 not have it, or two suspend implementations would drive the same hardware.
 
+The node is a child of the scpsys syscon, which is already a simple-mfd with
+a power-controller child, so mediatek,mt8195-scpsys.yaml -- the schema that
+covers mediatek,mt8173-scpsys -- gains a reference to this one. Without that
+the parent's additionalProperties: false rejects the child, and a board DTB
+using it fails dtbs_check even though the child's own schema is satisfied.
+
 Signed-off-by: Ryan Brue <ryanbrue.dev@gmail.com>
 ---
+ .../bindings/mfd/mediatek,mt8195-scpsys.yaml  |  6 ++
  .../mediatek/mediatek,mt8173-spm-suspend.yaml | 84 +++++++++++++++++++
- 1 file changed, 84 insertions(+)
+ 2 files changed, 90 insertions(+)
  create mode 100755 Documentation/devicetree/bindings/soc/mediatek/mediatek,mt8173-spm-suspend.yaml
 
+diff --git a/Documentation/devicetree/bindings/mfd/mediatek,mt8195-scpsys.yaml b/Documentation/devicetree/bindings/mfd/mediatek,mt8195-scpsys.yaml
+index 4cafa3819..2904d97e1 100644
+--- a/Documentation/devicetree/bindings/mfd/mediatek,mt8195-scpsys.yaml
++++ b/Documentation/devicetree/bindings/mfd/mediatek,mt8195-scpsys.yaml
+@@ -38,6 +38,12 @@ properties:
+   power-controller:
+     $ref: /schemas/power/mediatek,power-controller.yaml#
+ 
++  spm-suspend:
++    $ref: /schemas/soc/mediatek/mediatek,mt8173-spm-suspend.yaml#
++    description:
++      Suspend-to-RAM driven by the SPM from the kernel, for MT8173 platforms
++      whose firmware does not implement PSCI SYSTEM_SUSPEND.
++
+ required:
+   - compatible
+   - reg
 diff --git a/Documentation/devicetree/bindings/soc/mediatek/mediatek,mt8173-spm-suspend.yaml b/Documentation/devicetree/bindings/soc/mediatek/mediatek,mt8173-spm-suspend.yaml
 new file mode 100755
 index 000000000..32f6ac4a5

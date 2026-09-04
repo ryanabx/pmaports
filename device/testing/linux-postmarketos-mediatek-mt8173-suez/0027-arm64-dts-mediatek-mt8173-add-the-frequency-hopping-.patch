@@ -1,4 +1,4 @@
-From b0277b102727d7cb0287f1731a97ab7dcebe6c65 Mon Sep 17 00:00:00 2001
+From 33821ef1536b682b915fb32a1b6dce0ff21406f8 Mon Sep 17 00:00:00 2001
 From: Ryan Brue <ryanbrue.dev@gmail.com>
 Date: Fri, 4 Sep 2026 00:16:43 -0500
 Subject: [PATCH] arm64: dts: mediatek: mt8173: add the frequency hopping
@@ -35,6 +35,8 @@ the change persists after control returns to CON1 (glmark2 build 68 fps at
 Only MMPLL is listed. The other hoppable PLLs are left alone because nothing in
 mainline asks to retune them and MMPLL is the one that is actually broken;
 SSC is left off (hopping-ssc-percent 0) to keep this a pure fix.
+
+Signed-off-by: Ryan Brue <ryanbrue.dev@gmail.com>
 ---
  arch/arm64/boot/dts/mediatek/mt8173.dtsi | 7 +++++++
  1 file changed, 7 insertions(+)

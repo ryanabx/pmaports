@@ -1,0 +1,41 @@
+From 3cb0304e24180361d6cc224ca98833e5a5c66007 Mon Sep 17 00:00:00 2001
+From: Ryan Brue <ryanbrue.dev@gmail.com>
+Date: Fri, 4 Sep 2026 16:20:59 -0500
+Subject: [PATCH] dt-bindings: mfd: syscon: add the MT8173 MCUCFG
+
+MT8173 has an MCUCFG block at 0x10200000 that has never been described. Its
+siblings mt2712 and mt8183 list theirs in clock/mediatek,syscon.yaml, but that
+binding is for clock providers -- it requires #clock-cells -- and on MT8173
+nothing in the block is exposed as a clock. It is used purely as a syscon, the
+way mediatek,mt8173-pctl-a-syscfg already is, so it belongs in this list.
+
+The consumer is MT8173 CPU bring-up, which needs CA15L_MISCDBG in this block
+to deassert ACINACTM on the A72 cluster before the second cluster's cores can
+join. Without a compatible in some schema the node matches nothing at all and
+dtbs_check rejects the board.
+
+Signed-off-by: Ryan Brue <ryanbrue.dev@gmail.com>
+---
+ Documentation/devicetree/bindings/mfd/syscon.yaml | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/Documentation/devicetree/bindings/mfd/syscon.yaml b/Documentation/devicetree/bindings/mfd/syscon.yaml
+index e22867088..764303ea1 100644
+--- a/Documentation/devicetree/bindings/mfd/syscon.yaml
++++ b/Documentation/devicetree/bindings/mfd/syscon.yaml
+@@ -90,6 +90,7 @@ select:
+           - mediatek,mt7988-topmisc
+           - mediatek,mt8135-pctl-a-syscfg
+           - mediatek,mt8135-pctl-b-syscfg
++          - mediatek,mt8173-mcucfg
+           - mediatek,mt8173-pctl-a-syscfg
+           - mediatek,mt8365-syscfg
+           - microchip,lan966x-cpu-syscon
+@@ -203,6 +204,7 @@ properties:
+               - mediatek,mt7988-topmisc
+               - mediatek,mt8135-pctl-a-syscfg
+               - mediatek,mt8135-pctl-b-syscfg
++              - mediatek,mt8173-mcucfg
+               - mediatek,mt8173-pctl-a-syscfg
+               - mediatek,mt8365-infracfg-nao
+               - mediatek,mt8365-syscfg

@@ -1,4 +1,4 @@
-From d939d4f90b4d54eae415bf0477876221bad900e7 Mon Sep 17 00:00:00 2001
+From e345aa2bc5058abf0ae0bbe4c6e69553543e3401 Mon Sep 17 00:00:00 2001
 From: Ryan Brue <ryanbrue.dev@gmail.com>
 Date: Thu, 3 Sep 2026 14:09:45 -0500
 Subject: [PATCH] ASoC: codecs: add the MediaTek MT6391 PMIC audio codec

@@ -1,4 +1,4 @@
-From 7d9be93b41ab503f7ec4da4c17611fbae2267431 Mon Sep 17 00:00:00 2001
+From aeb592d06bd8085d338b7891468518c88b5cced9 Mon Sep 17 00:00:00 2001
 From: Ryan Brue <ryanbrue.dev@gmail.com>
 Date: Thu, 3 Sep 2026 14:08:23 -0500
 Subject: [PATCH] arm64: smp: add MediaTek MT8173 CPU operations that power the

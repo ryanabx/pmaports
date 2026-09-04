@@ -1,4 +1,4 @@
-From 065834cd99d16752f25c7b643c622cde60aa71cc Mon Sep 17 00:00:00 2001
+From 00a179e01b22594200a055d061a2fa439dda3c1d Mon Sep 17 00:00:00 2001
 From: Ryan Brue <ryanbrue.dev@gmail.com>
 Date: Thu, 3 Sep 2026 14:14:58 -0500
 Subject: [PATCH] clk: mediatek: mt8173-mfgtop: do not use the clk API from

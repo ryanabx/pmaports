@@ -1,4 +1,4 @@
-From e089e426a1157242630610615d3bdd15eef9f0f6 Mon Sep 17 00:00:00 2001
+From 7b235b971bde2ef1610135b0482343d09d95c922 Mon Sep 17 00:00:00 2001
 From: Ryan Brue <ryanbrue.dev@gmail.com>
 Date: Thu, 3 Sep 2026 14:09:46 -0500
 Subject: [PATCH] arm64: dts: mediatek: add the Amazon Fire HD 10 (2017)
@@ -25,11 +25,16 @@ carries the Desay pack's characterisation tables from the same tree, as
 the unit's IDME identifies. Where the two sources disagree or a value was
 established on hardware instead, the comment next to the property says so.
 
+The DTB validates against the schemas. "make CHECK_DTBS=y" on this board
+reports one thing, and it is not this board's doing: mt8173.dtsi's mmsys node
+has had unschema'd assigned-clocks for as long as it has had them, which a
+pristine mt8173-elm build reports identically.
+
 Signed-off-by: Ryan Brue <ryanbrue.dev@gmail.com>
 ---
  arch/arm64/boot/dts/mediatek/Makefile         |    1 +
- .../boot/dts/mediatek/mt8173-amazon-suez.dts  | 2779 +++++++++++++++++
- 2 files changed, 2780 insertions(+)
+ .../boot/dts/mediatek/mt8173-amazon-suez.dts  | 2793 +++++++++++++++++
+ 2 files changed, 2794 insertions(+)
  create mode 100644 arch/arm64/boot/dts/mediatek/mt8173-amazon-suez.dts
 
 diff --git a/arch/arm64/boot/dts/mediatek/Makefile b/arch/arm64/boot/dts/mediatek/Makefile
@@ -46,10 +51,10 @@ index a86fb313b..ec85d7c49 100644
  dtb-$(CONFIG_ARCH_MEDIATEK) += mt8173-elm-hana-rev7.dtb
 diff --git a/arch/arm64/boot/dts/mediatek/mt8173-amazon-suez.dts b/arch/arm64/boot/dts/mediatek/mt8173-amazon-suez.dts
 new file mode 100644
-index 000000000..31e56ea15
+index 000000000..a567cc17a
 --- /dev/null
 +++ b/arch/arm64/boot/dts/mediatek/mt8173-amazon-suez.dts
-@@ -0,0 +1,2779 @@
+@@ -0,0 +1,2793 @@
 +// SPDX-License-Identifier: (GPL-2.0 OR MIT)
 +/*
 + * Copyright (c) 2026 Ryan Brue <ryanbrue.dev@gmail.com>
@@ -64,7 +69,7 @@ index 000000000..31e56ea15
 +
 +/ {
 +	model = "Amazon Fire HD 10 (2017)";
-+	compatible = "mediatek,suez", "mediatek,mt8173";
++	compatible = "amazon,suez", "mediatek,mt8173";
 +
 +	/*
 +	 * The vendor bootloader (LK) chooses which appended DTB to hand to the
@@ -347,7 +352,7 @@ index 000000000..31e56ea15
 +			compatible = "mediatek,mt6397-rtc";
 +		};
 +
-+		mt6397clk: mt6397clock {
++		mt6397clk: clocks {
 +			compatible = "mediatek,mt6397-clk";
 +			#clock-cells = <1>;
 +		};
@@ -1645,7 +1650,7 @@ index 000000000..31e56ea15
 +		 * kernel relies on a 6 s software timer instead; a hardware
 +		 * reset that works when the kernel is dead is preferred here.
 +		 */
-+		mt6397keys: mt6397keys {
++		mt6397keys: keys {
 +			compatible = "mediatek,mt6397-keys";
 +			mediatek,long-press-mode = <1>;
 +			power-off-time-sec = <0>;
@@ -2192,12 +2197,16 @@ index 000000000..31e56ea15
 + * mmc-pwrseq-mt6630 sequence above does.
 + *
 + * Properties follow the vendor &mmc3 node (suez_dvt.dts): 4-bit,
-+ * non-removable, no card detect, no vmmc/vqmmc (the vendor node has none
-+ * either; the pads are on an always-on rail and the chip's power is the
-+ * PMU_EN GPIO, not a slot regulator). The vendor also claims SDR50/SDR104,
-+ * but a 1.8 V signalling switch needs a vqmmc regulator we do not have, so
-+ * UHS is left off and the slot runs at high-speed (50 MHz) -- plenty for
-+ * bring-up.
++ * non-removable, no card detect. The vendor names no regulators at all,
++ * because there is nothing to name: the pads sit on an always-on rail and the
++ * chip's power is the PMU_EN GPIO, not a slot regulator. mtk-sd.yaml requires
++ * both vmmc-supply and vqmmc-supply, so that rail is described as a fixed
++ * regulator and both properties point at it -- see the comment on them below.
++ *
++ * The vendor also claims SDR50/SDR104. UHS is left off here: switching to
++ * 1.8 V signalling needs a vqmmc regulator that can actually deliver 1.8 V,
++ * and this one is fixed at 3.3 V, so the switch would fail. The slot runs at
++ * high-speed (50 MHz), which is what the vendor's own stack settles on too.
 + *
 + * Pin lists are the vendor's (22-25 data, 27 cmd, 26 clk), structured like
 + * mt8173-elm's mmc3 groups.
@@ -2236,8 +2245,18 @@ index 000000000..31e56ea15
 +	/*
 +	 * A fixed always-on regulator, because the core needs an ocr mask to
 +	 * initialise the card and there is no switchable supply to name.
++	 *
++	 * vqmmc names the same rail. The bus signals at 3.3 V -- measured, as
++	 * /sys/kernel/debug/mmc2/ios reporting "signal voltage: 0 (3.30 V)"
++	 * while the link runs SD high-speed at 50 MHz -- and it never switches,
++	 * because no sd-uhs-* property asks it to. So one 3.3 V rail describes
++	 * both the card supply and the I/O supply, which is the situation
++	 * mtk-sd.yaml's required vqmmc-supply is asking about. The physical net
++	 * was not traced; what is known is the level the bus is observed to
++	 * signal at and that nothing here can change it.
 +	 */
 +	vmmc-supply = <&wifi_fixed_3v3>;
++	vqmmc-supply = <&wifi_fixed_3v3>;
 +	mmc-pwrseq = <&wifi_pwrseq>;
 +};
 +
