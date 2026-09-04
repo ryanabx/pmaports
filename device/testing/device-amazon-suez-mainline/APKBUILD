@@ -3,7 +3,7 @@ maintainer="Ryan Brue <ryanbrue.dev@gmail.com>"
 pkgname=device-amazon-suez-mainline
 pkgdesc="Amazon Fire HD 10 (2017) (mainline)"
 pkgver=1
-pkgrel=47
+pkgrel=48
 url="https://postmarketos.org"
 license="MIT"
 arch="aarch64"
@@ -18,6 +18,15 @@ depends="
 	postmarketos-base-ui-audio-backend-pipewire
 "
 makedepends="devicepkg-dev"
+# Mesa's PowerVR Vulkan driver, as a separate package pulled in automatically
+# when this device package and vulkan-loader are both installed -- the same
+# shape device-qcom-qcs6490 and friends use. It is not in depends= because a
+# device package should not force a Vulkan stack onto an image that has no
+# use for one; install_if means an image that already has vulkan-loader (any
+# of the UIs do) gets the driver, and a minimal one does not.
+subpackages="
+	$pkgname-vulkan
+"
 install="
 	$pkgname.post-install
 	$pkgname.post-upgrade
@@ -224,6 +233,14 @@ package() {
 	# Installed under /etc on purpose; see the comments in the file.
 	install -Dm644 "$srcdir"/pipewire-pulse.service \
 		"$pkgdir"/etc/systemd/user/pipewire-pulse.service
+}
+
+vulkan() {
+	pkgdesc="Vulkan support for the PowerVR GX6250"
+	install_if="$pkgname=$pkgver-r$pkgrel vulkan-loader"
+	depends="mesa-vulkan-imagination"
+
+	mkdir "$subpkgdir"
 }
 
 sha512sums="
