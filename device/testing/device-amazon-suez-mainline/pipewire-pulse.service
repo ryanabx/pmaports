@@ -4,8 +4,9 @@
 # arrival: the socket unit is enabled yet stays inactive (systemd will not
 # start a socket whose service cannot be loaded), and every libpulse client
 # gets "Connection refused". PipeWire itself is fine -- wpctl shows the sink
-# and source -- but GNOME Shell and the Settings sound panel reach audio
-# through libpulse, so the desktop shows NO audio devices at all.
+# and source -- but the desktop shells reach audio through libpulse (GNOME's
+# Settings sound panel, Plasma's plasma-pa applet), so they show NO audio
+# devices at all. This is not desktop-specific: any libpulse client breaks.
 #
 # This is a verbatim copy of upstream PipeWire's unit, hardened to match the
 # sibling units Alpine does ship. It lives in /etc/systemd/user on purpose:

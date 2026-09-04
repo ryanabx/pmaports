@@ -1,13 +1,18 @@
 [Unit]
 Description=Bind the PowerVR GX6250 GPU
 # The desktop renders on this GPU: Mesa's zink driver chains the display-only
-# mediatek KMS device to the PowerVR Vulkan driver over the render node, so
-# gnome-shell's GBM renderer on /dev/dri/card1 comes up hardware accelerated,
-# provided /dev/dri/renderD128 exists when the shell probes it. Otherwise the
-# zink probe fails and mutter silently falls back to llvmpipe for the whole
-# session. Hence Before=display-manager.service: the bind must finish before
-# any compositor starts. Ordering alone is enough, because graphical.target
-# pulls in both this unit and the display manager.
+# mediatek KMS device to the PowerVR Vulkan driver over the render node, so a
+# compositor's GBM renderer comes up hardware accelerated, provided
+# /dev/dri/renderD128 exists when it probes. Otherwise the zink probe fails
+# and the compositor silently falls back to llvmpipe for the whole session.
+# Hence Before=display-manager.service: the bind must finish before any
+# compositor starts. Ordering alone is enough, because graphical.target pulls
+# in both this unit and the display manager.
+#
+# display-manager.service is deliberately the only session unit named here, so
+# this stays desktop-agnostic: it is a real unit for gdm and sddm, and an
+# alias that plasma-mobile.service installs for itself. systemd resolves
+# aliases in dependencies, so Before= holds in all three cases.
 #
 # TIMING IS LOAD-BEARING. Binding at sysinit (modules-load.d) hard-wedged the
 # SoC within seconds, before the journal could flush -- verified on hardware

@@ -16,6 +16,14 @@ deviceinfo_external_storage="true"
 deviceinfo_screen_width="1200"
 deviceinfo_screen_height="1920"
 
+# The board has a working KMS driver: mediatek-drm binds, the Novatek NT51021
+# panel initialises, and /dev/dri/card* carries the 1200x1920 output. Without
+# this key pmbootstrap hides every DRM-only user interface (13 of 16,
+# including all the Plasma ones), because those UI aports carry "pmb:drm".
+# This is unrelated to deviceinfo_no_framebuffer below, which is only about
+# whether /dev/fb0 exists early enough for the initramfs splash.
+deviceinfo_drm="true"
+
 # The initramfs waits 10 s for /dev/fb0, twice (stage 1 and stage 2), and it
 # never appears: DRM_SIMPLEDRM is a module, so fb0 only shows up once systemd
 # loads it, long after the initramfs is done. There is therefore no splash to
