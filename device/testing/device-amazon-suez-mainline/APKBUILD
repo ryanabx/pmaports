@@ -3,7 +3,7 @@ maintainer="Ryan Brue <ryanbrue.dev@gmail.com>"
 pkgname=device-amazon-suez-mainline
 pkgdesc="Amazon Fire HD 10 (2017) (mainline)"
 pkgver=1
-pkgrel=45
+pkgrel=46
 url="https://postmarketos.org"
 license="MIT"
 arch="aarch64"
@@ -18,6 +18,10 @@ depends="
 	postmarketos-base-ui-audio-backend-pipewire
 "
 makedepends="devicepkg-dev"
+install="
+	$pkgname.post-install
+	$pkgname.post-upgrade
+	"
 source="
 	50-powervr-vulkan.conf
 	61-powervr-drm-ignore.rules
@@ -112,11 +116,15 @@ package() {
 		"$pkgdir"/usr/lib/systemd/system/graphical.target.wants/amazon-suez-gpu.service
 
 	# Let Mesa's PowerVR Vulkan driver accept the GX6250; without it the
-	# desktop is on llvmpipe. Two files, because a compositor may be either
-	# a user unit (GNOME, and Plasma under plasma-workspace-wayland.target)
-	# or a system service (Plasma Mobile's plasma-mobile.service, and every
-	# display manager), and environment.d only reaches the first kind. The
-	# files explain each other; keep the value in sync.
+	# desktop is on llvmpipe. THREE placements, because a compositor can be
+	# started three ways and each takes its environment from somewhere
+	# different: a systemd user unit (GNOME; Plasma under
+	# plasma-workspace-wayland.target) reads environment.d, a systemd system
+	# service (plasma-mobile.service, gdm, sddm) reads DefaultEnvironment=,
+	# and greetd -- which is how phosh starts -- reads neither, because it
+	# rebuilds the session environment from PAM. The third one is appended
+	# to /etc/environment by $pkgname.post-install; see that script for the
+	# measurement. Keep the value in sync across all three.
 	install -Dm644 "$srcdir"/50-powervr-vulkan.conf \
 		"$pkgdir"/usr/lib/environment.d/50-powervr-vulkan.conf
 	install -Dm644 "$srcdir"/suez-powervr-vulkan.conf \
