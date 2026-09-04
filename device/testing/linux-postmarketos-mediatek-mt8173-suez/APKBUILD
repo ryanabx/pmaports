@@ -11,7 +11,7 @@
 maintainer="Ryan Brue <ryanbrue.dev@gmail.com>"
 pkgname=linux-postmarketos-mediatek-mt8173-suez
 pkgver=7.2.2
-pkgrel=48
+pkgrel=49
 pkgdesc="Mainline kernel fork for the Amazon Fire HD 10 (2017)"
 arch="aarch64"
 _carch="arm64"
@@ -159,7 +159,7 @@ package() {
 
 sha512sums="
 6ca338fd2f9d2224b9187ba1cad18c05417c0504771917203a023467a8ac3a34e346bd3bc5a3f5716aa9810381a28c730ea5fc3726773dca36d75a4677178b13  linux-7.2.2.tar.xz
-818195aa957eb9ca29a7b21cdc3a8249affa100fbd213c586589e2ffa38be4d4ce244a90d697d34937ad79b7903bc93ba712447b68c416b670eec401438bffbc  config-postmarketos-mediatek-mt8173-suez.aarch64
+ead5936778e2cca81aabacea504021f4079a4f9533996f77be21e8ee0b3c96c909bb564ae5d4f4ace23d7d5378232cf3811a8a00a3231f2818ba84138f1be301  config-postmarketos-mediatek-mt8173-suez.aarch64
 5f5c52232a9543e822530d3b5d9f58d7bdb6b3ce82b94b6e79d59cd8c4ff96338ee126ef9da4da7405df82dc5d1d2775f149aefd7283676f74024ccd02bf572b  0001-dt-bindings-display-panel-add-Novatek-NT51021.patch
 efddd68a10f8397697ae4637295df9c9a09925b522ec074b9646775b3e85080efe53af3f70ef9d2973d2d99b5d36afcccf70e37be80dfd48449be8f6ac0bdbc8  0002-drm-panel-add-Novatek-NT51021-1200x1920-DSI-panel-dr.patch
 b8dec4d598ec738afcb78e9d8bf1cc0c58f52b31c04fbbacff4d4cf7a7d5b8a667c9c0eddb55850f69ecb8950670d7b687a2ae475f701b231e38414d29359ce1  0003-drm-mediatek-dsi-force-command-mode-in-mtk_dsi_power.patch
