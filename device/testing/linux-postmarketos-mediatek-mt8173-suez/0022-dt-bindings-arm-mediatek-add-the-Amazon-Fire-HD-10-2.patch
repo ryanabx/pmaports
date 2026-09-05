@@ -1,4 +1,4 @@
-From cd680c99ff73994c1caa28fb4e9dc3ebad479ebf Mon Sep 17 00:00:00 2001
+From 24310e5d6bf02aa6df84d4dacac1572954335952 Mon Sep 17 00:00:00 2001
 From: Ryan Brue <ryanbrue.dev@gmail.com>
 Date: Fri, 4 Sep 2026 16:21:22 -0500
 Subject: [PATCH] dt-bindings: arm: mediatek: add the Amazon Fire HD 10 (2017)

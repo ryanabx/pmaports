@@ -1,4 +1,4 @@
-From bebe81fbb2f6abd46e8988887ed836ef4d1eaa66 Mon Sep 17 00:00:00 2001
+From 08853210a2fa2518fa14dea0e3ba99202a96ca6d Mon Sep 17 00:00:00 2001
 From: Ryan Brue <ryanbrue.dev@gmail.com>
 Date: Thu, 3 Sep 2026 09:31:45 -0500
 Subject: [PATCH] drm/mediatek: dsi: force command mode in mtk_dsi_poweron()

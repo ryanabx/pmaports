@@ -1,36 +1,37 @@
-From 3360a60ad50655c8296087bf828d672b8b221a5e Mon Sep 17 00:00:00 2001
+From 38fafd05c472dff58ecf07e1ad277d975478c66a Mon Sep 17 00:00:00 2001
 From: Ryan Brue <ryanbrue.dev@gmail.com>
 Date: Fri, 4 Sep 2026 00:28:51 -0500
 Subject: [PATCH] clk: mediatek: mt8173: fix the FHCTL DDS mask width
 
 MT8173's PLLs carry pcwbits = 21, so the frequency hopping controller's DDS
-field is bits 20:0. The FH() macro declares .dds_mask = GENMASK(21, 0), which
-is one bit too wide; it was copied from the other SoCs in this family, whose
-PLLs really do have a 22-bit field. MediaTek's own MT8173 FHCTL driver masks
-with 0x1FFFFF throughout (MASK21b in mt_freqhopping.c).
+field is bits 20:0. The FH() macro declares .dds_mask = GENMASK(21, 0),
+which is one bit too wide; it was copied from the other SoCs in this
+family, whose PLLs really do have a 22-bit field. MediaTek's own MT8173
+FHCTL driver masks with 0x1FFFFF throughout (MASK21b in mt_freqhopping.c).
 
 The extra bit is not merely cosmetic. hopping_hw_flow() polls
 
 	readl_poll_timeout_atomic(regs->reg_mon, mon_dds,
 				  (mon_dds & dds_mask) == new_dds, 10, 1000);
 
-and new_dds comes from mtk_pll_calc_values(), i.e. it is always a 21-bit value.
-On this hardware FHCTL_MON has bit 21 set, so with the wider mask the
-comparison can never be true: measured on an MT8173 board (Amazon Fire HD 10
-2017) the MON register reads 0x00370000 for a target of 0x170000. Every hop
-therefore ran to the full timeout and logged "FHCTL hopping timeout", even
-though the PLL had reached the requested frequency in about 31 us.
+and new_dds comes from mtk_pll_calc_values(), i.e. it is always a 21-bit
+value. On this hardware FHCTL_MON has bit 21 set, so with the wider mask
+the comparison can never be true: measured on an MT8173 board (Amazon Fire
+HD 10 2017) the MON register reads 0x00370000 for a target of 0x170000.
+Every hop therefore ran to the full timeout and logged "FHCTL hopping
+timeout", even though the PLL had reached the requested frequency in about
+31 us.
 
 The same mask then feeds the write-back
 
 	con_pcw_tmp = (con_pcw_tmp | (readl(regs->reg_mon) & dds_mask) |
 		       data->pcwchg);
 
-so it would also have put bit 21 of MON into a CON1 field that does not belong
-to pcw.
+so it would also have put bit 21 of MON into a CON1 field that does not
+belong to pcw.
 
-Only mt8173 is changed. The other users of this macro (mt6795, mt8186, mt8192,
-mt8195) have 22-bit pcw fields and are left alone.
+Only mt8173 is changed. The other users of this macro (mt6795, mt8186,
+mt8192, mt8195) have 22-bit pcw fields and are left alone.
 
 Fixes: 45a5cbe05d1f ("clk: mediatek: mt8173: Add support for frequency hopping through FHCTL")
 Signed-off-by: Ryan Brue <ryanbrue.dev@gmail.com>

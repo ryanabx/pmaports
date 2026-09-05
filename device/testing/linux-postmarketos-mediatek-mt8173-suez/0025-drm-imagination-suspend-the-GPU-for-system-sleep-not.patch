@@ -1,23 +1,23 @@
-From 7e91b3cdb7192686a11114e791d47439a2aec769 Mon Sep 17 00:00:00 2001
+From 8a4e8e26d9d6341ed1fce308c099ed28be0127c5 Mon Sep 17 00:00:00 2001
 From: Ryan Brue <ryanbrue.dev@gmail.com>
 Date: Thu, 3 Sep 2026 14:14:58 -0500
 Subject: [PATCH] drm/imagination: suspend the GPU for system sleep, not just
  runtime PM
 
 pvr_pm_ops has only RUNTIME_PM_OPS, so the GPU gets no callback for system
-suspend at all. That is fine only while the GPU happens to be runtime-suspended
-when the system suspends -- then its own runtime PM has already disabled the
-firmware and powered the domain off. If it is runtime-ACTIVE, genpd powers the
-domain down during the system suspend without the driver ever being told, so on
-resume the driver still believes its firmware is running. The first firmware
-operation then never completes:
+suspend at all. That is fine only while the GPU happens to be
+runtime-suspended when the system suspends -- then its own runtime PM has
+already disabled the firmware and powered the domain off. If it is
+runtime-ACTIVE, genpd powers the domain down during the system suspend
+without the driver ever being told, so on resume the driver still believes
+its firmware is running. The first firmware operation then never completes:
 
   pvr_mmu_flush_exec -> timeout -> pvr_power_reset -> drm_dev_unplug
 
 and pvr_power_reset() deadlocks, because drm_dev_unplug() waits in
-synchronize_srcu() for every drm_dev_enter() section to exit while being called
-from inside a DRM ioctl that holds one. The result is an unkillable D-state
-process and a GPU that stays dead until reboot.
+synchronize_srcu() for every drm_dev_enter() section to exit while being
+called from inside a DRM ioctl that holds one. The result is an unkillable
+D-state process and a GPU that stays dead until reboot.
 
 On mt8173 (amazon-suez) this is deterministic:
 
@@ -25,19 +25,20 @@ On mt8173 (amazon-suez) this is deterministic:
   echo mem > /sys/power/state          # wakes on an RTC alarm
   vulkaninfo --summary                 # hangs in D state, every time
 
-and with an autosuspend delay of 50 ms it is also what makes the failure look
-intermittent in normal use -- it depends purely on whether the GPU was idle at
-the instant of suspend.
+and with an autosuspend delay of 50 ms it is also what makes the failure
+look intermittent in normal use -- it depends purely on whether the GPU was
+idle at the instant of suspend.
 
-pvr_power_device_suspend() already disables the firmware and calls the platform
-power_off, and pvr_power_device_resume() is its exact inverse, so force them for
-system sleep. The vendor driver arrives at the same rule by a different route: it
-holds a wakelock while the MFG domain is powered ("prevent suspend when gpu
-active") so the system can never suspend with the GPU on.
+pvr_power_device_suspend() already disables the firmware and calls the
+platform power_off, and pvr_power_device_resume() is its exact inverse, so
+force them for system sleep. The vendor driver arrives at the same rule by
+a different route: it holds a wakelock while the MFG domain is powered
+("prevent suspend when gpu active") so the system can never suspend with
+the GPU on.
 
 The reset-path deadlock itself (drm_dev_unplug() waiting on an SRCU section
-held by the ioctl that called pvr_power_reset()) is a separate problem and is
-not addressed here; this change only stops the system-sleep path from
+held by the ioctl that called pvr_power_reset()) is a separate problem and
+is not addressed here; this change only stops the system-sleep path from
 triggering it.
 
 Fixes: 727538a4bbff ("drm/imagination: Implement power management")

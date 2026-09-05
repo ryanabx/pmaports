@@ -1,4 +1,4 @@
-From 76e185fc8e9b3eb5fec73fcadcb2f6d0ae6cd2a7 Mon Sep 17 00:00:00 2001
+From f93f0ac5ccb3f672309abfd81baa6196a9775fd0 Mon Sep 17 00:00:00 2001
 From: Ryan Brue <ryanbrue.dev@gmail.com>
 Date: Thu, 3 Sep 2026 09:31:25 -0500
 Subject: [PATCH] drm/panel: add Novatek NT51021 1200x1920 DSI panel driver
@@ -80,7 +80,7 @@ index c2c5cf817..a73d2b7af 100644
  obj-$(CONFIG_DRM_PANEL_ORISETECH_OTA5601A) += panel-orisetech-ota5601a.o
 diff --git a/drivers/gpu/drm/panel/panel-novatek-nt51021.c b/drivers/gpu/drm/panel/panel-novatek-nt51021.c
 new file mode 100644
-index 000000000..bfa877a09
+index 000000000..3e7a3ecce
 --- /dev/null
 +++ b/drivers/gpu/drm/panel/panel-novatek-nt51021.c
 @@ -0,0 +1,424 @@
@@ -246,7 +246,7 @@ index 000000000..bfa877a09
 +	gpiod_set_value_cansleep(ctx->reset_gpio, 1);
 +	msleep(20);
 +	gpiod_set_value_cansleep(ctx->reset_gpio, 0);
-+	msleep(5);
++	usleep_range(5000, 6000);
 +
 +	nt51021_cmd_window(&dsi_ctx, true);
 +

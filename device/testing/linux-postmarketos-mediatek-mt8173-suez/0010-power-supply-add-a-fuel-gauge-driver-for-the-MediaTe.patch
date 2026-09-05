@@ -1,4 +1,4 @@
-From 2e172535df951817412cf39c6b35647a3c2588b2 Mon Sep 17 00:00:00 2001
+From 54dba753d9de688514d8bbf130d173f914306647 Mon Sep 17 00:00:00 2001
 From: Ryan Brue <ryanbrue.dev@gmail.com>
 Date: Thu, 3 Sep 2026 14:08:03 -0500
 Subject: [PATCH] power: supply: add a fuel gauge driver for the MediaTek
@@ -23,7 +23,7 @@ such a kernel reports the same state of charge it did before:
    auxiliary ADC) moves.
  - A charger reporting full re-anchors the counter at 100 %, and the
    displayed percentage moves towards the computed one by at most one point
-   per step, so it never jumps. It sits at 99 % until the charger says full,
+   per step, so it never jumps. It sits at 99 % until the charger is full,
    ramps to 100 % over the vendor's 60 s steps once it does, and holds
    100 % through the charger's recharge cycles while the cable stays in.
 

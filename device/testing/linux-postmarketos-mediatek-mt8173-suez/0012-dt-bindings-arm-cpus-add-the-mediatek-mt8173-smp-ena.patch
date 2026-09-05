@@ -1,4 +1,4 @@
-From e5fd7d855e184810d381f3b3cf203150ab31e8aa Mon Sep 17 00:00:00 2001
+From 34031a4ebd206b8542b73ee718cfeff0c8d08223 Mon Sep 17 00:00:00 2001
 From: Ryan Brue <ryanbrue.dev@gmail.com>
 Date: Thu, 3 Sep 2026 14:08:23 -0500
 Subject: [PATCH] dt-bindings: arm: cpus: add the mediatek,mt8173-smp enable

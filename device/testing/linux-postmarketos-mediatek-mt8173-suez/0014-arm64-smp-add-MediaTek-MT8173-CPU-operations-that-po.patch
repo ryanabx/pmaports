@@ -1,12 +1,13 @@
-From aeb592d06bd8085d338b7891468518c88b5cced9 Mon Sep 17 00:00:00 2001
+From c146811d68f07c24b2fb83fc6a8d5ffbf94deacd Mon Sep 17 00:00:00 2001
 From: Ryan Brue <ryanbrue.dev@gmail.com>
 Date: Thu, 3 Sep 2026 14:08:23 -0500
 Subject: [PATCH] arm64: smp: add MediaTek MT8173 CPU operations that power the
  MTCMOS domain around PSCI
 
 On MT8173 boards that do not ship ARM Trusted Firmware, PSCI alone cannot
-bring up or take down a secondary CPU. The firmware's CPU_ON sets the core's
-entry point but leaves its MTCMOS power domain off, so the core never runs:
+bring up or take down a secondary CPU. The firmware's CPU_ON sets the
+core's entry point but leaves its MTCMOS power domain off, so the core
+never runs:
 
   CPU1: failed to come online
   CPU1: failed in unknown state : 0x0
@@ -27,13 +28,13 @@ mtcmos.h.
 
 Both clusters are handled and their sequences differ. The A53 ("CA7")
 cluster has per-core PWR_CON and L1_PDN registers and is already powered,
-since the boot CPU lives in it. The A72 ("CA15") cluster has a shared L1_PDN
-register with per-core bits, and the whole cluster (CPUTOP + L2) must be
-powered first, which additionally means lifting the VCA15 supply isolation,
-clearing the TOP_AXI bus protection for the CA15 ADB, and deasserting
-ACINACTM in MCUCFG. The power-down paths are transcribed from the vendor's
-STA_POWER_DOWN branches; they are not mirror images of the power-up paths
-and are kept in the vendor's order.
+since the boot CPU lives in it. The A72 ("CA15") cluster has a shared
+L1_PDN register with per-core bits, and the whole cluster (CPUTOP + L2)
+must be powered first, which additionally means lifting the VCA15 supply
+isolation, clearing the TOP_AXI bus protection for the CA15 ADB, and
+deasserting ACINACTM in MCUCFG. The power-down paths are transcribed from
+the vendor's STA_POWER_DOWN branches; they are not mirror images of the
+power-up paths and are kept in the vendor's order.
 
 Three deliberate differences from the vendor: every status poll is bounded
 (10 ms) where the vendor spins forever, because an infinite spin here would

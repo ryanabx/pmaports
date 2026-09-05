@@ -1,4 +1,4 @@
-From 2cb8559f1bb362591c08603dc342c72f1dcba4de Mon Sep 17 00:00:00 2001
+From 2a54ebc25fd0dc9174c25478968401385f8408d7 Mon Sep 17 00:00:00 2001
 From: Ryan Brue <ryanbrue.dev@gmail.com>
 Date: Thu, 3 Sep 2026 14:09:45 -0500
 Subject: [PATCH] soc: mediatek: add suspend-to-RAM through the MT8173 SPM
@@ -15,12 +15,12 @@ The vendor kernel does not use PSCI for suspend either; it drives the SPM
 from the kernel (drivers/misc/mediatek/base/power/mt8173/{mt_sleep,mt_spm,
 mt_spm_internal,mt_spm_sleep}.c). This driver is that path, reduced to the
 one scenario it needs and rewritten against mainline infrastructure: the
-SPM is a small sequencer ("PCM") with its own instruction memory; the kernel
-points it at a firmware image in DRAM, kicks its instruction fetcher,
-programs the wake-source mask and the idle conditions, and parks the CPU in
-WFI. The PCM firmware waits for every CPU's STANDBYWFI, puts DRAM into
-self-refresh, drops VCORE, gates the 26 MHz clock, and reverses all of it
-on a wake event. The image carried here is the vendor's
+SPM is a small sequencer ("PCM") with its own instruction memory; the
+kernel points it at a firmware image in DRAM, kicks its instruction
+fetcher, programs the wake-source mask and the idle conditions, and parks
+the CPU in WFI. The PCM firmware waits for every CPU's STANDBYWFI, puts
+DRAM into self-refresh, drops VCORE, gates the 26 MHz clock, and reverses
+all of it on a wake event. The image carried here is the vendor's
 pcm_suspend_20150805_V1 (suspend_binary_ca7[] in its GPL-2.0
 mt_spm_sleep.c), byte for byte; it is sequencer microcode for which no
 assembler source exists.
@@ -39,7 +39,7 @@ measured on hardware:
  - Both clusters must report STANDBYWFIL2 before the SPM starts, and a
    powered cluster only does so with ACINACTM asserted. The vendor asserts
    it for the A53 cluster only (MP0_AXI_CONFIG bit 4) because its A72
-   cluster is already powered down; here the A72's bit, CA15L_MISCDBG bit 0,
+   cluster is already down; here the A72's bit, CA15L_MISCDBG bit 0,
    is asserted too. Without it the SPM never sees its sleep condition and
    "suspend" returns immediately with nothing powered down, which looks
    exactly like a working suspend from userspace, so the wake path warns

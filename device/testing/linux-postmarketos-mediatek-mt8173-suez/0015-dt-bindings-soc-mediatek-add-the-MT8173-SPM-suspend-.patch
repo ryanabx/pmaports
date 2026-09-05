@@ -1,15 +1,15 @@
-From c32f5de528a5e2c7287040814462cdbec3742020 Mon Sep 17 00:00:00 2001
+From 743c2a4b3389f5945de9e6a3bd415760daced359 Mon Sep 17 00:00:00 2001
 From: Ryan Brue <ryanbrue.dev@gmail.com>
 Date: Thu, 3 Sep 2026 14:09:44 -0500
 Subject: [PATCH] dt-bindings: soc: mediatek: add the MT8173 SPM suspend-to-RAM
  node
 
-The MT8173 System Power Manager (SPM) is a small sequencer inside the SCPSYS
-block that takes the SoC into and out of suspend-to-RAM once every CPU is in
-WFI. Boards that ship ARM Trusted Firmware drive it from EL3 through PSCI
-SYSTEM_SUSPEND. Boards whose firmware predates PSCI 1.0 (Amazon's LK-based
-MT8173 tablets, for one) have no SYSTEM_SUSPEND, so the kernel has to drive
-the SPM itself, as the vendor kernel does.
+The MT8173 System Power Manager (SPM) is a small sequencer inside the
+SCPSYS block that takes the SoC into and out of suspend-to-RAM once every
+CPU is in WFI. Boards that ship ARM Trusted Firmware drive it from EL3
+through PSCI SYSTEM_SUSPEND. Boards whose firmware predates PSCI 1.0
+(Amazon's LK-based MT8173 tablets, for one) have no SYSTEM_SUSPEND, so the
+kernel has to drive the SPM itself, as the vendor kernel does.
 
 Describe that as a child of the SCPSYS syscon, whose registers it shares
 with the power controller. The node names the MCUCFG syscon (for the
@@ -22,18 +22,19 @@ normally runs from.
 It is a board-level node on purpose: boards with ARM Trusted Firmware must
 not have it, or two suspend implementations would drive the same hardware.
 
-The node is a child of the scpsys syscon, which is already a simple-mfd with
-a power-controller child, so mediatek,mt8195-scpsys.yaml -- the schema that
-covers mediatek,mt8173-scpsys -- gains a reference to this one. Without that
-the parent's additionalProperties: false rejects the child, and a board DTB
-using it fails dtbs_check even though the child's own schema is satisfied.
+The node is a child of the scpsys syscon, which is already a simple-mfd
+with a power-controller child, so mediatek,mt8195-scpsys.yaml -- the schema
+that covers mediatek,mt8173-scpsys -- gains a reference to this one.
+Without that the parent's additionalProperties: false rejects the child,
+and a board DTB using it fails dtbs_check even though the child's own
+schema is satisfied.
 
 Signed-off-by: Ryan Brue <ryanbrue.dev@gmail.com>
 ---
  .../bindings/mfd/mediatek,mt8195-scpsys.yaml  |  6 ++
  .../mediatek/mediatek,mt8173-spm-suspend.yaml | 84 +++++++++++++++++++
  2 files changed, 90 insertions(+)
- create mode 100755 Documentation/devicetree/bindings/soc/mediatek/mediatek,mt8173-spm-suspend.yaml
+ create mode 100644 Documentation/devicetree/bindings/soc/mediatek/mediatek,mt8173-spm-suspend.yaml
 
 diff --git a/Documentation/devicetree/bindings/mfd/mediatek,mt8195-scpsys.yaml b/Documentation/devicetree/bindings/mfd/mediatek,mt8195-scpsys.yaml
 index 4cafa3819..2904d97e1 100644
@@ -53,7 +54,7 @@ index 4cafa3819..2904d97e1 100644
    - compatible
    - reg
 diff --git a/Documentation/devicetree/bindings/soc/mediatek/mediatek,mt8173-spm-suspend.yaml b/Documentation/devicetree/bindings/soc/mediatek/mediatek,mt8173-spm-suspend.yaml
-new file mode 100755
+new file mode 100644
 index 000000000..32f6ac4a5
 --- /dev/null
 +++ b/Documentation/devicetree/bindings/soc/mediatek/mediatek,mt8173-spm-suspend.yaml

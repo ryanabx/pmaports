@@ -1,12 +1,12 @@
-From 56daf3b5671cff1f2a44c6b1a1c31102f93b6685 Mon Sep 17 00:00:00 2001
+From a899dcf4eb158187ea75c8a186c29ed8e46f47a0 Mon Sep 17 00:00:00 2001
 From: Ryan Brue <ryanbrue.dev@gmail.com>
 Date: Thu, 3 Sep 2026 14:10:14 -0500
 Subject: [PATCH] arm64: dts: mediatek: mt8173: give DISP_OVL0 its MMSYS reset
  line
 
-MMSYS SW0_RST_B bit 17 resets DISP_OVL0; mainline defines only bit 25 (DSI0)
-in mt8173-resets.h. Add the define and wire the reset to the overlay node so
-its driver can take it.
+MMSYS SW0_RST_B bit 17 resets DISP_OVL0; mainline defines only bit 25
+(DSI0) in mt8173-resets.h. Add the define and wire the reset to the overlay
+node so its driver can take it.
 
 The bit was established on hardware by sweeping SW0_RST_B against a wedged
 overlay, not from a datasheet, which is why this stays a local patch: it is

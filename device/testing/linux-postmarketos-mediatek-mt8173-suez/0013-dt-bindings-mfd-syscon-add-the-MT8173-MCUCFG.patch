@@ -1,18 +1,19 @@
-From 3cb0304e24180361d6cc224ca98833e5a5c66007 Mon Sep 17 00:00:00 2001
+From cee76279d72416f5f38783b5578b0b25664e0ed8 Mon Sep 17 00:00:00 2001
 From: Ryan Brue <ryanbrue.dev@gmail.com>
 Date: Fri, 4 Sep 2026 16:20:59 -0500
 Subject: [PATCH] dt-bindings: mfd: syscon: add the MT8173 MCUCFG
 
 MT8173 has an MCUCFG block at 0x10200000 that has never been described. Its
-siblings mt2712 and mt8183 list theirs in clock/mediatek,syscon.yaml, but that
-binding is for clock providers -- it requires #clock-cells -- and on MT8173
-nothing in the block is exposed as a clock. It is used purely as a syscon, the
-way mediatek,mt8173-pctl-a-syscfg already is, so it belongs in this list.
+siblings mt2712 and mt8183 list theirs in clock/mediatek,syscon.yaml, but
+that binding is for clock providers -- it requires #clock-cells -- and on
+MT8173 nothing in the block is exposed as a clock. It is used purely as a
+syscon, the way mediatek,mt8173-pctl-a-syscfg already is, so it belongs in
+this list.
 
-The consumer is MT8173 CPU bring-up, which needs CA15L_MISCDBG in this block
-to deassert ACINACTM on the A72 cluster before the second cluster's cores can
-join. Without a compatible in some schema the node matches nothing at all and
-dtbs_check rejects the board.
+The consumer is MT8173 CPU bring-up, which needs CA15L_MISCDBG in this
+block to deassert ACINACTM on the A72 cluster before the second cluster's
+cores can join. Without a compatible in some schema the node matches
+nothing at all and dtbs_check rejects the board.
 
 Signed-off-by: Ryan Brue <ryanbrue.dev@gmail.com>
 ---

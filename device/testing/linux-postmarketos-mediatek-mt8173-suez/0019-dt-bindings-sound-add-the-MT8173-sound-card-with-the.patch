@@ -1,4 +1,4 @@
-From b61eb1bc0201dc141a197963ee70ed618f39da74 Mon Sep 17 00:00:00 2001
+From ae590da526ca7421d5e72d2add4b55294bfede70 Mon Sep 17 00:00:00 2001
 From: Ryan Brue <ryanbrue.dev@gmail.com>
 Date: Thu, 3 Sep 2026 14:09:45 -0500
 Subject: [PATCH] dt-bindings: sound: add the MT8173 sound card with the MT6391

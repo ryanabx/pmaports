@@ -1,16 +1,16 @@
-From 5a635fb5f2911eaf849c03ac29230989b7b8465f Mon Sep 17 00:00:00 2001
+From 2a413536515769eb34fb667c34141eaa85c6a676 Mon Sep 17 00:00:00 2001
 From: Ryan Brue <ryanbrue.dev@gmail.com>
 Date: Thu, 3 Sep 2026 14:08:23 -0500
 Subject: [PATCH] power: supply: bq24190_charger: do not reset the registers
  across system suspend
 
 bq24190_pm_suspend() calls bq24190_register_reset(), which returns every
-register on the chip to its power-on default, and bq24190_pm_resume() does it
-again before re-applying the probe-time configuration. Between them they
+register on the chip to its power-on default, and bq24190_pm_resume() does
+it again before re-applying the probe-time configuration. Between them they
 throw away every setting the chip was given, twice per sleep, and on mt8173
 (amazon-suez) that has now caused three distinct bugs:
 
- 1. The reset re-arms the chip's 40 s i2c watchdog, which bq24190_set_config()
+ 1. The reset re-arms the chip's 40 s i2c watchdog, which set_config()()
     deliberately turned off at probe. Nothing pets it while the system is
     asleep, so it expires, raises WATCHDOG_FAULT and pulses INT -- and
     bq24190_probe() armed that interrupt as a system wake source
@@ -37,23 +37,24 @@ throw away every setting the chip was given, twice per sleep, and on mt8173
     silently starts drawing from VBUS again the moment the system sleeps.
 
 Only the first is a bug the chip forces on us; the other two are the driver
-discarding a policy the host set, which is unusual for a charger driver to do
-across a suspend. The reset serves no purpose either: the chip is in host mode with its
-watchdog off, so nothing in it can expire or change while the host is asleep,
-and it keeps its registers as long as it has either VBUS or a battery -- and
-if it has neither the system is not suspended, it is off. The vendor kernel
-for the same board leaves the registers alone in suspend and resume.
+discarding a policy the host set, which is unusual for a charger driver to
+do across a suspend. The reset serves no purpose either: the chip is in
+host mode with its watchdog off, so nothing in it can expire or change
+while the host is asleep, and it keeps its registers as long as it has
+either VBUS or a battery -- and if it has neither the system is not
+suspended, it is off. The vendor kernel for the same board leaves the
+registers alone in suspend and resume.
 
 So do not reset in either direction. Drop the suspend callback, and have
 resume re-apply the probe-time configuration only, which is idempotent and
 covers a part that has somehow fallen back to default mode. Genuine charger
 events still wake the system, which is what the wake irq is for.
 
-The driver already has a per-instance opt-out, the "disable-reset" property,
-but that is not the fix: the watchdog wake bites every board that uses the
-chip's interrupt as a wake source, and IINLIM/EN_HIZ are lost on every board
-whose input limit is set from userspace, so the reset is wrong in suspend
-regardless of the board.
+The driver already has a per-instance opt-out, the "disable-reset"
+property, but that is not the fix: the watchdog wake bites every board that
+uses the chip's interrupt as a wake source, and IINLIM/EN_HIZ are lost on
+every board whose input limit is set from userspace, so the reset is wrong
+in suspend regardless of the board.
 
 Signed-off-by: Ryan Brue <ryanbrue.dev@gmail.com>
 ---

@@ -1,4 +1,4 @@
-From 529bd5c678e3f0c0621e3a6735ee495d56397b5d Mon Sep 17 00:00:00 2001
+From d4bbfcc6cda65957af2798b2e0a8a0ec5fdd8a51 Mon Sep 17 00:00:00 2001
 From: Ryan Brue <ryanbrue.dev@gmail.com>
 Date: Thu, 3 Sep 2026 14:08:02 -0500
 Subject: [PATCH] dt-bindings: power: supply: add the MediaTek MT6397 fuel

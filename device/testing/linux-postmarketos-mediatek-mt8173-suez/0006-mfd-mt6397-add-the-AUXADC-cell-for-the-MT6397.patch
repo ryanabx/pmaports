@@ -1,4 +1,4 @@
-From ff0bae440ae26bb50b2e361017015038f8374bf3 Mon Sep 17 00:00:00 2001
+From 978bf2d4d520e48d401baa2e68a592e9649cdc55 Mon Sep 17 00:00:00 2001
 From: Ryan Brue <ryanbrue.dev@gmail.com>
 Date: Thu, 3 Sep 2026 14:08:01 -0500
 Subject: [PATCH] mfd: mt6397: add the AUXADC cell for the MT6397

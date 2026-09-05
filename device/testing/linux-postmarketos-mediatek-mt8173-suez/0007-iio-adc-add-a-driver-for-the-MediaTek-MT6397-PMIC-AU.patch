@@ -1,14 +1,14 @@
-From 320beb05eaa9716b6b68b6dcad5c3399af94d338 Mon Sep 17 00:00:00 2001
+From 4bcec0c79aece00f44281abb1ea895a45aff7311 Mon Sep 17 00:00:00 2001
 From: Ryan Brue <ryanbrue.dev@gmail.com>
 Date: Thu, 3 Sep 2026 14:08:02 -0500
 Subject: [PATCH] iio: adc: add a driver for the MediaTek MT6397 PMIC AUXADC
 
 The MT6397 has a 10-bit auxiliary ADC behind the SoC's PMIC wrapper. On
 tablets built around this PMIC it is the only way to read the battery
-voltage: the SoC's own auxadc (mt6577-auxadc) is wired to board thermistors,
-and charger ICs such as the BQ24297 do not measure the pack at all. It is
-also what the battery thermistor sits on. Both are exposed as IIO voltage
-channels so the fuel-gauge driver can consume them.
+voltage: the SoC's own auxadc (mt6577-auxadc) is wired to board
+thermistors, and charger ICs such as the BQ24297 do not measure the pack at
+all. It is also what the battery thermistor sits on. Both are exposed as
+IIO voltage channels so the fuel-gauge driver can consume them.
 
 The register interface is the one the vendor's pmic_auxadc.c programs:
 select the channel in AUXADC_CON1, pulse START (it is edge triggered, so it
@@ -20,7 +20,7 @@ and raw values differ by about 13 LSB (60 mV) on the battery channel.
 
 Two channel-specific sequences come from the same vendor source:
 
- - The battery voltage is measured through ISENSE, the pack side of the fuel
+ - The battery voltage is read through ISENSE, the pack side of the fuel
    gauge's sense resistor, not the PMIC's VBAT pin. On a board with a
    switching charger in the power path, VBAT sits on the charger's SYS rail
    and does not follow the pack. The vendor enables the ISENSE input and
@@ -33,13 +33,13 @@ Two channel-specific sequences come from the same vendor source:
    20 ms to settle, and both are switched off again afterwards.
 
 Every read averages 16 conversions. A single conversion is far too noisy to
-drive a fuel gauge: measured with the pack resting, back-to-back reads swing
-over roughly 16 LSB (about 75 mV), and the discharge curve is nearly flat in
-the middle of the range, so that lands as an 11-point swing in reported
-state of charge. The vendor averages 5; a conversion costs well under a
-millisecond and nothing reads this more than a few times a minute, so more
-is cheap and cuts the spread by about a factor of four. The vendor's
-restore of the sample count register to 1 after each read is kept.
+drive a fuel gauge: measured with the pack resting, back-to-back reads
+swing over roughly 16 LSB (about 75 mV), and the discharge curve is nearly
+flat in the middle of the range, so that lands as an 11-point swing in
+reported state of charge. The vendor averages 5; a conversion costs well
+under a millisecond and nothing reads this more than a few times a minute,
+so more is cheap and cuts the spread by about a factor of four. The
+vendor's restore of the sample count register to 1 after each read is kept.
 
 Tested on the Amazon Fire HD 10 (2017), where the two channels feed the
 mt6397-battery fuel gauge.

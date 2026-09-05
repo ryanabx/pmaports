@@ -1,4 +1,4 @@
-From 69a901855810df26c86bc84db355fe2684884575 Mon Sep 17 00:00:00 2001
+From 93c0ba06d81565b8a0083f29e6f385b37af2f0bb Mon Sep 17 00:00:00 2001
 From: Ryan Brue <ryanbrue.dev@gmail.com>
 Date: Thu, 3 Sep 2026 14:09:45 -0500
 Subject: [PATCH] ASoC: mediatek: mt8173: add the ADDA DAI towards the PMIC
@@ -19,11 +19,11 @@ Tested on the Amazon Fire HD 10 (2017) with the mt6391 codec.
 
 Signed-off-by: Ryan Brue <ryanbrue.dev@gmail.com>
 ---
- sound/soc/mediatek/mt8173/mt8173-afe-pcm.c | 152 +++++++++++++++++++++
- 1 file changed, 152 insertions(+)
+ sound/soc/mediatek/mt8173/mt8173-afe-pcm.c | 160 +++++++++++++++++++++
+ 1 file changed, 160 insertions(+)
 
 diff --git a/sound/soc/mediatek/mt8173/mt8173-afe-pcm.c b/sound/soc/mediatek/mt8173/mt8173-afe-pcm.c
-index 69cadc91c..3dc724a24 100644
+index 69cadc91c..ce3a13322 100644
 --- a/sound/soc/mediatek/mt8173/mt8173-afe-pcm.c
 +++ b/sound/soc/mediatek/mt8173/mt8173-afe-pcm.c
 @@ -63,6 +63,14 @@
@@ -51,7 +51,7 @@ index 69cadc91c..3dc724a24 100644
  #define AUD_TCON0_PDN_SPDF		(0x1 << 21)
  #define AUD_TCON0_PDN_HDMI		(0x1 << 20)
  #define AUD_TCON0_PDN_24M		(0x1 << 9)
-@@ -237,6 +248,118 @@ static void mt8173_afe_set_i2s_enable(struct mtk_base_afe *afe, bool enable)
+@@ -237,6 +248,126 @@ static void mt8173_afe_set_i2s_enable(struct mtk_base_afe *afe, bool enable)
  	regmap_update_bits(afe->regmap, AFE_I2S_CON1, 0x1, enable);
  }
  
@@ -145,10 +145,18 @@ index 69cadc91c..3dc724a24 100644
 +		unsigned int voice_mode;
 +
 +		switch (rate) {
-+		case 8000:  voice_mode = 0; break;
-+		case 16000: voice_mode = 1; break;
-+		case 32000: voice_mode = 2; break;
-+		case 48000: voice_mode = 3; break;
++		case 8000:
++			voice_mode = 0;
++			break;
++		case 16000:
++			voice_mode = 1;
++			break;
++		case 32000:
++			voice_mode = 2;
++			break;
++		case 48000:
++			voice_mode = 3;
++			break;
 +		default:
 +			return -EINVAL;
 +		}
@@ -170,7 +178,7 @@ index 69cadc91c..3dc724a24 100644
  static int mt8173_afe_dais_enable_clks(struct mtk_base_afe *afe,
  				       struct clk *m_ck, struct clk *b_ck)
  {
-@@ -520,6 +643,12 @@ static const struct snd_soc_dai_ops mt8173_afe_i2s_ops = {
+@@ -520,6 +651,12 @@ static const struct snd_soc_dai_ops mt8173_afe_i2s_ops = {
  	.prepare	= mt8173_afe_i2s_prepare,
  };
  
@@ -183,7 +191,7 @@ index 69cadc91c..3dc724a24 100644
  static const struct snd_soc_dai_ops mt8173_afe_hdmi_ops = {
  	.startup	= mt8173_afe_hdmi_startup,
  	.shutdown	= mt8173_afe_hdmi_shutdown,
-@@ -571,6 +700,25 @@ static struct snd_soc_dai_driver mt8173_afe_pcm_dais[] = {
+@@ -571,6 +708,25 @@ static struct snd_soc_dai_driver mt8173_afe_pcm_dais[] = {
  		},
  		.ops = &mt8173_afe_i2s_ops,
  		.symmetric_rate = 1,
@@ -209,7 +217,7 @@ index 69cadc91c..3dc724a24 100644
  	},
  };
  
-@@ -650,10 +798,14 @@ static const struct snd_soc_dapm_route mt8173_afe_pcm_routes[] = {
+@@ -650,10 +806,14 @@ static const struct snd_soc_dapm_route mt8173_afe_pcm_routes[] = {
  	{"I06", NULL, "DL1"},
  	{"I2S Playback", NULL, "O03"},
  	{"I2S Playback", NULL, "O04"},

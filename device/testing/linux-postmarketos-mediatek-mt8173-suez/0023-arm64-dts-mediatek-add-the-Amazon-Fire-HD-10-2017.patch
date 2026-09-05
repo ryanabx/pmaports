@@ -1,4 +1,4 @@
-From 7b235b971bde2ef1610135b0482343d09d95c922 Mon Sep 17 00:00:00 2001
+From 8848922569111bd046f5865f4b1995aef27247d6 Mon Sep 17 00:00:00 2001
 From: Ryan Brue <ryanbrue.dev@gmail.com>
 Date: Thu, 3 Sep 2026 14:09:46 -0500
 Subject: [PATCH] arm64: dts: mediatek: add the Amazon Fire HD 10 (2017)
@@ -26,15 +26,24 @@ the unit's IDME identifies. Where the two sources disagree or a value was
 established on hardware instead, the comment next to the property says so.
 
 The DTB validates against the schemas. "make CHECK_DTBS=y" on this board
-reports one thing, and it is not this board's doing: mt8173.dtsi's mmsys node
-has had unschema'd assigned-clocks for as long as it has had them, which a
-pristine mt8173-elm build reports identically.
+reports one thing, and it is not this board's doing: mt8173.dtsi's mmsys
+node has had unschema'd assigned-clocks for as long as it has had them,
+which a pristine mt8173-elm build reports identically.
+
+The MT6630 WiFi/BT combo on SDIO is deliberately NOT described here. Its
+wifi-pwrseq node needs compatible "mmc-pwrseq-mt6630", which has no binding
+document and is implemented only by an out-of-tree bring-up driver, so
+describing it in this file would add an undocumented compatible string to
+mainline (checkpatch: UNDOCUMENTED_DT_STRING) for hardware mainline cannot
+drive. mmc3, its pinctrl groups, its fixed supply and the mmc2 alias go
+with it. They are carried downstream until that driver is rewritten as an
+mt76 sub-driver and gets a real binding.
 
 Signed-off-by: Ryan Brue <ryanbrue.dev@gmail.com>
 ---
  arch/arm64/boot/dts/mediatek/Makefile         |    1 +
- .../boot/dts/mediatek/mt8173-amazon-suez.dts  | 2793 +++++++++++++++++
- 2 files changed, 2794 insertions(+)
+ .../boot/dts/mediatek/mt8173-amazon-suez.dts  | 2651 +++++++++++++++++
+ 2 files changed, 2652 insertions(+)
  create mode 100644 arch/arm64/boot/dts/mediatek/mt8173-amazon-suez.dts
 
 diff --git a/arch/arm64/boot/dts/mediatek/Makefile b/arch/arm64/boot/dts/mediatek/Makefile
@@ -51,10 +60,10 @@ index a86fb313b..ec85d7c49 100644
  dtb-$(CONFIG_ARCH_MEDIATEK) += mt8173-elm-hana-rev7.dtb
 diff --git a/arch/arm64/boot/dts/mediatek/mt8173-amazon-suez.dts b/arch/arm64/boot/dts/mediatek/mt8173-amazon-suez.dts
 new file mode 100644
-index 000000000..a567cc17a
+index 000000000..2ada5d36f
 --- /dev/null
 +++ b/arch/arm64/boot/dts/mediatek/mt8173-amazon-suez.dts
-@@ -0,0 +1,2793 @@
+@@ -0,0 +1,2651 @@
 +// SPDX-License-Identifier: (GPL-2.0 OR MIT)
 +/*
 + * Copyright (c) 2026 Ryan Brue <ryanbrue.dev@gmail.com>
@@ -97,7 +106,6 @@ index 000000000..a567cc17a
 +		 */
 +		mmc0 = &mmc0;
 +		mmc1 = &mmc1;
-+		mmc2 = &mmc3;
 +
 +		serial0 = &uart0;
 +	};
@@ -171,37 +179,6 @@ index 000000000..a567cc17a
 +		mediatek,platform = <&afe>;
 +		pinctrl-names = "default";
 +		pinctrl-0 = <&audio_pins_default>;
-+	};
-+
-+	/*
-+	 * The always-on rail feeding the MT6630's SDIO interface. Not a real
-+	 * switchable supply -- the chip's power control is its PMU_EN GPIO
-+	 * (pio 8), not a regulator -- but the MMC core refuses to initialise
-+	 * a card on a host whose ocr_avail is empty ("no support for card's
-+	 * volts", seen on hardware), and ocr_avail comes from vmmc. A fixed
-+	 * always-on 3.3 V regulator is the honest description of the rail and
-+	 * gives the core a voltage window to accept the chip's OCR with.
-+	 * mt8173-elm models its SDIO WiFi power the same way (sdio_fixed_3v3).
-+	 */
-+	wifi_fixed_3v3: regulator-wifi {
-+		compatible = "regulator-fixed";
-+		regulator-name = "wifi_fixed_3v3";
-+		regulator-min-microvolt = <3300000>;
-+		regulator-max-microvolt = <3300000>;
-+		regulator-always-on;
-+	};
-+
-+	/*
-+	 * MT6630 power-up, in-kernel (vendor mtk_wcn_cmb_hw_pwr_on): PMU_EN
-+	 * (pio 8) and RST (pio 38) low 20 ms, PMU_EN high 50 ms, RST high
-+	 * 50 ms. Same proven timing as the userspace bring-up ritual. With
-+	 * this the chip answers the boot-time SDIO scan and BT exists from
-+	 * boot; the powerdown/reset naming is the pwrseq-sd8787 binding's.
-+	 */
-+	wifi_pwrseq: wifi-pwrseq {
-+		compatible = "mmc-pwrseq-mt6630";
-+		powerdown-gpios = <&pio 8 GPIO_ACTIVE_HIGH>;
-+		reset-gpios = <&pio 38 GPIO_ACTIVE_HIGH>;
 +	};
 +
 +	/*
@@ -409,7 +386,8 @@ index 000000000..a567cc17a
 +			mediatek,car-tune-value = <101>;
 +			mediatek,ocv2cv-transform;
 +			mediatek,step-of-qmax-milliamp-hours = <54>;
-+			mediatek,cv-current-microamp = <600000>;	/* cv_current 6000 x 0.1 mA */
++			/* vendor cv_current 6000, in units of 0.1 mA */
++			mediatek,cv-current-microamp = <600000>;
 +			mediatek,poweron-low-capacity-tolerance = <0>;
 +			mediatek,ntc-pull-up-ohms = <24000>;
 +			mediatek,ntc-pull-up-millivolt = <1200>;
@@ -2149,10 +2127,6 @@ index 000000000..a567cc17a
 + * SDR50/SDR104. Two independent trees agreeing is what makes these SoC-level
 + * rather than board-level values -- the same reasoning used for the eMMC's
 + * HS400 tuning.
-+ *
-+ * Note the vendor's &mmc3, also enabled downstream, is NOT this slot: it is
-+ * non-removable with no card detect and hosts the MT6630 WiFi/BT combo over
-+ * SDIO; see the &mmc3 node below.
 + */
 +&mmc1 {
 +	status = "okay";
@@ -2189,75 +2163,6 @@ index 000000000..a567cc17a
 +	 * field at its zero default.
 +	 */
 +	mediatek,hs200-cmd-int-delay = <4>;
-+};
-+
-+/*
-+ * The MT6630 WiFi/BT/GPS/FM combo chip, on SDIO. The chip enumerates once
-+ * its PMU_EN (pio 8) and RST (pio 38) lines are driven high, which the
-+ * mmc-pwrseq-mt6630 sequence above does.
-+ *
-+ * Properties follow the vendor &mmc3 node (suez_dvt.dts): 4-bit,
-+ * non-removable, no card detect. The vendor names no regulators at all,
-+ * because there is nothing to name: the pads sit on an always-on rail and the
-+ * chip's power is the PMU_EN GPIO, not a slot regulator. mtk-sd.yaml requires
-+ * both vmmc-supply and vqmmc-supply, so that rail is described as a fixed
-+ * regulator and both properties point at it -- see the comment on them below.
-+ *
-+ * The vendor also claims SDR50/SDR104. UHS is left off here: switching to
-+ * 1.8 V signalling needs a vqmmc regulator that can actually deliver 1.8 V,
-+ * and this one is fixed at 3.3 V, so the switch would fail. The slot runs at
-+ * high-speed (50 MHz), which is what the vendor's own stack settles on too.
-+ *
-+ * Pin lists are the vendor's (22-25 data, 27 cmd, 26 clk), structured like
-+ * mt8173-elm's mmc3 groups.
-+ */
-+&mmc3 {
-+	status = "okay";
-+	pinctrl-names = "default", "state_uhs";
-+	pinctrl-0 = <&mmc3_pins_default>;
-+	pinctrl-1 = <&mmc3_pins_uhs>;
-+	bus-width = <4>;
-+	max-frequency = <200000000>;
-+	cap-sd-highspeed;
-+	/* the MT6630 signals RX via the SDIO in-band interrupt (the vendor
-+	 * stack registers no EINT for MT6630-on-SDIO); without this cap the
-+	 * mmc core's CCCR-INTx poll fallback never fired the handler */
-+	cap-sdio-irq;
-+	non-removable;
-+
-+	/*
-+	 * Do not power the chip down for system suspend. mmc_sdio_suspend()
-+	 * calls mmc_power_off() unless MMC_PM_KEEP_POWER is set, and here that
-+	 * runs the pwrseq below and drops PMU_EN and RST -- a full power cycle
-+	 * of a chip whose ROM patches and WLAN firmware are downloaded to its
-+	 * RAM at probe. Both function drivers request the flag in their
-+	 * .suspend, and sdio_set_host_pm_flags() rejects it unless
-+	 * host->pm_caps allows it, which is what this property sets.
-+	 *
-+	 * It is not a fiction on this board: nothing can switch the MT6630's
-+	 * supply. The vendor's &mmc3 has no vmmc-supply at all, and its
-+	 * connectivity-combo node leaves gpio_combo_ldo_en_pin and
-+	 * gpio_combo_pmuv28_en_pin commented out, so PMU_EN and RST are the
-+	 * only power control that exists.
-+	 */
-+	keep-power-in-suspend;
-+
-+	/*
-+	 * A fixed always-on regulator, because the core needs an ocr mask to
-+	 * initialise the card and there is no switchable supply to name.
-+	 *
-+	 * vqmmc names the same rail. The bus signals at 3.3 V -- measured, as
-+	 * /sys/kernel/debug/mmc2/ios reporting "signal voltage: 0 (3.30 V)"
-+	 * while the link runs SD high-speed at 50 MHz -- and it never switches,
-+	 * because no sd-uhs-* property asks it to. So one 3.3 V rail describes
-+	 * both the card supply and the I/O supply, which is the situation
-+	 * mtk-sd.yaml's required vqmmc-supply is asking about. The physical net
-+	 * was not traced; what is known is the level the bus is observed to
-+	 * signal at and that nothing here can change it.
-+	 */
-+	vmmc-supply = <&wifi_fixed_3v3>;
-+	vqmmc-supply = <&wifi_fixed_3v3>;
-+	mmc-pwrseq = <&wifi_pwrseq>;
 +};
 +
 +&pio {
@@ -2321,44 +2226,6 @@ index 000000000..a567cc17a
 +		pins-clk {
 +			pinmux = <MT8173_PIN_77_MSDC1_CLK__FUNC_MSDC1_CLK>;
 +			drive-strength = <10>;
-+			bias-pull-down = <MTK_PUPD_SET_R1R0_10>;
-+		};
-+	};
-+
-+	mmc3_pins_default: mmc3-default-pins {
-+		pins-cmd-dat {
-+			pinmux = <MT8173_PIN_22_MSDC3_DAT0__FUNC_MSDC3_DAT0>,
-+				 <MT8173_PIN_23_MSDC3_DAT1__FUNC_MSDC3_DAT1>,
-+				 <MT8173_PIN_24_MSDC3_DAT2__FUNC_MSDC3_DAT2>,
-+				 <MT8173_PIN_25_MSDC3_DAT3__FUNC_MSDC3_DAT3>,
-+				 <MT8173_PIN_27_MSDC3_CMD__FUNC_MSDC3_CMD>;
-+			input-enable;
-+			drive-strength = <4>;
-+			bias-pull-up = <MTK_PUPD_SET_R1R0_10>;
-+		};
-+
-+		pins-clk {
-+			pinmux = <MT8173_PIN_26_MSDC3_CLK__FUNC_MSDC3_CLK>;
-+			drive-strength = <4>;
-+			bias-pull-down = <MTK_PUPD_SET_R1R0_10>;
-+		};
-+	};
-+
-+	mmc3_pins_uhs: mmc3-uhs-pins {
-+		pins-cmd-dat {
-+			pinmux = <MT8173_PIN_22_MSDC3_DAT0__FUNC_MSDC3_DAT0>,
-+				 <MT8173_PIN_23_MSDC3_DAT1__FUNC_MSDC3_DAT1>,
-+				 <MT8173_PIN_24_MSDC3_DAT2__FUNC_MSDC3_DAT2>,
-+				 <MT8173_PIN_25_MSDC3_DAT3__FUNC_MSDC3_DAT3>,
-+				 <MT8173_PIN_27_MSDC3_CMD__FUNC_MSDC3_CMD>;
-+			input-enable;
-+			drive-strength = <4>;
-+			bias-pull-up = <MTK_PUPD_SET_R1R0_10>;
-+		};
-+
-+		pins-clk {
-+			pinmux = <MT8173_PIN_26_MSDC3_CLK__FUNC_MSDC3_CLK>;
-+			drive-strength = <4>;
 +			bias-pull-down = <MTK_PUPD_SET_R1R0_10>;
 +		};
 +	};

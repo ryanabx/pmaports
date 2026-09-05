@@ -1,4 +1,4 @@
-From c1ed2e5346ee27e710716a89d9972cea5a5daaf0 Mon Sep 17 00:00:00 2001
+From 7a5728e677020cbda4dda5eb671cf1b6a746db64 Mon Sep 17 00:00:00 2001
 From: Ryan Brue <ryanbrue.dev@gmail.com>
 Date: Thu, 3 Sep 2026 09:31:45 -0500
 Subject: [PATCH] soc: mediatek: mt8173: stop a display overlay left running by

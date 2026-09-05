@@ -1,4 +1,4 @@
-From 37e84ab93bbc63cbdc6bb01cc366c1c240ef73d3 Mon Sep 17 00:00:00 2001
+From 4422bc80abd46017811319465214abd04c04e271 Mon Sep 17 00:00:00 2001
 From: Ryan Brue <ryanbrue.dev@gmail.com>
 Date: Thu, 3 Sep 2026 14:09:46 -0500
 Subject: [PATCH] ASoC: mediatek: add the MT8173 machine driver for the MT6391
@@ -63,7 +63,7 @@ index c1eed0d26..b372825aa 100644
  obj-$(CONFIG_SND_SOC_MT8173_RT5650_RT5676) += mt8173-rt5650-rt5676.o
 diff --git a/sound/soc/mediatek/mt8173/mt8173-mt6391.c b/sound/soc/mediatek/mt8173/mt8173-mt6391.c
 new file mode 100644
-index 000000000..944f32bbd
+index 000000000..1b3d20d41
 --- /dev/null
 +++ b/sound/soc/mediatek/mt8173/mt8173-mt6391.c
 @@ -0,0 +1,238 @@
@@ -303,5 +303,5 @@ index 000000000..944f32bbd
 +
 +/* Module information */
 +MODULE_DESCRIPTION("MT8173 MT6391 ALSA SoC machine driver");
-+MODULE_LICENSE("GPL v2");
++MODULE_LICENSE("GPL");
 +MODULE_ALIAS("platform:mt8173-mt6391");

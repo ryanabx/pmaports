@@ -1,4 +1,4 @@
-From 8ed75702b3403799c45683e29bc29d10674aad6e Mon Sep 17 00:00:00 2001
+From bac54d0b85e0e13e7ae2c4b0557433b592f6a266 Mon Sep 17 00:00:00 2001
 From: Ryan Brue <ryanbrue.dev@gmail.com>
 Date: Thu, 3 Sep 2026 14:10:14 -0500
 Subject: [PATCH] mmc: pwrseq_sd8787: add the MT6630 power-on sequence

@@ -1,4 +1,4 @@
-From e345aa2bc5058abf0ae0bbe4c6e69553543e3401 Mon Sep 17 00:00:00 2001
+From bc15d5487ec30619b35366aa23740760cdf9da61 Mon Sep 17 00:00:00 2001
 From: Ryan Brue <ryanbrue.dev@gmail.com>
 Date: Thu, 3 Sep 2026 14:09:45 -0500
 Subject: [PATCH] ASoC: codecs: add the MediaTek MT6391 PMIC audio codec
@@ -28,19 +28,19 @@ Tested on the Amazon Fire HD 10 (2017): speaker and headphone playback at
 
 Signed-off-by: Ryan Brue <ryanbrue.dev@gmail.com>
 ---
- sound/soc/codecs/Kconfig  |    7 +
+ sound/soc/codecs/Kconfig  |   16 +
  sound/soc/codecs/Makefile |    2 +
- sound/soc/codecs/mt6391.c | 2940 +++++++++++++++++++++++++++++++++++++
- sound/soc/codecs/mt6391.h |   57 +
- 4 files changed, 3006 insertions(+)
+ sound/soc/codecs/mt6391.c | 2941 +++++++++++++++++++++++++++++++++++++
+ sound/soc/codecs/mt6391.h |   58 +
+ 4 files changed, 3017 insertions(+)
  create mode 100644 sound/soc/codecs/mt6391.c
  create mode 100644 sound/soc/codecs/mt6391.h
 
 diff --git a/sound/soc/codecs/Kconfig b/sound/soc/codecs/Kconfig
-index e4d139108..a8b0faf29 100644
+index e4d139108..270d5dd1e 100644
 --- a/sound/soc/codecs/Kconfig
 +++ b/sound/soc/codecs/Kconfig
-@@ -2815,6 +2815,13 @@ config SND_SOC_MT6357
+@@ -2815,6 +2815,22 @@ config SND_SOC_MT6357
  	  Enable support for the platform which uses MT6357 as
  	  external codec device.
  
@@ -49,7 +49,16 @@ index e4d139108..a8b0faf29 100644
 +	depends on MFD_MT6397
 +	help
 +	  Enable support for the audio codec inside the MediaTek MT6397
-+	  family PMIC (marketed as MT6391 on MT8173 boards).
++	  family PMIC, marketed as MT6391 on MT8173 boards.
++
++	  The codec provides the analogue front and back ends: stereo
++	  headphone and loudspeaker outputs, and the microphone inputs,
++	  driven over the PMIC's register bus rather than a separate
++	  control interface. It is paired with the SoC's ADDA DAI by the
++	  MT8173 machine driver.
++
++	  To compile this driver as a module, choose M here: the module
++	  will be called snd-soc-mt6391.
 +
  config SND_SOC_MT6358
  	tristate "MediaTek MT6358 Codec"
@@ -76,10 +85,11 @@ index aa0396e5b..370d27ab0 100644
  obj-$(CONFIG_SND_SOC_MT6359_ACCDET) += mt6359-accdet.o
 diff --git a/sound/soc/codecs/mt6391.c b/sound/soc/codecs/mt6391.c
 new file mode 100644
-index 000000000..061d29bd5
+index 000000000..c06eaa6fa
 --- /dev/null
 +++ b/sound/soc/codecs/mt6391.c
-@@ -0,0 +1,2940 @@
+@@ -0,0 +1,2941 @@
++// SPDX-License-Identifier: GPL-2.0-only
 +/* Copyright (c) 2011-2013, The Linux Foundation. All rights reserved.
 + *
 + * This program is free software; you can redistribute it and/or modify
@@ -1093,11 +1103,11 @@ index 000000000..061d29bd5
 +	/* audio bias adjustment */
 +	mt6391_set_reg(codec_data, MT6397_IBIASDIST_CFG0, 0x0552, 0xffff);
 +
-+	/* handset gain , minimun gain */
++	/* handset gain , minimum gain */
 +	mt6391_set_reg(codec_data, MT6397_ZCD_CON3, 0xf, 0xf);
 +	/* short HS to vcm and HS output stability enhance */
 +	mt6391_set_reg(codec_data, MT6397_AUDBUF_CFG2, 0x00A2, 0xffff);
-+	/* handset gain , minimun gain */
++	/* handset gain , minimum gain */
 +	mt6391_set_reg(codec_data, MT6397_AUDBUF_CFG0, 0x0001, 0xffff);
 +	/* short HS to vcm and HS output stability enhance */
 +	mt6391_set_reg(codec_data, MT6397_AUDBUF_CFG2, 0x0022, 0xffff);
@@ -2909,7 +2919,7 @@ index 000000000..061d29bd5
 +				ARRAY_SIZE(mt6391_factory_controls));
 +
 +#ifdef CONFIG_DEBUG_FS
-+	codec_data->debugfs = debugfs_create_file("mt6391reg", S_IFREG | S_IRUGO,
++	codec_data->debugfs = debugfs_create_file("mt6391reg", S_IFREG | 0444,
 +					NULL, codec_data, &mt6391_debug_ops);
 +#endif
 +
@@ -3019,13 +3029,14 @@ index 000000000..061d29bd5
 +
 +/* Module information */
 +MODULE_DESCRIPTION("MT6391 codec driver");
-+MODULE_LICENSE("GPL v2");
++MODULE_LICENSE("GPL");
 diff --git a/sound/soc/codecs/mt6391.h b/sound/soc/codecs/mt6391.h
 new file mode 100644
-index 000000000..4fd7a1919
+index 000000000..7d4823602
 --- /dev/null
 +++ b/sound/soc/codecs/mt6391.h
-@@ -0,0 +1,57 @@
+@@ -0,0 +1,58 @@
++/* SPDX-License-Identifier: GPL-2.0-only */
 +/* Copyright (c) 2011-2013, The Linux Foundation. All rights reserved.
 + *
 + * This program is free software; you can redistribute it and/or modify

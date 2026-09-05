@@ -1,23 +1,25 @@
-From 00a179e01b22594200a055d061a2fa439dda3c1d Mon Sep 17 00:00:00 2001
+From 78a0c54e8548c3bc944a08a28830ad3fae95ad8c Mon Sep 17 00:00:00 2001
 From: Ryan Brue <ryanbrue.dev@gmail.com>
 Date: Thu, 3 Sep 2026 14:14:58 -0500
 Subject: [PATCH] clk: mediatek: mt8173-mfgtop: do not use the clk API from
  power_on
 
-clk_mt8173_mfgtop_power_on() calls clk_prepare_enable() on the mfg_26m gate that
-this same driver provides. That is a layering inversion which cannot work:
-clk_core_prepare() calls clk_pm_runtime_get() on the clock provider -- this
-driver's own device -- and genpd power transitions run at _noirq time, where
-runtime PM is disabled and pm_runtime_resume_and_get() returns -EACCES.
+clk_mt8173_mfgtop_power_on() calls clk_prepare_enable() on the mfg_26m gate
+that this same driver provides. That is a layering inversion which cannot
+work: clk_core_prepare() calls clk_pm_runtime_get() on the clock provider
+-- this driver's own device -- and genpd power transitions run at _noirq
+time, where runtime PM is disabled and pm_runtime_resume_and_get() returns
+-EACCES.
 
-Measured on mt8173 (amazon-suez) during resume from suspend-to-RAM, immediately
-after the secondary CPUs come back up:
+Measured on mt8173 (amazon-suez) during resume from suspend-to-RAM,
+immediately after the secondary CPUs come back up:
 
   clk-mt8173-mfgtop 13fff000.clock-controller: 26 MHz clock enable failed: -13
 
 The failure is not survivable, because genpd_sync_power_on() ignores what
-power_on() returns and marks the domain on regardless. The clock is then left
-ungated-but-unprepared, and the next power_off() underflows its refcount:
+power_on() returns and marks the domain on regardless. The clock is then
+left ungated-but-unprepared, and the next power_off() underflows its
+refcount:
 
   mfg_26m already disabled
   mfg_26m already unprepared
@@ -26,10 +28,10 @@ ungated-but-unprepared, and the next power_off() underflows its refcount:
     clk_unprepare / clk_mt8173_mfgtop_power_off / _genpd_power_off
 
 Gate the bit with a direct regmap write instead. The vendor driver
-(mtk_mfgsys.c) also drives the four MFG CG bits with raw register writes from
-its power sequencing. The runtime-PM path was never affected, only the _noirq
-transitions of system suspend and resume. mfg_26m stays registered as a clock
-for any consumer that wants it; nothing currently does.
+(mtk_mfgsys.c) also drives the four MFG CG bits with raw register writes
+from its power sequencing. The runtime-PM path was never affected, only the
+_noirq transitions of system suspend and resume. mfg_26m stays registered
+as a clock for any consumer that wants it; nothing currently does.
 
 Signed-off-by: Ryan Brue <ryanbrue.dev@gmail.com>
 ---

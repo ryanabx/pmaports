@@ -1,4 +1,4 @@
-From 9302ce5447cd2faa7b73bde4de58a02530a6f32e Mon Sep 17 00:00:00 2001
+From 4add30146fd31b50bd67436d93d01cb70c108344 Mon Sep 17 00:00:00 2001
 From: Ryan Brue <ryanbrue.dev@gmail.com>
 Date: Thu, 3 Sep 2026 14:10:15 -0500
 Subject: [PATCH] misc: add a bring-up driver for the MediaTek MT6630 combo

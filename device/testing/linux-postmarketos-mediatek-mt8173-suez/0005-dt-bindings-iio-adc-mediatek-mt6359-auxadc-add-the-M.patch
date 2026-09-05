@@ -1,4 +1,4 @@
-From e3fa45942b9a6e6ae2cf7b8c4f67c0edecabc2f5 Mon Sep 17 00:00:00 2001
+From 124237ce35282c75aeba33133aa1ec6eb63889b9 Mon Sep 17 00:00:00 2001
 From: Ryan Brue <ryanbrue.dev@gmail.com>
 Date: Thu, 3 Sep 2026 14:08:01 -0500
 Subject: [PATCH] dt-bindings: iio: adc: mediatek,mt6359-auxadc: add the MT6397

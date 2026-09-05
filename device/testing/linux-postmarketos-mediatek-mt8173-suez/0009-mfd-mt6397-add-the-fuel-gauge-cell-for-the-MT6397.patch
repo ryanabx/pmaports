@@ -1,4 +1,4 @@
-From 69468d0d37c11c6117ff1f8cfffe8e0756630626 Mon Sep 17 00:00:00 2001
+From d33ad90b0c753f83b75ab814a151eef19eaa5ae0 Mon Sep 17 00:00:00 2001
 From: Ryan Brue <ryanbrue.dev@gmail.com>
 Date: Thu, 3 Sep 2026 14:08:02 -0500
 Subject: [PATCH] mfd: mt6397: add the fuel gauge cell for the MT6397

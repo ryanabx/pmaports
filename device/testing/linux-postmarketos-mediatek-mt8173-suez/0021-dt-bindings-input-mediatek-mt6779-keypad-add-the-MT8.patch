@@ -1,15 +1,15 @@
-From b2708b5a815843063dc193be136716d948619c92 Mon Sep 17 00:00:00 2001
+From 32384d99dc8f57bfc88674ad5c7a821d35d70dec Mon Sep 17 00:00:00 2001
 From: Ryan Brue <ryanbrue.dev@gmail.com>
 Date: Fri, 4 Sep 2026 16:21:22 -0500
 Subject: [PATCH] dt-bindings: input: mediatek,mt6779-keypad: add the MT8173
  keypad
 
-MT8173's keypad controller is the same block this driver already handles. Its
-register map agrees offset for offset with the MT6779 one -- STA 0x00,
-MEM1..MEM5 0x04..0x14, DEBOUNCE 0x18, SEL 0x20, EN 0x24 -- and mt6779-keypad
-drives it with no code change, so the node only needs the fallback compatible
-in second position. Add the mt8173 string to the existing enum, which is what
-mt6873, mt8183, mt8365 and mt8516 already do.
+MT8173's keypad controller is the same block this driver already handles.
+Its register map agrees offset for offset with the MT6779 one -- STA 0x00,
+MEM1..MEM5 0x04..0x14, DEBOUNCE 0x18, SEL 0x20, EN 0x24 -- and
+mt6779-keypad drives it with no code change, so the node only needs the
+fallback compatible in second position. Add the mt8173 string to the
+existing enum, which is what mt6873, mt8183, mt8365 and mt8516 already do.
 
 Verified on an MT8173 board (Amazon Fire HD 10 2017): the volume rocker
 reports through mt6779-keypad with no driver modification.
