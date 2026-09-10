@@ -1,0 +1,20 @@
+[Unit]
+Description=Persistent crash log on eMMC (pstore/blk)
+Documentation=man:pstore-blk(5)
+# The wedges this exists to catch all happen inside the first ~40 s of
+# userspace, before systemd-journal-flush has written a single byte to disk,
+# so this has to be up as early as anything can be. DefaultDependencies=no
+# puts it ahead of the normal sysinit ordering; the rootfs it needs is
+# already mounted by the initramfs, and the eMMC block nodes it scans for
+# exist as soon as the kernel has probed the controller it booted from.
+DefaultDependencies=no
+Before=sysinit.target
+ConditionPathExists=!/sys/module/pstore_blk
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/sbin/suez-pstore-blk
+
+[Install]
+WantedBy=sysinit.target

@@ -1,0 +1,66 @@
+# Reference: <https://postmarketos.org/deviceinfo>
+# Please use double quotes only. You can source this file in shell scripts.
+
+deviceinfo_format_version="0"
+deviceinfo_name="Amazon Fire HD 10"
+deviceinfo_manufacturer="Amazon"
+deviceinfo_codename="amazon-suez"
+deviceinfo_year="2017"
+deviceinfo_arch="aarch64"
+deviceinfo_dtb="mediatek/mt8173-amazon-suez"
+deviceinfo_append_dtb="true"
+
+# Device related
+deviceinfo_chassis="tablet"
+deviceinfo_external_storage="true"
+deviceinfo_screen_width="1200"
+deviceinfo_screen_height="1920"
+
+# The board has a working KMS driver: mediatek-drm binds, the Novatek NT51021
+# panel initialises, and /dev/dri/card* carries the 1200x1920 output. Without
+# this key pmbootstrap hides every DRM-only user interface (13 of 16,
+# including all the Plasma ones), because those UI aports carry "pmb:drm".
+# This is unrelated to deviceinfo_no_framebuffer below, which is only about
+# whether /dev/fb0 exists early enough for the initramfs splash.
+deviceinfo_drm="true"
+
+# zram swap at 50% of RAM, not postmarketOS's 150% default.
+#
+# zram keeps its compressed pages IN RAM, so on a 1.8 GB board a 2.7 GB zram
+# does not add memory -- it competes for it, and it wins, because
+# vm.swappiness is 180 here. Measured during a phosh login loop on 2026-09-03,
+# from the kernel's own OOM report:
+#
+#   zspages:1367172kB      <- 1.37 GB of 1.8 GB eaten by compressed pages
+#   Free swap = 214072kB   <- of 2764796kB
+#   free:111332kB
+#
+# i.e. the system OOM-killed the session because of its own swap, with the
+# shell restarting three times per boot. zstd measured only ~1.85:1 on this
+# workload, so a 2.7 GB zram can claim ~1.5 GB of RAM -- 83% of the machine.
+#
+# At 50% the device is ~900 MB of zram, bounded to roughly 490 MB of RAM at
+# that compression ratio, which leaves ~1.3 GB for the session. The upstream
+# 150% default comes from pmaports#4250 and is reasonable on devices with more
+# headroom; it is not reasonable here.
+deviceinfo_zram_swap_pct="50"
+
+# The initramfs waits 10 s for /dev/fb0, twice (stage 1 and stage 2), and it
+# never appears: DRM_SIMPLEDRM is a module, so fb0 only shows up once systemd
+# loads it, long after the initramfs is done. There is therefore no splash to
+# lose here -- just 19 s of the boot. Revisit if simpledrm is ever built in.
+deviceinfo_no_framebuffer="true"
+
+# Bootloader related
+deviceinfo_flash_method="fastboot"
+deviceinfo_generate_bootimg="true"
+deviceinfo_create_initfs_extra="true"
+deviceinfo_flash_offset_base="0x40078000"
+deviceinfo_flash_offset_kernel="0x00008000"
+deviceinfo_flash_offset_ramdisk="0x05f88000"
+deviceinfo_flash_offset_second="0x00e88000"
+deviceinfo_flash_offset_tags="0x07f88000"
+deviceinfo_flash_pagesize="2048"
+# The hacked bootloader maps "boot" to the amonet payload partition, the real
+# Android boot partition is "boot_x". Flashing "boot" would break amonet.
+deviceinfo_flash_fastboot_partition_kernel="boot_x"

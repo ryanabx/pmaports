@@ -1,0 +1,57 @@
+#!/bin/sh
+# Bring up pstore/blk, the only persistent kernel log this board has.
+#
+# ramoops was tried first and does not work here: no reset the SoC can
+# perform preserves DRAM. That was settled by experiment on 2026-08-31 -- a
+# deliberate sysrq-c panic, rescued 76 s later by the 31 s hardware watchdog,
+# came back with /sys/fs/pstore completely empty even though the ramoops
+# region was registered and carrying the console. So a crash log has to land
+# on the eMMC, which is what pstore/blk does.
+#
+# Backing store is the 8 MiB "reserved" partition: verified all-zero end to
+# end, referenced by neither LK nor the vendor stack nor pmOS. Two things
+# about that choice are load-bearing:
+#
+#   * pstore/blk claims the WHOLE block device and kvzalloc()s a RAM buffer
+#     for every zone it carves out of it, so the partition size IS the
+#     driver's permanent memory cost. Do not repoint this at "cache", which
+#     is 424 MiB, without shrinking it behind a dm-linear target first.
+#   * best_effort=1 is mandatory, not a tuning knob. Without it pstore/blk
+#     refuses to register unless the block driver exports a panic_write hook,
+#     and mtk-msdc does not.
+#
+# The partition is resolved by PARTLABEL and never by a hardcoded mmcblkNpM:
+# enabling an mmc controller renumbers the eMMC (that already broke flashing
+# once on this device), and a stale node number here would mean writing the
+# crash log over somebody else's data.
+set -e
+
+part=
+for node in /dev/mmcblk*p*; do
+	[ -b "$node" ] || continue
+	[ "$(blkid -s PARTLABEL -o value "$node" 2>/dev/null)" = "reserved" ] || continue
+	part="$node"
+	break
+done
+
+if [ -z "$part" ]; then
+	echo "suez-pstore-blk: no PARTLABEL=reserved partition found" >&2
+	exit 1
+fi
+
+# Refuse to scribble on anything that is in use. pstore/blk opens the device
+# O_EXCL so a mounted filesystem would fail the open anyway, but failing here
+# gives a legible reason instead of a bare -EBUSY.
+if grep -q "^$part " /proc/mounts; then
+	echo "suez-pstore-blk: $part is mounted, refusing" >&2
+	exit 1
+fi
+
+modprobe pstore_blk \
+	best_effort=1 \
+	blkdev="$part" \
+	kmsg_size=256 \
+	console_size=1024 \
+	pmsg_size=64 \
+	ftrace_size=64 \
+	max_reason=4

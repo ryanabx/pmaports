@@ -1,0 +1,101 @@
+From cf2645f820a3df89fd6b8f1e5f16de558d213e10 Mon Sep 17 00:00:00 2001
+From: Ryan Brue <ryanbrue.dev@gmail.com>
+Date: Fri, 4 Sep 2026 00:16:43 -0500
+Subject: [PATCH] arm64: dts: mediatek: mt8173: add the frequency hopping
+ controller
+
+MT8173 has an FHCTL block at 0x10209e00 and both the binding
+(mediatek,mt8173-fhctl, already listed in
+Documentation/devicetree/bindings/clock/mediatek,mt8186-fhctl.yaml) and the
+driver support for it already exist -- clk-mt8173-apmixedsys.c has carried
+a pllfhs[] table naming every hoppable PLL, including FH(CLK_APMIXED_MMPLL,
+FH_MMPLL, 0x9c), since it was written. Only the DT node was missing, so
+fhctl_parse_dt() never found anything, every PLL registered with plain
+mtk_pll_ops, and the hopping path was dead code.
+
+The block is not board specific, and MediaTek's own MT8173 kernel says so
+by putting it in the SoC dtsi rather than in a board file, with the same
+compatible and the same base address this patch uses:
+
+	fhctl: fhctl@10209e00 {
+		compatible = "mediatek,mt8173-fhctl";
+		reg = <0 0x10209e00 0 0x100>;
+	};
+
+Its register header lays FHCTL0..FHCTL10 out at 0x38, 0x4c, 0x60, 0x74,
+0x88, 0x9c, 0xb0, 0xc4, 0xd8, 0xec and 0x100, which are the same offsets
+the in-tree pllfhs[] table already uses.
+
+Two details differ from that node deliberately. The size is 0x200 rather
+than 0x100 because FHCTL10's last register, MON, is at offset 0x110, so
+0x100 does not cover FHCTL9 or FHCTL10 -- the vendor header labels those
+two "mt8173 FHCTL B" -- and of_iomap() only hides that by mapping a whole
+page. mt8186 uses 0x200 for the same reason. And the node carries a clocks
+property, which the vendor's does not, because fhctl_parse_dt() takes the
+list of PLLs to place under hopping control from it.
+
+The reg range falls inside apmixedsys, which already has a sub-block
+described this way in this file: hdmi-phy@10209100. Both are mapped with
+of_iomap(), which does not claim the region exclusively.
+
+Without the node, clk_set_rate() on MMPLL silently does nothing.
+mtk_pll_set_rate() writes a freshly computed pcw into MMPLL CON1, but the
+hardware only accepts a CON1 pcw that the frequency hopping engine has
+actually ramped the PLL to: a direct write of an arbitrary pcw to CON1 is
+silently dropped, both from the kernel and from /dev/mem, while a write of
+the value that FHCTL's MON register currently holds is accepted. So
+clk_set_rate() returns 0, mtk_pll_recalc_rate() reads back the old value,
+and the caller is told nothing went wrong.
+
+With this node MMPLL registers with mtk_pllfh_ops instead, and
+hopping_hw_flow() does what the vendor's mt_gpufreq/mt_freqhopping does:
+sync CON1 into the FHCTL DDS, take the PLL under hopping control, request
+the new DDS, poll MON, write the achieved value back into CON1 and release
+control. The rate then takes effect and persists after control returns to
+CON1.
+
+All of this was found and measured on an Amazon Fire HD 10 (2017), which is
+the only MT8173 board I have. There the GPU was pinned at its bootloader
+rate of 455 MHz with no way to change it, and with this node it moves:
+glmark2 build reports 68 fps at 253 MHz, 87 at 455 and 91 at 598.
+
+I cannot test the other in-tree MT8173 boards -- mt8173-evb and the
+elm/hana Chromebooks -- so while the evidence above is that the block is
+present on every MT8173, I cannot confirm that enabling it is sane on all
+of them, and review or testing from someone with that hardware would be
+welcome. Two things should limit the effect. Nothing in mainline sets
+MMPLL's rate today, so until something retunes it this only changes which
+ops MMPLL is registered with. And MMPLL is a selectable parent of four
+muxes -- mfg_sel, vdec_sel (via mmpll_d2), msdc50_0_sel and mem_mfg_in_sel
+-- of which only mfg_sel is parented to it on this board; a board that
+routes any of the other three through MMPLL would see those clocks move
+with it.
+
+Only MMPLL is listed, because nothing in mainline asks to retune the other
+hoppable PLLs and MMPLL is the one that is actually broken. SSC is left off
+(mediatek,hopping-ssc-percent 0) to keep this a pure fix.
+
+Assisted-by: LLM
+Signed-off-by: Ryan Brue <ryanbrue.dev@gmail.com>
+---
+ arch/arm64/boot/dts/mediatek/mt8173.dtsi | 7 +++++++
+ 1 file changed, 7 insertions(+)
+
+diff --git a/arch/arm64/boot/dts/mediatek/mt8173.dtsi b/arch/arm64/boot/dts/mediatek/mt8173.dtsi
+index 169ba4fd1..9faeb01a2 100644
+--- a/arch/arm64/boot/dts/mediatek/mt8173.dtsi
++++ b/arch/arm64/boot/dts/mediatek/mt8173.dtsi
+@@ -618,6 +618,13 @@ apmixedsys: clock-controller@10209000 {
+ 			#clock-cells = <1>;
+ 		};
+ 
++		fhctl: clock-controller@10209e00 {
++			compatible = "mediatek,mt8173-fhctl";
++			reg = <0 0x10209e00 0 0x200>;
++			clocks = <&apmixedsys CLK_APMIXED_MMPLL>;
++			mediatek,hopping-ssc-percent = <0>;
++		};
++
+ 		hdmi_phy: hdmi-phy@10209100 {
+ 			compatible = "mediatek,mt8173-hdmi-phy";
+ 			reg = <0 0x10209100 0 0x24>;

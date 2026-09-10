@@ -1,0 +1,28 @@
+From 0362a316d8f23687bd913c6ed10e1a99a7fb0f5b Mon Sep 17 00:00:00 2001
+From: Nickolay Goppen <setotau@mainlining.org>
+Date: Fri, 11 Sep 2026 18:38:02 +0300
+Subject: [PATCH] MAINTAINERS: Add myself as a maintainer of NT51021 panel
+ driver
+
+Signed-off-by: Nickolay Goppen <setotau@mainlining.org>
+---
+ MAINTAINERS | 6 ++++++
+ 1 file changed, 6 insertions(+)
+
+diff --git a/MAINTAINERS b/MAINTAINERS
+index 8014b9f82..f3b1cc4c8 100644
+--- a/MAINTAINERS
++++ b/MAINTAINERS
+@@ -8269,6 +8269,12 @@ S:	Maintained
+ F:	Documentation/devicetree/bindings/display/panel/novatek,nt37801.yaml
+ F:	drivers/gpu/drm/panel/panel-novatek-nt37801.c
+ 
++DRM DRIVER FOR NOVATEK NT51021 PANELS
++M:	Nickolay Goppen <setotau@mainlining.org>
++S:	Maintained
++F:	Documentation/devicetree/bindings/display/panel/novatek,nt51021.yaml
++F:	drivers/gpu/drm/panel/panel-novatek-nt51021.c
++
+ DRM DRIVER FOR NVIDIA GEFORCE/QUADRO GPUS
+ M:	Lyude Paul <lyude@redhat.com>
+ M:	Danilo Krummrich <dakr@kernel.org>

@@ -1,0 +1,21 @@
+[Unit]
+Description=Disarm the suez recovery fallback after a successful boot
+# The initramfs arms LK's bootloader control block on every boot so that a hang
+# returns the device to recovery by itself. Clearing it is what tells the next
+# boot that this one worked, so it has to happen only once the boot is
+# demonstrably good -- systemd-user-sessions.service is the point at which
+# logins are enabled, which is a fair definition of "far enough".
+#
+# If this never runs, the next boot goes to recovery, which self-clears the
+# block and is reachable over adb. That costs one boot; it does not strand the
+# device.
+After=systemd-user-sessions.service
+ConditionPathExists=/sys/class/block/mmcblk0p9
+
+[Service]
+Type=oneshot
+ExecStart=/usr/sbin/suez-bcb-disarm
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

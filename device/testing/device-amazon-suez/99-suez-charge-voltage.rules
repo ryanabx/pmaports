@@ -1,0 +1,16 @@
+# Charge the pack to its rated voltage, not the charger chip's default.
+#
+# The BQ24297 powers up with a 4.208 V constant-charge voltage, which never
+# fills this 4.34 V pack -- it stops somewhere short of full and the gauge
+# correctly never reaches 100%. The charger driver can take the right value
+# from a "monitored-battery" phandle, and that is the idiomatic place for it,
+# but doing so has an unwanted side effect: bq24190 then also publishes
+# charge-full-design on its own battery power-supply, which has no charge
+# reading of its own. upower sees a second 27.8 Wh battery stuck at 0%,
+# averages it with the real one, and the desktop shows half the true charge.
+# upower 1.91 dropped UPOWER_IGNORE, so there is no way to hide it.
+#
+# Setting the voltage directly avoids handing the charger battery data it
+# cannot measure against. Revisit if bq24190 stops advertising a capacity it
+# does not know, or if upower learns to weight batteries by measurable energy.
+SUBSYSTEM=="power_supply", KERNEL=="bq24190-charger", ATTR{constant_charge_voltage}="4340000"

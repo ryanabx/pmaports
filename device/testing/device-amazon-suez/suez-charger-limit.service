@@ -1,0 +1,16 @@
+[Unit]
+Description=Set the charger input current limit from the USB gadget state
+# The charger's own BC1.2 detection cannot classify a USB-C source through a
+# micro-B cable, so it always falls back to 500 mA -- less than this board
+# draws, meaning it never charges. See the comments in the script.
+After=systemd-udevd.service
+ConditionPathExists=/sys/class/power_supply/bq24190-charger
+
+[Service]
+Type=simple
+ExecStart=/usr/sbin/suez-charger-limit
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

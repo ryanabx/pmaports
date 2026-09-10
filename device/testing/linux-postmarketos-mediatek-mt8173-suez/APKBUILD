@@ -1,0 +1,237 @@
+# Kernel config based on: device/community/linux-postmarketos-mediatek-mt8173
+maintainer="Ryan Brue <ryanbrue.dev@gmail.com>"
+pkgname=linux-postmarketos-mediatek-mt8173-suez
+pkgver=7.2.2
+pkgrel=3
+pkgdesc="Mainline kernel fork for the Amazon Fire HD 10 (2017)"
+arch="aarch64"
+_carch="arm64"
+_flavor="${pkgname#linux-}"
+url="https://kernel.org"
+license="GPL-2.0-only"
+# This is a copy of linux-postmarketos-mediatek-mt8173 with a device tree for
+# amazon-suez and a heavily trimmed config, for two reasons:
+#
+#  1. The boot partition (boot_x) is only 16 MiB.
+#  2. The vendor bootloader (LK) silently refuses to start a kernel whose
+#     decompressed Image is too large: it runs, shows the Amazon logo, never
+#     enters the kernel, and the watchdog reboots with no output anywhere.
+#
+# SIZE BUDGET (measured on the device, do not exceed):
+#
+#     27.71 MiB decompressed -> BOOTS
+#     28.84 MiB decompressed -> DOES NOT BOOT
+#
+# so the ceiling is somewhere in between. Both figures are real builds of this
+# aport differing only in CONFIG_FUNCTION_TRACER, which costs +1.13 MiB; an
+# earlier "somewhere between 28 and 32 MiB" figure came from booting synthetic
+# payloads and is superseded. A stock config decompresses to 35.4 MiB and
+# therefore never starts at all.
+#
+# Trimming sound, media, vcodec or the MediaTek DRM driver saves NOTHING here:
+# they are all =m, and modules are not part of the Image.
+#
+# pmb:kconfigcheck-community is intentionally not set: it pulls in
+# category:debug, which requires CONFIG_FUNCTION_TRACER, whose instrumentation
+# is worth ~1 MiB here. kconfigcheck.toml explicitly allows dropping this
+# option for devices in testing.
+#
+# KNOWN DEVIATION: CONFIG_DEBUG_INFO_BTF and CONFIG_DEBUG_INFO_BTF_MODULES are
+# disabled, which category:default requires. BTF measures 6.00 MiB of the
+# 35.4 MiB image (from __start_BTF/__stop_BTF in System.map), and without it
+# the kernel cannot be made to fit under the bootloader's ceiling documented
+# above without gutting entire driver classes. That is not a config choice we
+# can revisit: the ceiling is in the signed vendor bootloader.
+#
+# So this package sets !pmb:kconfigcheck, which makes "pmbootstrap kconfig
+# check" skip it (with a NOTE) rather than fail. Run it anyway with -f, and
+# please do when touching the config, because the flag switches off ALL of
+# category:default, not just the two BTF symbols:
+#
+#   pmbootstrap kconfig check -f linux-postmarketos-mediatek-mt8173-suez
+#
+# Checked on 2026-09-10: that reports the two BTF errors and nothing else.
+# The proper fix is either an upstream exception for devices whose bootloader
+# cannot load a BTF-sized kernel, or chainloading U-Boot so the kernel is no
+# longer loaded by the vendor bootloader at all; until then the flag is what
+# keeps CI honest about the rest of the tree.
+options="!strip !check !tracedeps !pmb:kconfigcheck
+	pmb:cross-native
+"
+makedepends="
+	bash
+	bison
+	clang
+	elfutils-dev
+	findutils
+	flex
+	linux-headers
+	lld
+	llvm
+	openssl-dev
+	pahole
+	perl
+	postmarketos-installkernel
+	python3
+	xz
+	zstd
+"
+
+# Source
+_config="config-$_flavor.$arch"
+case $pkgver in
+	*.*.*)	_kernver=${pkgver%.0};;
+	*.*)	_kernver=$pkgver;;
+esac
+# The patch series is git-format-patch output from a git branch of the pristine
+# tarball, one commit per patch, in three groups. The source= order below IS
+# the apply order, and it is generated from that branch rather than maintained
+# by hand, so the numbering and the apply order cannot drift apart.
+#
+#   0001-0031      upstream-facing: bindings, drivers, fixes and the board DTS,
+#                  one logical system per patch, numbered in submission order
+#                  with every binding ahead of the patch that needs it. Mostly
+#                  ours and in various stages of submission; 0001-0002 are
+#                  Nickolay Goppen's in-flight NT51021 panel patches, which
+#                  0003-0004 build on. Two ordering constraints beyond the
+#                  bindings rule: 0011 needs 0008 (both add an MFD cell to
+#                  mt6397-core.c), and 0027 needs backport-0002 (it fixes the
+#                  driver that patch adds)
+#   backport-*     already merged upstream, but not in 7.2.2: Chen-Yu Tsai's
+#                  mt8173 mfgtop/GPU series and Fei Shao's mtu3 system-suspend
+#                  fix, all present in 7.3-rc1. Drop each one as this aport
+#                  moves to a base that carries it
+#   local-*        never for upstream: the parent aport's resolve_btfids fix,
+#                  the DISP_OVL0 block reset (belt and braces beside 0006), and
+#                  the MT6630 combo-chip bring-up drivers, which need an mt76
+#                  sub-driver rewrite before they are submittable
+source="
+	https://cdn.kernel.org/pub/linux/kernel/v7.x/linux-${pkgver//_/-}.tar.xz
+	$_config
+	0001-dt-bindings-display-panel-Add-bindings-for-Novatek-N.patch
+	0002-drivers-gpu-drm-panel-Add-BOE-NT51021-driver.patch
+	0003-MAINTAINERS-Add-myself-as-a-maintainer-of-NT51021-pa.patch
+	0004-dt-bindings-display-panel-add-the-BOE-TV101WUM-NM0.patch
+	0005-drm-panel-novatek-nt51021-add-the-BOE-TV101WUM-NM0.patch
+	0006-drm-mediatek-dsi-force-command-mode-in-mtk_dsi_power.patch
+	0007-soc-mediatek-mt8173-stop-a-display-overlay-left-runn.patch
+	0008-dt-bindings-iio-adc-mediatek-mt6359-auxadc-add-the-M.patch
+	0009-mfd-mt6397-add-the-AUXADC-cell-for-the-MT6397.patch
+	0010-iio-adc-add-a-driver-for-the-MediaTek-MT6397-PMIC-AU.patch
+	0011-dt-bindings-power-supply-add-the-MediaTek-MT6397-fue.patch
+	0012-mfd-mt6397-add-the-fuel-gauge-cell-for-the-MT6397.patch
+	0013-power-supply-add-a-fuel-gauge-driver-for-the-MediaTe.patch
+	0014-power-supply-bq24190_charger-use-the-wake-irq-API.patch
+	0015-power-supply-bq24190_charger-don-t-reset-registers-a.patch
+	0016-dt-bindings-arm-cpus-add-the-mediatek-mt8173-smp-ena.patch
+	0017-dt-bindings-mfd-syscon-add-the-MT8173-MCUCFG.patch
+	0018-arm64-smp-add-MediaTek-MT8173-CPU-operations-that-po.patch
+	0019-dt-bindings-soc-mediatek-add-the-MT8173-SPM-suspend-.patch
+	0020-soc-mediatek-add-suspend-to-RAM-through-the-MT8173-S.patch
+	0021-ASoC-codecs-add-the-MediaTek-MT6391-PMIC-audio-codec.patch
+	0022-ASoC-mediatek-mt8173-add-the-ADDA-DAI-towards-the-PM.patch
+	0023-dt-bindings-sound-add-the-MT8173-sound-card-with-the.patch
+	0024-ASoC-mediatek-add-the-MT8173-machine-driver-for-the-.patch
+	0025-dt-bindings-input-mediatek-mt6779-keypad-add-the-MT8.patch
+	0026-dt-bindings-arm-mediatek-add-the-Amazon-Fire-HD-10-2.patch
+	0027-arm64-dts-mediatek-add-the-Amazon-Fire-HD-10-2017.patch
+	backport-0001-dt-bindings-clock-mediatek-Add-mt8173-mfgtop.patch
+	backport-0002-clk-mediatek-Add-mt8173-mfgtop-driver.patch
+	backport-0003-dt-bindings-gpu-powervr-rogue-Add-MediaTek-MT8173-GP.patch
+	backport-0004-arm64-dts-mediatek-mt8173-Fix-MFG_ASYNC-power-domain.patch
+	backport-0005-arm64-dts-mediatek-mt8173-Add-GPU-device-nodes.patch
+	backport-0006-usb-mtu3-allow-system-suspend-during-active-gadget-c.patch
+	0028-clk-mediatek-mt8173-mfgtop-do-not-use-the-clk-API-fr.patch
+	0029-drm-imagination-restart-the-watchdog-if-disabling-th.patch
+	0030-drm-imagination-unplug-the-device-before-tearing-it-.patch
+	0031-drm-imagination-suspend-the-GPU-for-system-sleep-not.patch
+	0032-clk-mediatek-mt8173-fix-the-FHCTL-DDS-mask-width.patch
+	0033-arm64-dts-mediatek-mt8173-add-the-frequency-hopping-.patch
+	0034-usb-mtu3-fix-system-suspend-in-gadget-mode-after-sof.patch
+	local-0001-resolve_btfids-preserve-parameter-names-when-process.patch
+	local-0002-dt-bindings-display-mediatek-ovl-describe-the-MMSYS-.patch
+	local-0003-arm64-dts-mediatek-mt8173-give-DISP_OVL0-its-MMSYS-r.patch
+	local-0004-drm-mediatek-ovl-take-the-block-reset-at-probe-when-.patch
+	local-0005-mmc-pwrseq_sd8787-add-the-MT6630-power-on-sequence.patch
+	local-0006-misc-add-a-bring-up-driver-for-the-MediaTek-MT6630-c.patch
+	local-0007-arm64-dts-mediatek-mt8173-amazon-suez-describe-the-M.patch
+"
+builddir="$srcdir/linux-${_kernver//_/-}"
+
+prepare() {
+	default_prepare
+	cp "$srcdir/config-$_flavor.$CARCH" .config
+}
+
+build() {
+	unset LDFLAGS
+	make ARCH="$_carch" LLVM=1 \
+		KBUILD_BUILD_VERSION="$((pkgrel + 1 ))-postmarketOS"
+}
+
+package() {
+	mkdir -p "$pkgdir"/boot
+	make zinstall modules_install dtbs_install \
+		ARCH="$_carch" \
+		LLVM=1 \
+		INSTALL_PATH="$pkgdir"/boot \
+		INSTALL_MOD_PATH="$pkgdir"/usr \
+		INSTALL_MOD_STRIP=1 \
+		INSTALL_DTBS_PATH="$pkgdir/boot/dtbs"
+	rm -f "$pkgdir"/lib/modules/*/build "$pkgdir"/lib/modules/*/source
+
+	install -D "$builddir"/include/config/kernel.release \
+		"$pkgdir"/usr/share/kernel/$_flavor/kernel.release
+}
+
+sha512sums="
+6ca338fd2f9d2224b9187ba1cad18c05417c0504771917203a023467a8ac3a34e346bd3bc5a3f5716aa9810381a28c730ea5fc3726773dca36d75a4677178b13  linux-7.2.2.tar.xz
+d8fa599f8087c9698d87b29038d5f00e0f81b92ad5b0a752375f830907e479dcfdecb865b4be867f689a06be58872d5b9dd8e7f0b31791153eab08ce2b431db8  config-postmarketos-mediatek-mt8173-suez.aarch64
+9a1b066b8141e2155110a121226bdf1aa5333515c11cfca5bf411121fca968d8f9a1132be6ced43524d509f4ad0e7f1681919c676c6b75e8c94a314dbd8e8b21  0001-dt-bindings-display-panel-Add-bindings-for-Novatek-N.patch
+f6a6f77ab4b069d288c9979bf511622a897edbba5d7254b0f2dc7b5ed8c97556426ced74f955d4036a6d96da3a6aee088508e8830992f1c9aa50f9115b90fe1e  0002-drivers-gpu-drm-panel-Add-BOE-NT51021-driver.patch
+69f6e2d123ac236cb4636d7305bd47d846866e1645601a8d4978929edd2f240e681e109a7d227faca442a8476e726f93e62ed314719aa7328f2a3b33baf7ef12  0003-MAINTAINERS-Add-myself-as-a-maintainer-of-NT51021-pa.patch
+a71aa3861f52362b3a45c18f4f077896d96e291bf1f11270b1afa958bc254284c9f7e6f89000167e452ac68d4693ae23351a194a5b08a6bc7d8aa216f4c890d1  0004-dt-bindings-display-panel-add-the-BOE-TV101WUM-NM0.patch
+3a158445f1b14477bc2b4932dc6d839fb9babc2d1b4606248abf0c60f32fb36d1d1ca37959ee15c13cd19f9d840092a56494283185ca2ef2f6d26319b006f2e8  0005-drm-panel-novatek-nt51021-add-the-BOE-TV101WUM-NM0.patch
+e8830dad4d9fb8a8914bb38708252bddf2bcc4e243861bcf759362d20b87f141fc00dc039741e3855af2b311b2eb2ccad0892246c5ba29ddc01a68544a6c961f  0006-drm-mediatek-dsi-force-command-mode-in-mtk_dsi_power.patch
+572315a0f94b6a73c440c426da289dc6747116a61b6592e089e38279126b4699471348e9a71c6e583fae87789a484fe93d169b58b816fd8b6d6141a2e7452f61  0007-soc-mediatek-mt8173-stop-a-display-overlay-left-runn.patch
+9b6bd1f2879a2f566236cf2992f912d7de3c49c0fc682daad4fcbe02bb6208c859e6a64e827d7bb7a448d7385ac964d1f06c31b274c67210c5173c7899c6431a  0008-dt-bindings-iio-adc-mediatek-mt6359-auxadc-add-the-M.patch
+e5e754f6af79904f395ab0cd3ed157da1c2874d69a630b2db0b311fd74370de747fd32ac9775a80f8405acdb27ab1b104552a5b34eaff9c72c2d0b7b0d517caf  0009-mfd-mt6397-add-the-AUXADC-cell-for-the-MT6397.patch
+5306bd4325b81d0e661e9293038a938a933f25e0c1e50ea51738def88c6579eabfa2fef1e9f9151a7e3c5ce1d7daeadb9ccfe990246458647f1b3604d8e2fe75  0010-iio-adc-add-a-driver-for-the-MediaTek-MT6397-PMIC-AU.patch
+0003daac4f41d52bf1d9e0ee4d0f3dec2f2a65d4b2f38629ffb0eb33524e17da11b840cad82cc5a91e594ec665ae1682d57e2ecf2a97f89fcb7a2f4378de109f  0011-dt-bindings-power-supply-add-the-MediaTek-MT6397-fue.patch
+43815e3916446dade49bd98e76990382ba78fce3baf4b3337c5d04a76867b954bf54868922adc4182d6363f237d32c657ffdc4f78708c138c818800aee35b404  0012-mfd-mt6397-add-the-fuel-gauge-cell-for-the-MT6397.patch
+70a34e93cf3509880efdebfb7c2056a7572ef4b346c97e27bb8ce3ff338e32d78883c38359638cae5928ceab7cfbda729d2c7e6397d3e672404b4f587f383dff  0013-power-supply-add-a-fuel-gauge-driver-for-the-MediaTe.patch
+702072adf64455f0ca791e7a763a5a69e7f5de2ebcfddea60b5776f14d617f080e976a0947b2ed8f6053ae8f4d5ce5b34cf2094295f43502f5ab139b643c04dc  0014-power-supply-bq24190_charger-use-the-wake-irq-API.patch
+0af33659a5362014d1d26e0105c1b8ee529a7d96079d5cb2b13ed9e48aa0c4712664f72ac994084129ec8d43b5380356beac0b52e3dd0c103bdae8c784f8c3b0  0015-power-supply-bq24190_charger-don-t-reset-registers-a.patch
+6fa7ecaadccb20da81c2a019ffa92467e85d4ab19240389b358f0c8105e185ee33fa8008df178dff20bb715ec781636d025e1c0a472a67602217a14a034a95f2  0016-dt-bindings-arm-cpus-add-the-mediatek-mt8173-smp-ena.patch
+4c29391ee57fc91f2952a755bc8181a85aadf193f8a896e324170542c444503f12a72b19077d88e7523c12f20d14e2fad26a237da2ffc60dc1bef333e862ae4a  0017-dt-bindings-mfd-syscon-add-the-MT8173-MCUCFG.patch
+a8725ceb69dd0be055f0b43a726ec0ec58e98648182d06210f36d1ee57f54fe3a7a56f7f98144c00a7a6b274aacc9f153d9702c1852a9fc57bb69d1bbaa1e2a0  0018-arm64-smp-add-MediaTek-MT8173-CPU-operations-that-po.patch
+2f362ceb5b336ace72cc561e01650e8927b2291f7485bc44a25b16c8811d5837b7e70acdbb3be35141c8b66749f76947ed569a6cdc2f6968812ebef21690f33a  0019-dt-bindings-soc-mediatek-add-the-MT8173-SPM-suspend-.patch
+e30ffebf74ae8191e5e78f582ca5dc91bccb6c1b6d21550469bd0985a9496283864d0385475879da41bc1bacc1f12cda7826090832c1f633996513964f22f3d8  0020-soc-mediatek-add-suspend-to-RAM-through-the-MT8173-S.patch
+ff826713e461055133addcb41907e937c2ac0c92a097f7b9ff8164bbd2a5f7b517f169f9831ce3013e1f65b46f2045108b63f81267240c877d0e3c7c3932db1f  0021-ASoC-codecs-add-the-MediaTek-MT6391-PMIC-audio-codec.patch
+629c2e6cdaffb60b09d67d85817124536c6f84f29b34d8b23fcde17a55d067cf42c69c6dd4af2078c27b7f9891da596e872561f750401565a5e1317eed44ec96  0022-ASoC-mediatek-mt8173-add-the-ADDA-DAI-towards-the-PM.patch
+9ae0ee9c4af2ba3abba76da836a9da93cf0d479f1c4b7297618309dea189d9955c506c86d99f2fca9bd7afdc8a73068952f314bbddf06d0725b5b599278597b0  0023-dt-bindings-sound-add-the-MT8173-sound-card-with-the.patch
+508f924e764401ac83992cbf2ff96dc25287c23c4a1961eeb8c42bae374094a5b1977d4538af5cdd5dc68aa2f1f05bbd7f687a43a0c2e0b04c65e1dc9e2d9002  0024-ASoC-mediatek-add-the-MT8173-machine-driver-for-the-.patch
+0d082aa87fc20de56e314072ba3c169463cd404843ac10089db5a13a32c4a0ddcea9ed876ae18dec4476858fec20be314d7ebfa830d06608293cb9d430cc3b06  0025-dt-bindings-input-mediatek-mt6779-keypad-add-the-MT8.patch
+f99274d1df040288b44b6c1cbcaeabeeddada47bf3614f6808e6bdf2e1abc1ec07d121f3371b959d25cb1e2b738d114aa8afbcbbda7abbd09dc10dd1b0e56a5a  0026-dt-bindings-arm-mediatek-add-the-Amazon-Fire-HD-10-2.patch
+eaa82ce203ab78824a2d9278449476cc087ecbe4854cee853703484d28bdd514f19b2a23af1f6ca9b7e2f0cbe83a5efac60ab1ee0b1e8b9524b8084d1ea12a1d  0027-arm64-dts-mediatek-add-the-Amazon-Fire-HD-10-2017.patch
+f4e837b19f326c854002e16785193367ee1af4a1939a25a6152f93eee2b7dbda9816cbf6bf3f7008222664e0564e1fcf5d09657600ce5cb956d711bcdf0a4b48  backport-0001-dt-bindings-clock-mediatek-Add-mt8173-mfgtop.patch
+b6431fd177f2fde2347858197f3e45e4becc89176ce03e055747e389eb8167b2b69c48701c423a56bd3cffba70f5fa51176b0d6c1b640d0c702dc7d7d673420d  backport-0002-clk-mediatek-Add-mt8173-mfgtop-driver.patch
+31aa10f749f1145a3c2236dec04cc53c19a31366b17b962ceb61731ff5bfaff3f045d488518163eaee318cbd889bf8d66a94c09a9e20bc5c3f8dc0c260f3b3bf  backport-0003-dt-bindings-gpu-powervr-rogue-Add-MediaTek-MT8173-GP.patch
+d27513b804be7fd43ba351816f2692eedfafe1f40fc28d78465ed5517c3a1d1e34e266aadb0bc44078f16a430b0593180eb3a170cd5767375f9c89fc16c90329  backport-0004-arm64-dts-mediatek-mt8173-Fix-MFG_ASYNC-power-domain.patch
+08cb1f62a04375235aefbdc9779a106781050f8e4362e8311d9dea9d0692b679d19921f2cd18c9b1619d361190db50a1262441ad5b8c8d2dc540a01153579626  backport-0005-arm64-dts-mediatek-mt8173-Add-GPU-device-nodes.patch
+7ccc35b97cc7b4eaa5ba26266018740c0367ebcf9d59216b4b35c14965ca0dfd8c465f7a9c0b439c995a1abad70f97bc2fde2e0a463cf908d47a3deab29b4aab  backport-0006-usb-mtu3-allow-system-suspend-during-active-gadget-c.patch
+2adb03331694454f69c3e35869fdb70d86ab213b02443b6db3d68baa592b6e23ab42e26a13e3f66a27d31f8b14e093f4e277df967d283a52d757cac17c7821b8  0028-clk-mediatek-mt8173-mfgtop-do-not-use-the-clk-API-fr.patch
+71e7c865c5c95f1a7dbeb31746f1c6cf2aec308d1ddaaa659f8b44fa3bc5ef3e488ff7328892095263cabe796ab57a8b526458d58e728f2291cae990d25d0a01  0029-drm-imagination-restart-the-watchdog-if-disabling-th.patch
+abe71e1bb512bf895039ccf78bce3191dfb0ddc121a9f9d3920fa2b75a61a766a3ec4cf7d05b04f181e743aa52d911fd9cfca578033cf736d07f19835b082082  0030-drm-imagination-unplug-the-device-before-tearing-it-.patch
+7334dda010934eb47aacda654ee108cc7d92fe2e586f0c72c8457af2424258cd9297754ab6f05013465f6b1eeb5283e7ed14559ed9bf04fd35102c547d13b844  0031-drm-imagination-suspend-the-GPU-for-system-sleep-not.patch
+96d1f67b4797972d7e681b944f66f967cd3748fc3c2fa9a2e8b27fd7c25bf90409a50509704ff210dee25193322c83e35025653f1ca634f5924ca25ae1692067  0032-clk-mediatek-mt8173-fix-the-FHCTL-DDS-mask-width.patch
+2681dd949360395f58e502bf2500da4268ce48f4795816efa465c8c3084fcc5d9e547973e1c4f2520a764366b58d159c4226813db46b1074651f0b427b1f7ca3  0033-arm64-dts-mediatek-mt8173-add-the-frequency-hopping-.patch
+4a91de9a71a042e74cc7befc3d67c340d0132dd7b910c06f4b37e20731902b756b9c6179bfe16a693cf56ef7b634aa9e72fce382824392a0171dc3fb1dee7649  0034-usb-mtu3-fix-system-suspend-in-gadget-mode-after-sof.patch
+6a25d0c3aa54facfbfd596599ead1c82c485d0d194032d89dcb3e3533322f3773e6111f1be99abe9f5cd7c9ce42077353177fd1fee5c19a947588109e49a67c5  local-0001-resolve_btfids-preserve-parameter-names-when-process.patch
+a3b187e9a91db75122eaec99e3bb782bdadc60d83253ffde008c2c09e91021d49f8a9eeaf84123fef4df37be2b3cf1360130cadbbf078eef4c1841b8825c5184  local-0002-dt-bindings-display-mediatek-ovl-describe-the-MMSYS-.patch
+66fbbce4a824f462e1e8a7c750c7e16f41f70cada99a24c3611f3a9200bd8937d5b3f73c26130eadb22dd2f5b6fc776034823bba71e786f421f9f726f279892d  local-0003-arm64-dts-mediatek-mt8173-give-DISP_OVL0-its-MMSYS-r.patch
+0ad2cb8b7d5c2294ec75889b5de83665903d8e23544755d1bda3e61d579a67cdeff75df86eb4f0cb94fb39baabde3142781ecff21e54e88644ba1f44f666eaa2  local-0004-drm-mediatek-ovl-take-the-block-reset-at-probe-when-.patch
+2ea590d85ac09c3ef01b7ef0eaaa2069b580b92dd1e8e12795d93e3ba33fd4ad04084d1842124d91c6df0b8c4cf76168ca08c0bb8fe9a05e51bef79e1bf8fed6  local-0005-mmc-pwrseq_sd8787-add-the-MT6630-power-on-sequence.patch
+05dcb3d45de59dd88fdddd44bd00a49935ff8218650b9ad9e2f2e703a8b6e62ad519519e4a0ecf6a7287256db6c21f31e0d1b2ffc3b2ddfa5ec422aa5773ee93  local-0006-misc-add-a-bring-up-driver-for-the-MediaTek-MT6630-c.patch
+df7b2629c1d3df537a81cee57b2301121fea1c2849d356487e6bb8be0f93ab4c0397a2255771a0c928d195717eb75e10479bfeac21c654bb70eb13e818986634  local-0007-arm64-dts-mediatek-mt8173-amazon-suez-describe-the-M.patch
+"

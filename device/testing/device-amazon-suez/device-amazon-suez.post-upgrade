@@ -1,0 +1,43 @@
+#!/bin/sh
+# Third and last placement of the PowerVR Vulkan conformance variable; the
+# comments in 50-powervr-vulkan.conf and suez-powervr-vulkan.conf explain what
+# it does and why the GPU is unusable without it.
+#
+# WHY A SCRIPT, AND WHY THIS FILE
+#
+# A compositor on this image can be started three different ways, and each one
+# takes its environment from somewhere different:
+#
+#   * a systemd USER unit (gnome-shell, kwin under
+#     plasma-workspace-wayland.target)          -> /usr/lib/environment.d
+#   * a systemd SYSTEM service (plasma-mobile.service, gdm, sddm)
+#                                               -> system.conf.d DefaultEnvironment=
+#   * greetd, which is how phosh starts (phoc under greetd + phrog)
+#                                               -> NEITHER of the above
+#
+# greetd does not hand its own environment to the session it launches. It
+# authenticates through PAM and builds the child environment from
+# pam_getenvlist() plus a few variables of its own, so the service's
+# DefaultEnvironment= stops at the greetd process itself. Measured on hardware
+# 2026-09-03: PVR_I_WANT_A_BROKEN_VULKAN_DRIVER was present in
+# /proc/<greetd>/environ and absent from /proc/<phoc>/environ, and phoc failed
+# with "Software rendering detected, please use the WLR_RENDERER_ALLOW_SOFTWARE
+# environment variable to proceed" and "Could not retrieve physical devices:
+# ERROR_INITIALIZATION_FAILED" -- the signature of the variable being unset.
+#
+# pam_env is therefore the only hook, and its default file is /etc/environment.
+# That file belongs to linux-pam, so this package cannot ship one: two packages
+# owning the same path is an apk file conflict, the same reason the nftables
+# mask and pipewire-pulse.service live where they do. Appending is the only
+# option left. The grep guard makes it idempotent, so re-running it on every
+# upgrade cannot duplicate the line.
+#
+# Setting this system-wide is inert for everything that is not Mesa's pvr
+# Vulkan driver, and it has a useful side effect: an interactive SSH session is
+# not a systemd unit either, so before this existed every hand-run eglinfo,
+# vulkaninfo or glmark on this board silently reported llvmpipe or zero GPUs.
+_f=/etc/environment
+if ! grep -q '^PVR_I_WANT_A_BROKEN_VULKAN_DRIVER=' "$_f" 2>/dev/null; then
+	printf 'PVR_I_WANT_A_BROKEN_VULKAN_DRIVER=1\n' >> "$_f"
+fi
+exit 0

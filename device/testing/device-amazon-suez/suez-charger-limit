@@ -1,0 +1,95 @@
+#!/bin/sh
+# Set the charger's input current limit, because nothing else on this board can.
+#
+# The BQ24297 classifies its supply with BC1.2, which reads D+/D-. That works
+# for a USB-A wall charger, which shorts D+/D- to identify itself as a DCP. It
+# cannot work for a USB-C source behind a C-to-micro-B cable: USB-C advertises
+# its capability with Rp resistors on the CC pins, and a micro-B device has no
+# way to read CC. Such a source is therefore indistinguishable from a plain PC
+# port and the chip falls back to 500 mA -- which is less than this board draws
+# running a desktop (~700 mA), so it never charges and the gauge sits pinned at
+# whatever it happened to be.
+#
+# Mainline's bq24190 driver expects an external charger-type detector to
+# override the fallback via a "power-supplies" phandle; this board has none.
+#
+# So use the same signal the vendor kernel used: whether the USB gadget has
+# been enumerated. Fire OS's own numbers, from suez_bat_setting.dtsi:
+#
+#     usb_charger_current            50000  ->  500 mA   (data host)
+#     charging_host_charger_current 150000  -> 1500 mA   (CDP)
+#     ac_charger_current            180000  -> 1800 mA   (wall charger)
+#     non_std_ac_charger_current    180000  -> 1800 mA
+#
+# Enumeration finishes some time AFTER VBUS appears, so deciding immediately
+# would see "not attached" on a real host and wrongly grant it 1800 mA. Start
+# at the safe 500 mA, only raise once a host has had time to show up and has
+# not, and drop straight back down if one appears later.
+# The chip's IINLIM is a discrete ladder -- 100, 150, 500, 900, 1200, 1500,
+# 2000, 3000 mA -- and the driver rounds a request DOWN to the nearest rung.
+# The vendor's 1800 mA is not on it, so asking for 1800 gets 1500. Ask for
+# what the hardware can actually do, so the value read back is the value set.
+HOST_UA=500000
+CHARGER_UA=1500000
+SETTLE=8          # seconds to wait for a host to enumerate before deciding
+
+c=/sys/class/power_supply/bq24190-charger
+[ -d "$c" ] || exit 0
+
+vbus_since=0
+last_pass=0
+while :; do
+	now=$(cut -d' ' -f1 /proc/uptime | cut -d. -f1)
+
+	# /proc/uptime counts time spent suspended, so a jump far larger than
+	# the two-second sleep at the bottom of this loop means the system has
+	# just resumed. Restart the settle window: the USB gadget needs a
+	# moment to re-enumerate, and until it has, a host is indistinguishable
+	# from a dumb charger and would wrongly be granted charger current.
+	if [ "$last_pass" != 0 ] && [ $((now - last_pass)) -gt 6 ]; then
+		vbus_since=$now
+	fi
+	last_pass=$now
+
+	if [ "$(cat $c/online 2>/dev/null)" != "1" ]; then
+		vbus_since=0
+		sleep 2
+		continue
+	fi
+
+	[ "$vbus_since" = 0 ] && vbus_since=$now
+
+	state=""
+	for u in /sys/class/udc/*/state; do
+		[ -r "$u" ] && state="$(cat "$u")"
+	done
+
+	if [ "$state" = "configured" ] || [ $((now - vbus_since)) -lt $SETTLE ]; then
+		want=$HOST_UA
+	else
+		want=$CHARGER_UA
+	fi
+
+	# Compare against the chip rather than against what was last asked
+	# for. The chip loses this setting on its own whenever VBUS
+	# re-attaches (and, before the kernel's bq24190 suspend fix, on every
+	# system suspend too), so remembering the last request would leave
+	# the tablet at the 500 mA default until the next change.
+	#
+	# Comparing is only safe because both values above are real rungs of
+	# the IINLIM ladder and the driver rounds a request DOWN to a rung, so
+	# a request for one lands exactly on it. Measured on hardware:
+	#
+	#     asked  500000 -> readback  500000
+	#     asked  900000 -> readback  900000
+	#     asked 1500000 -> readback 1500000
+	#     asked 1800000 -> readback 1500000   <- not a rung, never matches
+	#
+	# Anything not on the ladder would never equal its own readback and
+	# would be rewritten on every pass forever.
+	if [ "$(cat $c/input_current_limit 2>/dev/null)" != "$want" ]; then
+		echo "$want" > $c/input_current_limit 2>/dev/null
+	fi
+
+	sleep 2
+done
