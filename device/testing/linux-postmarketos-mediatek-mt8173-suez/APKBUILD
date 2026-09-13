@@ -130,10 +130,7 @@ package() {
 		"$pkgdir"/usr/share/kernel/$_flavor/kernel.release
 }
 
-# The tarball sum is a placeholder until the snapshot commit is pushed to the
-# fork; run `pmbootstrap checksum linux-postmarketos-mediatek-mt8173-suez` after pushing. Builds with
-# --src do not read it.
 sha512sums="
-00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000  linux-postmarketos-mediatek-mt8173-suez-876862ad736e602dab216ab1a8aa337a96d7dfba.tar.gz
-48f45e04ac82584d9a4636a8e738769645c46f207accbf713a8c51bdfeca657876444754e6be4aab1fe7cb846c9aad21f8c726798dd1fbb478f0fba0d3506119   config-postmarketos-mediatek-mt8173-suez.aarch64
+30e87cd644bcdedaafdfd81f21c3bff1d73b23950fdd1ec71f06ea8331cfa8623f428da786b042fcfc7dbd81ebf03fd7dad84c66ddc48d4adade66c19663c45c  linux-postmarketos-mediatek-mt8173-suez-876862ad736e602dab216ab1a8aa337a96d7dfba.tar.gz
+48f45e04ac82584d9a4636a8e738769645c46f207accbf713a8c51bdfeca657876444754e6be4aab1fe7cb846c9aad21f8c726798dd1fbb478f0fba0d3506119  config-postmarketos-mediatek-mt8173-suez.aarch64
 "
