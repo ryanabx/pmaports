@@ -97,7 +97,7 @@ _config="config-$_flavor.$arch"
 _author="ryanabx"
 _repository="linux"
 _branch="ryanabx/devices/amazon-suez"
-_commit="b30ccd8e3ffb94c0b22f01f5825c627fb8221af6"
+_commit="95068d957ad7b48ca45db87a457a5350f089be7a"
 source="
 	$pkgname-$_commit.tar.gz::https://github.com/$_author/$_repository/archive/$_commit.tar.gz
 	$_config
@@ -131,6 +131,6 @@ package() {
 }
 
 sha512sums="
-5ccaa673a444655085affc669438e787ad3ed7b8a46cd7133059fd04c893220137b64009e9c92e0dc218f25fd063825134e8ae803f226d253076a280825289a5  linux-postmarketos-mediatek-mt8173-suez-b30ccd8e3ffb94c0b22f01f5825c627fb8221af6.tar.gz
+8a299663b1a32d3df4eed872c4330b15b9505fbf699bac1ef481a4a30a9d5dd9162ef2822f8a780da777a2d36c129c5fcb85b5977a8039e34c96316cbbe22a93  linux-postmarketos-mediatek-mt8173-suez-95068d957ad7b48ca45db87a457a5350f089be7a.tar.gz
 fa400ca09b586f15b50d07ef8d73724ce4e0d7e3363341d36b35431cafbaad8feb501f46e432fcfa5973a2458c2da779e9ce68cc9138bf1607c2ba3ec7e70184  config-postmarketos-mediatek-mt8173-suez.aarch64
 "
