@@ -2,7 +2,7 @@
 maintainer="Mithil Bavishi <bavishimithil@gmail.com>"
 pkgname=linux-postmarketos-omap
 pkgver=7.1.5
-pkgrel=3
+pkgrel=5
 pkgdesc="Mainline kernel fork for OMAP devices"
 arch="armv7"
 url="https://kernel.org/"
@@ -54,6 +54,7 @@ source="
 	0005-panel-Add-lg-ld070ws1-for-barnesnoble-encore.patch
 	0006-omap4-cfi.patch
 	0007-power-supply-smb347-treat-a-missing-monitored-battery-as-no-battery-info.patch
+	0008-ARM-dts-ti-omap-samsung-espresso10-fix-the-charger-I2C-pins.patch
 "
 builddir="$srcdir/linux-$_kernver"
 replaces="linux-samsung-espresso3g linux-nokia-n900"
@@ -93,4 +94,5 @@ a17ddc7a41ce2a6be04a8ee0ffcfb8dbb0381d1ce7fac8336befd79bc388ce5d16b6ba3a4732a540
 f03770e3c2f4c2876b31750f194646bbbe43b60fc7489ee9c54d1f6b36d72da4d2894b86dc47c1c9bf7676ef0c5d1788fa4f8c4d0f8eff1dd4e75d1ce4b9dfc8  0005-panel-Add-lg-ld070ws1-for-barnesnoble-encore.patch
 25df8fb362e6f4e3612fd2e7ac02978674daabb7bf246928f94f4c8e408e196c5831f6eace3e2838c2e8f835cf1517f6a5e96160fcaec4ff4020c8859e25712c  0006-omap4-cfi.patch
 cb18c37712187c5bb9f3d180b32458aa502558996c8e37f6d1caf33c3b2764659f182ab721df62560e336802b051fc6ea1b14e955c1a0daf96cebe2de33578a5  0007-power-supply-smb347-treat-a-missing-monitored-battery-as-no-battery-info.patch
+625b55f695f5f245d0cb2b02227ba49031c9f673642349d1a15ed2bb5163b0b46abee43ec7bed8bbcbf1c728a7d2fdd212fc0f91d29d4bc2baef3a9f8a5cbc45  0008-ARM-dts-ti-omap-samsung-espresso10-fix-the-charger-I2C-pins.patch
 "
