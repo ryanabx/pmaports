@@ -2,7 +2,7 @@
 maintainer="Mithil Bavishi <bavishimithil@gmail.com>"
 pkgname=device-samsung-espresso10
 pkgdesc="Samsung Galaxy Tab 2 (10.1 inch)"
-pkgver=8
+pkgver=9
 pkgrel=0
 url="https://postmarketos.org"
 license="MIT"
@@ -26,5 +26,5 @@ package() {
 }
 
 sha512sums="
-37fec9ba27a4139c17ccae0ccb5123b8e37a5a2c4430de3396ad09102e9f2ea7813c5b6e805ccc95147720f9b8375c1a49b888523167cc25fc16327e3a1c7cf2  deviceinfo
+9a8cd2f420eed7ab10138acf12128b6194132267c99f3c1b5bf73e9eefd67c83448f54f0365dbad378f2059830eec75ac96ba90646b39e137bf8630bc22c8959  deviceinfo
 "
