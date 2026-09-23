@@ -1,0 +1,4 @@
+# Bring-up test devices only: members of wheel may use sudo without a
+# password, so unattended tools (pmbootstrap sideload, agents over ssh) are
+# never stopped by a password prompt.
+%wheel ALL=(ALL) NOPASSWD: ALL

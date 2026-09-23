@@ -1,0 +1,21 @@
+# LOCAL, bring-up only: never upstream this package. It removes the password
+# prompt from sudo for group wheel on the device it is installed on.
+# Pulled into images with: pmbootstrap config extra_packages bringup-nopasswd-sudo
+pkgname=bringup-nopasswd-sudo
+pkgver=1
+pkgrel=0
+pkgdesc="Passwordless sudo for group wheel, for bring-up test devices only"
+url="https://postmarketos.org"
+arch="noarch"
+license="MIT"
+options="!check"
+source="90-bringup-nopasswd"
+
+package() {
+	install -Dm440 "$srcdir"/90-bringup-nopasswd \
+		"$pkgdir"/etc/sudoers.d/90-bringup-nopasswd
+}
+
+sha512sums="
+836a4bd3207604cecdea4d07847c9b61f9681f624fa1746ca454fdedce885c9ff02ddbef26c7f247a3d74cf956fd843a16aa58854ae97df766d1f641cbb735a1  90-bringup-nopasswd
+"
