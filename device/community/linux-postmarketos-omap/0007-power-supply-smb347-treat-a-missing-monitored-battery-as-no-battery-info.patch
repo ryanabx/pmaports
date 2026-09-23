@@ -1,0 +1,51 @@
+From 80a38f3c0ff7b4f66062542b48fef99ceb631508 Mon Sep 17 00:00:00 2001
+From: Ryan Brue <ryanbrue.dev@gmail.com>
+Date: Wed, 23 Sep 2026 01:11:24 -0500
+Subject: [PATCH] power: supply: smb347: treat a missing monitored-battery as
+ no battery info
+
+smb347_get_battery_info() lets the probe continue when
+power_supply_get_battery_info() finds no battery, but it only accepts
+-ENXIO and -ENODEV for that. Since commit 570ba047a654 ("power: supply:
+core: battery-info: fully switch to fwnode"), the core looks the
+"monitored-battery" reference up with fwnode_find_reference(), which
+returns -ENOENT when the property is absent, where it used to return
+-ENODEV. The core itself already accepts both codes elsewhere.
+
+So on boards that don't describe a battery, such as the Samsung Galaxy
+Tab 2 10.1 (omap4-samsung-espresso10), the probe now fails:
+
+  smb347 4-0006: probe with driver smb347 failed with error -2
+
+and the charger is never registered. Accept -ENOENT as well, so the chip
+is set up from the platform properties and keeps its OTP defaults for
+the battery-specific limits.
+
+Fixes: 570ba047a654 ("power: supply: core: battery-info: fully switch to fwnode")
+Assisted-by: LLM
+---
+ drivers/power/supply/smb347-charger.c | 8 +++++++-
+ 1 file changed, 7 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/power/supply/smb347-charger.c b/drivers/power/supply/smb347-charger.c
+index c1b67dac8ef6..298b0bcd63bc 100644
+--- a/drivers/power/supply/smb347-charger.c
++++ b/drivers/power/supply/smb347-charger.c
+@@ -1291,7 +1291,13 @@ static int smb347_get_battery_info(struct smb347_charger *smb)
+ 		supply = smb->usb;
+ 
+ 	err = power_supply_get_battery_info(supply, &info);
+-	if (err == -ENXIO || err == -ENODEV)
++	/*
++	 * No monitored-battery in the firmware node is not an error: fall back
++	 * to the chip's OTP defaults. power_supply_get_battery_info() reports
++	 * that as -ENOENT since it looks the phandle up with
++	 * fwnode_find_reference().
++	 */
++	if (err == -ENXIO || err == -ENODEV || err == -ENOENT)
+ 		return 0;
+ 	if (err)
+ 		return err;
+-- 
+2.55.0
+
