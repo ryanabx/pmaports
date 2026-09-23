@@ -1,0 +1,57 @@
+From beff9e3319eb0e66c59c9b97dfae48d6a78399ec Mon Sep 17 00:00:00 2001
+From: Ryan Brue <ryanbrue.dev@gmail.com>
+Date: Wed, 23 Sep 2026 13:37:32 -0500
+Subject: [PATCH] ARM: dts: ti: omap: espresso-common: keep the TWL6032 VIO
+ regulator on
+
+A reboot from mainline never comes back on the Galaxy Tab 2: after the
+bootloader's logo (or its charging screen) the screen goes dark and
+nothing boots until the PMIC is power-cycled with a long press of Power.
+
+The TWL6032 VIO SMPS is on at power-up, and the vendor kernel never
+touches it. twl6032.dtsi registers it, espresso-common gives it no
+constraints, so the regulator core's late cleanup turns it off ~30 s
+into every boot. The system keeps running without it, but the OMAP
+warm reset used for restart doesn't reset the PMIC, so VIO is still off
+at the next boot, and that boot hangs. With an RTC alarm armed before
+the reset, the alarm is still pending after recovery, so the kernel
+never got as far as rtc-twl's probe (which disables the alarm
+interrupt).
+
+On a GT-P51xx, turning VIO back on (CFG_STATE <- ON) just before a plain
+"systemctl reboot" makes every reboot come back, whether the board was
+last cold- or warm-booted; with VIO left off, every reboot hangs.
+Turning LDO2 and LDOLN back on, the other two regulators the late cleanup
+disables, isn't needed.
+
+Keep VIO always on.
+
+Fixes: f768d54723d1 ("ARM: dts: ti: omap: espresso-common: Add common device tree for Samsung Galaxy Tab 2 series")
+Assisted-by: LLM
+---
+ .../boot/dts/ti/omap/omap4-samsung-espresso-common.dtsi  | 9 +++++++++
+ 1 file changed, 9 insertions(+)
+
+diff --git a/arch/arm/boot/dts/ti/omap/omap4-samsung-espresso-common.dtsi b/arch/arm/boot/dts/ti/omap/omap4-samsung-espresso-common.dtsi
+index 06651072f000..1c10db85788f 100644
+--- a/arch/arm/boot/dts/ti/omap/omap4-samsung-espresso-common.dtsi
++++ b/arch/arm/boot/dts/ti/omap/omap4-samsung-espresso-common.dtsi
+@@ -596,6 +596,15 @@ &smps4 {
+ 	regulator-always-on;
+ };
+ 
++&vio {
++	/*
++	 * No consumer is known, but if VIO is off at a warm reset, the next
++	 * boot hangs before the kernel gets far. A warm reset doesn't reset
++	 * the TWL6032, so keep it on like the vendor kernel does.
++	 */
++	regulator-always-on;
++};
++
+ &ldousb {
+ 	regulator-min-microvolt = <3300000>;
+ 	regulator-max-microvolt = <3300000>;
+-- 
+2.55.0
+
