@@ -1,0 +1,61 @@
+From 20ba59cabb36482cf3e40791617da0946820c282 Mon Sep 17 00:00:00 2001
+From: Ryan Brue <ryanbrue.dev@gmail.com>
+Date: Wed, 23 Sep 2026 14:32:18 -0500
+Subject: [PATCH] ARM: dts: ti: omap: espresso-common: add the bootloader
+ reboot modes
+
+The Samsung bootloader of the Galaxy Tab 2 takes its boot mode from the
+word at SAR RAM offset 0xff8, and the vendor kernel writes it from a
+reboot notifier: 0x1 normal, 0x2 recovery, 0x20 download (Odin) mode.
+Without it, "reboot download" can't reach download mode, and a plain
+reboot with USB power present comes up through the bootloader's charger
+path.
+
+Describe the modes with syscon-reboot-mode on the SAR RAM, and enable
+the SAR RAM target module.
+
+The word doubles as mainline's saved L2X0 AUXCTRL value. That is written
+once at boot and read back only when resuming from MPUSS OFF, which
+doesn't happen after a reboot notifier has run, so the reboot mode can
+take it over. The bootloader doesn't need the "RESET" tag the vendor
+kernel also writes at 0xff4 (which the kernel's CPU1 low-power code
+rewrites anyway).
+
+Tested on a GT-P51xx: download and normal. Recovery is taken from the
+vendor kernel and not tested.
+
+Assisted-by: LLM
+---
+ .../omap/omap4-samsung-espresso-common.dtsi   | 19 +++++++++++++++++++
+ 1 file changed, 19 insertions(+)
+
+diff --git a/arch/arm/boot/dts/ti/omap/omap4-samsung-espresso-common.dtsi b/arch/arm/boot/dts/ti/omap/omap4-samsung-espresso-common.dtsi
+index 1c10db85788f..5a2656f42fef 100644
+--- a/arch/arm/boot/dts/ti/omap/omap4-samsung-espresso-common.dtsi
++++ b/arch/arm/boot/dts/ti/omap/omap4-samsung-espresso-common.dtsi
+@@ -751,3 +751,22 @@ bluetooth {
+ 		interrupt-names = "host-wakeup";
+ 	};
+ };
++
++&sar_target {
++	status = "okay";
++};
++
++&sar_ram {
++	/*
++	 * The Samsung bootloader takes its boot mode from this word. It is
++	 * also the kernel's saved L2X0 AUXCTRL value, which is only read back
++	 * on an MPUSS OFF wakeup, so overwriting it at restart is fine.
++	 */
++	reboot-mode {
++		compatible = "syscon-reboot-mode";
++		offset = <0xff8>;
++		mode-normal = <0x1>;
++		mode-recovery = <0x2>;
++		mode-download = <0x20>;
++	};
++};
+-- 
+2.55.0
+

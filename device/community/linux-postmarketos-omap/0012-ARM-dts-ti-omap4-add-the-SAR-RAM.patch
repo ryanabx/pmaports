@@ -1,0 +1,49 @@
+From 8836d76e25a0e4190f0476d2a5d52e90ccf06fc2 Mon Sep 17 00:00:00 2001
+From: Ryan Brue <ryanbrue.dev@gmail.com>
+Date: Wed, 23 Sep 2026 14:32:18 -0500
+Subject: [PATCH] ARM: dts: ti: omap4: add the SAR RAM
+
+Describe SAR RAM bank 1 at 0x4a326000 as a syscon, so boards whose
+bootloader takes state from it (a reboot mode, say) can add a child.
+
+SAR RAM has no interconnect target module registers or clocks. Turn the
+existing ti,sysc placeholder into a ti,sysc-omap4-simple module so that
+ti-sysc probes it and populates the child, like the am4372 OCMC RAM.
+Both stay disabled by default.
+
+Assisted-by: LLM
+---
+ arch/arm/boot/dts/ti/omap/omap4-l4.dtsi | 10 ++++++++--
+ 1 file changed, 8 insertions(+), 2 deletions(-)
+
+diff --git a/arch/arm/boot/dts/ti/omap/omap4-l4.dtsi b/arch/arm/boot/dts/ti/omap/omap4-l4.dtsi
+index c1afc49f456c..3ff43b1d2c9e 100644
+--- a/arch/arm/boot/dts/ti/omap/omap4-l4.dtsi
++++ b/arch/arm/boot/dts/ti/omap/omap4-l4.dtsi
+@@ -1272,8 +1272,8 @@ target-module@4000 {			/* 0x4a324000, ap 27 10.0 */
+ 			ranges = <0x0 0x4000 0x1000>;
+ 		};
+ 
+-		target-module@6000 {			/* 0x4a326000, ap 13 28.0 */
+-			compatible = "ti,sysc";
++		sar_target: target-module@6000 {	/* 0x4a326000, ap 13 28.0 */
++			compatible = "ti,sysc-omap4-simple", "ti,sysc";
+ 			status = "disabled";
+ 			#address-cells = <1>;
+ 			#size-cells = <1>;
+@@ -1281,6 +1281,12 @@ target-module@6000 {			/* 0x4a326000, ap 13 28.0 */
+ 				 <0x00001000 0x00007000 0x00000400>,
+ 				 <0x00002000 0x00008000 0x00000800>,
+ 				 <0x00003000 0x00009000 0x00000400>;
++
++			/* SAR RAM bank 1 */
++			sar_ram: sram@0 {
++				compatible = "ti,omap4-sar-ram", "syscon", "simple-mfd";
++				reg = <0x0 0x1000>;
++			};
+ 		};
+ 	};
+ };
+-- 
+2.55.0
+

@@ -2,7 +2,7 @@
 maintainer="Mithil Bavishi <bavishimithil@gmail.com>"
 pkgname=linux-postmarketos-omap
 pkgver=7.1.5
-pkgrel=6
+pkgrel=8
 pkgdesc="Mainline kernel fork for OMAP devices"
 arch="armv7"
 url="https://kernel.org/"
@@ -56,6 +56,10 @@ source="
 	0007-power-supply-smb347-treat-a-missing-monitored-battery-as-no-battery-info.patch
 	0008-ARM-dts-ti-omap-samsung-espresso10-fix-the-charger-I2C-pins.patch
 	0009-ARM-dts-ti-omap-espresso-common-keep-the-TWL6032-VIO-regulator-on.patch
+	0010-dt-bindings-sram-add-TI-OMAP4-SAR-RAM.patch
+	0011-bus-ti-sysc-populate-simple-mfd-child-nodes-too.patch
+	0012-ARM-dts-ti-omap4-add-the-SAR-RAM.patch
+	0013-ARM-dts-ti-omap-espresso-common-add-the-bootloader-r.patch
 "
 builddir="$srcdir/linux-$_kernver"
 replaces="linux-samsung-espresso3g linux-nokia-n900"
@@ -87,7 +91,7 @@ package() {
 
 sha512sums="
 17f95307b6e86a0794df146d97256ba4783b7a494f5eb43aafc14d64367541874cec7f6e8c2ea724eca149db18e4bd5880bf28a8c5e47ae8a769776bbd955af8  linux-7.1.5.tar.xz
-e1e549db4eac7360a65121d705af3c880cc840736b5b0a87842828acf5bfd802c2e80807fb61cc10c343164f3162248308bb6acc7f3ee13520ad0d216128d65f  config-postmarketos-omap.armv7
+07e570fade381683ce62a6def86ce69ac6a5180b150a6bd817cbcdcfb85b369fd62d7696ec7c67f93ba8f1bfb1f2ec9a13b0495139930bcab3cf71e3eb834875  config-postmarketos-omap.armv7
 1a68e3a32ae1e56d325c0f759ee66d64d14f46a5d52e75ae008dfddac335beb3aa7acaf62abb95b6d5ce1557f0cf9b4c31ab78e110af178db1ac963bb377dbf0  0001-iio-rescale-revert-logic.patch
 11bcc2bdcd8862e56f23a763d393b1d5f62af82cfd6dd347b5786b9f299144950d5941579091fea144371bad1188f366d8cd5a26453fc852fd3e769df2bd21bc  0002-hsi-dma-fix.patch
 a17ddc7a41ce2a6be04a8ee0ffcfb8dbb0381d1ce7fac8336befd79bc388ce5d16b6ba3a4732a540a43add55c43b015a3b77205a007a058d4d6e3291234b5cc0  0003-Add-TWL6030-power-button-support-to-twl-pwrbutton.patch
@@ -97,4 +101,8 @@ f03770e3c2f4c2876b31750f194646bbbe43b60fc7489ee9c54d1f6b36d72da4d2894b86dc47c1c9
 cb18c37712187c5bb9f3d180b32458aa502558996c8e37f6d1caf33c3b2764659f182ab721df62560e336802b051fc6ea1b14e955c1a0daf96cebe2de33578a5  0007-power-supply-smb347-treat-a-missing-monitored-battery-as-no-battery-info.patch
 625b55f695f5f245d0cb2b02227ba49031c9f673642349d1a15ed2bb5163b0b46abee43ec7bed8bbcbf1c728a7d2fdd212fc0f91d29d4bc2baef3a9f8a5cbc45  0008-ARM-dts-ti-omap-samsung-espresso10-fix-the-charger-I2C-pins.patch
 f1598970f1144d6ce938dba2f472937241a6a1f86f88678fcd4fdeb424ba0d671def2887d749272d83a7559f48cee0bdcddc35cec4bdaa8348abefecc53d1c5d  0009-ARM-dts-ti-omap-espresso-common-keep-the-TWL6032-VIO-regulator-on.patch
+b2b7950e2d369e484e415919ccdcd84a233b6f618764aa2ed4ea994eb565b150d17184f2c639d10d2de7c74feeb068a1d5fe1402d3c8504f4abe8448e113bd63  0010-dt-bindings-sram-add-TI-OMAP4-SAR-RAM.patch
+8922e5805ad5e46d85f723b933bf1210b9701813022da0c0afdfbe6492aa01a618ba739473518b1700b4f91ae7a7dd9afcb988a2e2b9765c431a1d2921b541cc  0011-bus-ti-sysc-populate-simple-mfd-child-nodes-too.patch
+3984d139148881ef191e23f1eb5cf7f5ce27492736a80e13606999e692b4008ad6ed4ba453f0371d6d57143818b4c8df65ca6ce61a86a8fdae2e7e43d17db92f  0012-ARM-dts-ti-omap4-add-the-SAR-RAM.patch
+e30dd23ffe29f3f935cacb169439e2c43cfde59f814de13426165471807e63175f358482774ce65627c25369959759775572a9de74b500cec990c7312d257c93  0013-ARM-dts-ti-omap-espresso-common-add-the-bootloader-r.patch
 "

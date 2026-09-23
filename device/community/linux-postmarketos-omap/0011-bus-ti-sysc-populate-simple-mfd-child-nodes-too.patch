@@ -1,0 +1,35 @@
+From 5e39d19d46970facbbd870198be5df31f9ea8db5 Mon Sep 17 00:00:00 2001
+From: Ryan Brue <ryanbrue.dev@gmail.com>
+Date: Wed, 23 Sep 2026 14:32:18 -0500
+Subject: [PATCH] bus: ti-sysc: populate simple-mfd child nodes too
+
+ti-sysc populates the children of an interconnect target module, but
+only descends into "simple-bus" nodes. A "syscon", "simple-mfd" node
+inside a target module (dt-schema rejects "syscon", "simple-bus" for new
+bindings) gets a device, but its own children never do. The OMAP4 SAR
+RAM needs this for a syscon-reboot-mode child.
+
+Match "simple-mfd" as well, like of_default_bus_match_table does. No
+existing OMAP device tree has a simple-mfd node under a ti-sysc target
+module, so nothing else changes.
+
+Assisted-by: LLM
+---
+ drivers/bus/ti-sysc.c | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/drivers/bus/ti-sysc.c b/drivers/bus/ti-sysc.c
+index e118b900c9ac..149c17aff18e 100644
+--- a/drivers/bus/ti-sysc.c
++++ b/drivers/bus/ti-sysc.c
+@@ -3142,6 +3142,7 @@ static int sysc_check_active_timer(struct sysc *ddata)
+ 
+ static const struct of_device_id sysc_match_table[] = {
+ 	{ .compatible = "simple-bus", },
++	{ .compatible = "simple-mfd", },
+ 	{ /* sentinel */ },
+ };
+ 
+-- 
+2.55.0
+
