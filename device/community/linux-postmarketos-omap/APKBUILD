@@ -2,7 +2,7 @@
 maintainer="Mithil Bavishi <bavishimithil@gmail.com>"
 pkgname=linux-postmarketos-omap
 pkgver=7.1.5
-pkgrel=11
+pkgrel=13
 pkgdesc="Mainline kernel fork for OMAP devices"
 arch="armv7"
 url="https://kernel.org/"
@@ -64,6 +64,7 @@ source="
 	0015-ARM-dts-ti-omap-samsung-espresso10-describe-the-batt.patch
 	0016-ARM-dts-ti-omap-espresso-common-reserve-the-secure-m.patch
 	0017-ARM-dts-ti-omap-samsung-espresso10-size-the-splash-r.patch
+	0018-ARM-dts-ti-omap-espresso-common-add-ramoops.patch
 "
 builddir="$srcdir/linux-$_kernver"
 replaces="linux-samsung-espresso3g linux-nokia-n900"
@@ -113,4 +114,5 @@ e30dd23ffe29f3f935cacb169439e2c43cfde59f814de13426165471807e63175f358482774ce656
 85cc484e8c3489c08e65a46bb40a8716bbd29db43fff560056d2513904d9bbdadebd456a11572374b658bac9e7ba1de76e2d2aa8b9e0afd3b84d89005122f1e9  0015-ARM-dts-ti-omap-samsung-espresso10-describe-the-batt.patch
 f4e95c50761402cbba24d79d0e51289e90e6622d19b068c14792c9030d2104d64bd97581b6bf547edc839c78e5a8fb9ed1f512fbd230bef3c92c5f2243b9e119  0016-ARM-dts-ti-omap-espresso-common-reserve-the-secure-m.patch
 1eba16edd2dded602b463fcd59f663395fb3e268c63c6576134c123d66d8344734ce4ec181c23746232c8cc3d0f7a90b53fd1ec99cb3ad9fbbe2b622cd12f333  0017-ARM-dts-ti-omap-samsung-espresso10-size-the-splash-r.patch
+b221c1a3a80b3810750760f8bf955390da7722dcd34fd61b53ba97cd5bd578842ffa2482358ece8104b46f648fb2b63ba562214e7aaff320925a816103fb8d4f  0018-ARM-dts-ti-omap-espresso-common-add-ramoops.patch
 "

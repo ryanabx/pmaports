@@ -1,0 +1,47 @@
+From e5a80280fe6c77bdb7e1f6a2ac8ac0add1272e0f Mon Sep 17 00:00:00 2001
+From: Ryan Brue <ryanbrue.dev@gmail.com>
+Date: Wed, 23 Sep 2026 22:05:37 -0500
+Subject: [PATCH] ARM: dts: ti: omap: espresso-common: add ramoops
+
+Reserve 2 MB at 0xa0000000 for ramoops, where the vendor kernel keeps
+its RAM console: the bootloader leaves that memory alone across a warm
+reset, so the kernel log of a crashed boot can be read after the reboot.
+
+Map it unbuffered: with the default write-combined mapping the tail of a
+panic record was lost across the reset, which breaks decompression of
+the whole record. Use ECC, as the vendor RAM console does.
+
+Assisted-by: LLM
+---
+ .../ti/omap/omap4-samsung-espresso-common.dtsi    | 15 +++++++++++++++
+ 1 file changed, 15 insertions(+)
+
+diff --git a/arch/arm/boot/dts/ti/omap/omap4-samsung-espresso-common.dtsi b/arch/arm/boot/dts/ti/omap/omap4-samsung-espresso-common.dtsi
+index e7d3d7f7ae82..255491cb28ba 100644
+--- a/arch/arm/boot/dts/ti/omap/omap4-samsung-espresso-common.dtsi
++++ b/arch/arm/boot/dts/ti/omap/omap4-samsung-espresso-common.dtsi
+@@ -16,6 +16,21 @@ reserved-memory {
+ 		#size-cells = <1>;
+ 		ranges;
+ 
++		/*
++		 * Where the vendor kernel keeps its RAM console. Unbuffered, so
++		 * that a panic's last writes reach the DDR before the reset, and
++		 * with ECC like the vendor console.
++		 */
++		ramoops@a0000000 {
++			compatible = "ramoops";
++			reg = <0xa0000000 0x200000>;
++			record-size = <0x20000>;
++			console-size = <0x40000>;
++			pmsg-size = <0x20000>;
++			mem-type = <1>;
++			ecc-size = <16>;
++		};
++
+ 		continuous_splash: framebuffer@bef00000{
+ 			reg = <0xbef00000 (1024 * 600 * 4)>;
+ 			no-map;
+-- 
+2.55.0
+
