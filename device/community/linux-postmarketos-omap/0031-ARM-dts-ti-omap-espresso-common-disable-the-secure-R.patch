@@ -1,0 +1,38 @@
+From dd7b82a171771b133e36254ca90f73686128e1ba Mon Sep 17 00:00:00 2001
+From: Ryan Brue <ryanbrue.dev@gmail.com>
+Date: Thu, 24 Sep 2026 14:41:10 -0500
+Subject: [PATCH] ARM: dts: ti: omap: espresso-common: disable the secure RNG
+
+The Galaxy Tab 2 has a high-security OMAP4430, where the RNG belongs to
+the secure side, as on the Motorola mapphone devices, which disable it
+too. Its target module fails to probe at every boot:
+
+  ti-sysc 48091fe0.target-module: clock get error for fck: -2
+  ti-sysc 48091fe0.target-module: probe with driver ti-sysc failed with error -2
+
+Disable it.
+
+Assisted-by: LLM
+---
+ arch/arm/boot/dts/ti/omap/omap4-samsung-espresso-common.dtsi | 5 +++++
+ 1 file changed, 5 insertions(+)
+
+diff --git a/arch/arm/boot/dts/ti/omap/omap4-samsung-espresso-common.dtsi b/arch/arm/boot/dts/ti/omap/omap4-samsung-espresso-common.dtsi
+index 1052fd76885f..a75e172e2783 100644
+--- a/arch/arm/boot/dts/ti/omap/omap4-samsung-espresso-common.dtsi
++++ b/arch/arm/boot/dts/ti/omap/omap4-samsung-espresso-common.dtsi
+@@ -669,6 +669,11 @@ &keypad {
+ 	status = "disabled";
+ };
+ 
++/* RNG is used by secure mode and not accessible (HS OMAP4) */
++&rng_target {
++	status = "disabled";
++};
++
+ &dss {
+ 	status = "okay";
+ 
+-- 
+2.55.0
+
