@@ -2,7 +2,7 @@
 maintainer="Mithil Bavishi <bavishimithil@gmail.com>"
 pkgname=linux-postmarketos-omap
 pkgver=7.1.5
-pkgrel=15
+pkgrel=17
 pkgdesc="Mainline kernel fork for OMAP devices"
 arch="armv7"
 url="https://kernel.org/"
@@ -68,6 +68,7 @@ source="
 	0019-ARM-OMAP2-prm44xx-clear-the-reset-sources-at-boot-on.patch
 	0020-ARM-dts-ti-omap-espresso-move-the-GP2AP002-light-sen.patch
 	0021-ARM-dts-ti-omap-samsung-espresso10-add-the-BH1721-li.patch
+	0022-ARM-OMAP4-PM-move-the-L2X0-save-area-out-of-the-boot.patch
 "
 builddir="$srcdir/linux-$_kernver"
 replaces="linux-samsung-espresso3g linux-nokia-n900"
@@ -121,4 +122,5 @@ b221c1a3a80b3810750760f8bf955390da7722dcd34fd61b53ba97cd5bd578842ffa2482358ece81
 9d8ae115b01f8ad93bb3ff59aab5bd10cd7a9842c04066b4f9172587190979bf493e42ac4fdacdf37e86b95f6359ea8b6d23fc42823e0681413fe0c909e40a66  0019-ARM-OMAP2-prm44xx-clear-the-reset-sources-at-boot-on.patch
 39654f139419c53d0a51d04f8a27b9926f791288969aab9fc53e2edf9c5b5886e7e4432dc52aef580fa658f24e7e01b74dc88c102651f8892ff4d831f0fab01a  0020-ARM-dts-ti-omap-espresso-move-the-GP2AP002-light-sen.patch
 537388fa96f7b06e8ed7ac98aafbe52300a8ed4bbd27f40e89d776d5a2c662384edaf80aa10f8af4e13cdc88ca7a4ddb9646111359067ac6138e8635d46b879f  0021-ARM-dts-ti-omap-samsung-espresso10-add-the-BH1721-li.patch
+da9144b0ec16af61dff1896c8df476af212c26121dd152bc1f0e3253be4a20a6333f775d181acf2e8f2b29b67e0e806cbc65c99f3abd86c47709697f2accbd18  0022-ARM-OMAP4-PM-move-the-L2X0-save-area-out-of-the-boot.patch
 "

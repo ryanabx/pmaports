@@ -1,0 +1,69 @@
+From fd6db0627592705de696aadd458bdd24e0081711 Mon Sep 17 00:00:00 2001
+From: Ryan Brue <ryanbrue.dev@gmail.com>
+Date: Thu, 24 Sep 2026 11:23:05 -0500
+Subject: [PATCH] ARM: OMAP4: PM: move the L2X0 save area out of the
+ bootloader's SAR words
+
+Since commit f98d5fe8079c ("ARM: OMAP4+: Use common scratchpad SAR RAM
+offsets for all architectures") the OMAP4 low-power code keeps its L2X0
+state in the last words of SAR RAM bank 1: the per-CPU save state at
+0xff0/0xff4, the saved AUXCTRL at 0xff8 and the prefetch control at
+0xffc. omap4_cpu_resume() reads AUXCTRL and PREFETCH_CTRL back after
+every MPUSS OSWR wakeup, where the PL310 has lost its configuration, and
+re-enables the L2 cache with them.
+
+Bootloaders use the same words for the reboot reason. The Samsung Galaxy
+Tab 2 bootloader takes its boot mode (normal, recovery, download) from
+0xff8, as the vendor kernel writes it on restart; the vendor kernel keeps
+its own scratch pad at 0xd20-0xd40. With a syscon-reboot-mode node on
+0xff8, the mode is written from the reboot notifier, and the CPUs keep
+entering idle during the rest of the restart. The next OSWR wakeup then
+programs the mode (0x1 or 0x20) as AUXCTRL and the L2 cache loses the
+dirty lines of the context that cpu_suspend() saved on the stack. On the
+tablet most reboots end in an oops right after cpu_resume, for example
+
+  Unable to handle kernel NULL pointer dereference at virtual address 00000000 when execute
+  PC is at 0x0
+  LR is at cpu_init+0x58/0xb4
+
+or in a hang until the watchdog resets the SoC.
+
+These offsets are not hardware registers, and only OMAP4 has the PL310,
+so move the four L2X0 words back to where they were before f98d5fe8079c,
+0xd14-0xd20. Nothing else uses that part of bank 1.
+
+Tested on a Samsung Galaxy Tab 2 10.1 (GT-P5100, OMAP4430 HS).
+
+Assisted-by: LLM
+---
+ arch/arm/mach-omap2/omap4-sar-layout.h | 14 ++++++++++----
+ 1 file changed, 10 insertions(+), 4 deletions(-)
+
+diff --git a/arch/arm/mach-omap2/omap4-sar-layout.h b/arch/arm/mach-omap2/omap4-sar-layout.h
+index aabf06401200..83eb21c3b069 100644
+--- a/arch/arm/mach-omap2/omap4-sar-layout.h
++++ b/arch/arm/mach-omap2/omap4-sar-layout.h
+@@ -20,10 +20,16 @@
+ #define SCU_OFFSET0				0xfe4
+ #define SCU_OFFSET1				0xfe8
+ #define OMAP_TYPE_OFFSET			0xfec
+-#define L2X0_SAVE_OFFSET0			0xff0
+-#define L2X0_SAVE_OFFSET1			0xff4
+-#define L2X0_AUXCTRL_OFFSET			0xff8
+-#define L2X0_PREFETCH_CTRL_OFFSET		0xffc
++
++/*
++ * OMAP4 only (PL310). Not at the end of the bank: bootloaders use
++ * 0xff4 and 0xff8 for their reboot reason, e.g. the Samsung Galaxy Tab 2
++ * one, which gets its boot mode from 0xff8.
++ */
++#define L2X0_SAVE_OFFSET0			0xd14
++#define L2X0_SAVE_OFFSET1			0xd18
++#define L2X0_AUXCTRL_OFFSET			0xd1c
++#define L2X0_PREFETCH_CTRL_OFFSET		0xd20
+ 
+ /* CPUx Wakeup Non-Secure Physical Address offsets in SAR_BANK1 */
+ #define CPU0_WAKEUP_NS_PA_ADDR_OFFSET		0xa04
+-- 
+2.55.0
+
