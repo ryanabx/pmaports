@@ -1,0 +1,39 @@
+From 223ded631fedf5f924e09aa5198a57e9d0d46567 Mon Sep 17 00:00:00 2001
+From: Ryan Brue <ryanbrue.dev@gmail.com>
+Date: Thu, 24 Sep 2026 14:41:10 -0500
+Subject: [PATCH] ARM: dts: ti: omap: espresso-common: disable the keypad
+ controller
+
+The Galaxy Tab 2 has no key matrix: power and volume keys are on GPIOs
+(gpio-keys). The OMAP4 keypad controller is enabled in omap4-l4.dtsi,
+and without rows and columns its probe fails at every boot:
+
+  omap4-keypad 4a31c000.keypad: number of keypad rows/columns not specified
+  omap4-keypad 4a31c000.keypad: probe with driver omap4-keypad failed with error -22
+
+Disable it.
+
+Assisted-by: LLM
+---
+ arch/arm/boot/dts/ti/omap/omap4-samsung-espresso-common.dtsi | 5 +++++
+ 1 file changed, 5 insertions(+)
+
+diff --git a/arch/arm/boot/dts/ti/omap/omap4-samsung-espresso-common.dtsi b/arch/arm/boot/dts/ti/omap/omap4-samsung-espresso-common.dtsi
+index 0ed9583da1d2..1052fd76885f 100644
+--- a/arch/arm/boot/dts/ti/omap/omap4-samsung-espresso-common.dtsi
++++ b/arch/arm/boot/dts/ti/omap/omap4-samsung-espresso-common.dtsi
+@@ -664,6 +664,11 @@ magnetometer@2e {
+ 	};
+ };
+ 
++/* No keypad matrix: the keys are on GPIOs */
++&keypad {
++	status = "disabled";
++};
++
+ &dss {
+ 	status = "okay";
+ 
+-- 
+2.55.0
+
