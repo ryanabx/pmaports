@@ -1,0 +1,38 @@
+From a48acbdbb6dba1f118ea88dfdceb8d92d116a860 Mon Sep 17 00:00:00 2001
+From: Ryan Brue <ryanbrue.dev@gmail.com>
+Date: Wed, 23 Sep 2026 20:51:11 -0500
+Subject: [PATCH] ARM: dts: ti: omap: samsung-espresso10: size the splash
+ reservation for the panel
+
+The common espresso dtsi reserves the bootloader's framebuffer at
+0xbef00000 for a 1024x600 panel, the 7" model's. The 10.1" panel is
+1280x800, so the bootloader's framebuffer is larger (4000 KiB instead
+of 2400 KiB), and the display keeps scanning out pages the kernel hands
+out until the display driver takes over.
+
+Reserve the size of the 10.1" framebuffer.
+
+Assisted-by: LLM
+---
+ arch/arm/boot/dts/ti/omap/omap4-samsung-espresso10.dts | 5 +++++
+ 1 file changed, 5 insertions(+)
+
+diff --git a/arch/arm/boot/dts/ti/omap/omap4-samsung-espresso10.dts b/arch/arm/boot/dts/ti/omap/omap4-samsung-espresso10.dts
+index acf440c6a75b..91e152c6fade 100644
+--- a/arch/arm/boot/dts/ti/omap/omap4-samsung-espresso10.dts
++++ b/arch/arm/boot/dts/ti/omap/omap4-samsung-espresso10.dts
+@@ -125,6 +125,11 @@ rmi4-f11@11 {
+ 	};
+ };
+ 
++/* The bootloader's framebuffer is sized for this panel, not the 7" one */
++&continuous_splash {
++	reg = <0xbef00000 (1280 * 800 * 4)>;
++};
++
+ &fuel_gauge {
+ 	power-supplies = <&smb347>;
+ 	monitored-battery = <&battery>;
+-- 
+2.55.0
+

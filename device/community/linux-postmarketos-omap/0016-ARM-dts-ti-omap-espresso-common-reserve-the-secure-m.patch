@@ -1,0 +1,44 @@
+From fd8770e3e655d120c84162394c996db967b2144a Mon Sep 17 00:00:00 2001
+From: Ryan Brue <ryanbrue.dev@gmail.com>
+Date: Wed, 23 Sep 2026 20:51:11 -0500
+Subject: [PATCH] ARM: dts: ti: omap: espresso-common: reserve the secure
+ monitor memory
+
+The Galaxy Tab 2 uses a high-security OMAP4430, and on those the secure
+monitor owns the last 3 MB of DDR: the vendor kernel removes
+0xbfd00000-0xbfffffff from its memory (omap4_smc_addr/omap4_smc_size),
+and the Motorola mapphone DTs, also HS OMAP4, stop their memory at
+1021 MB. Mainline gives these pages to Linux, which on a GT-P51xx used
+nearly all of them for the page cache, where the secure side can
+overwrite them.
+
+Reserve them.
+
+Assisted-by: LLM
+---
+ .../boot/dts/ti/omap/omap4-samsung-espresso-common.dtsi  | 9 +++++++++
+ 1 file changed, 9 insertions(+)
+
+diff --git a/arch/arm/boot/dts/ti/omap/omap4-samsung-espresso-common.dtsi b/arch/arm/boot/dts/ti/omap/omap4-samsung-espresso-common.dtsi
+index 3c05c8ea97d4..e7d3d7f7ae82 100644
+--- a/arch/arm/boot/dts/ti/omap/omap4-samsung-espresso-common.dtsi
++++ b/arch/arm/boot/dts/ti/omap/omap4-samsung-espresso-common.dtsi
+@@ -20,6 +20,15 @@ continuous_splash: framebuffer@bef00000{
+ 			reg = <0xbef00000 (1024 * 600 * 4)>;
+ 			no-map;
+ 		};
++
++		/*
++		 * The last 3 MB belong to the secure monitor on these HS
++		 * devices: the vendor kernel removes them from its memory.
++		 */
++		secure_memory: memory@bfd00000 {
++			reg = <0xbfd00000 0x300000>;
++			no-map;
++		};
+ 	};
+ 
+ 	chosen {
+-- 
+2.55.0
+
