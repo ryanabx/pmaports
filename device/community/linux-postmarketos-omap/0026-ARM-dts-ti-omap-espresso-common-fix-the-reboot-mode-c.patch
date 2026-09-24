@@ -1,0 +1,33 @@
+From 4ba02a24f495cd0199aa8015b4b12dd5c444a66c Mon Sep 17 00:00:00 2001
+From: Ryan Brue <ryanbrue.dev@gmail.com>
+Date: Thu, 24 Sep 2026 11:23:27 -0500
+Subject: [PATCH] ARM: dts: ti: omap: espresso-common: fix the reboot mode
+ comment
+
+The word no longer overlaps the L2X0 save area ("ARM: OMAP4: PM: move the L2X0 save area out of the bootloader's SAR words"), which has to come first in the series. Squash before sending.
+
+Assisted-by: LLM
+---
+ .../arm/boot/dts/ti/omap/omap4-samsung-espresso-common.dtsi | 6 +-----
+ 1 file changed, 1 insertion(+), 5 deletions(-)
+
+diff --git a/arch/arm/boot/dts/ti/omap/omap4-samsung-espresso-common.dtsi b/arch/arm/boot/dts/ti/omap/omap4-samsung-espresso-common.dtsi
+index 9a41531d1c6c..9c7b77858ca9 100644
+--- a/arch/arm/boot/dts/ti/omap/omap4-samsung-espresso-common.dtsi
++++ b/arch/arm/boot/dts/ti/omap/omap4-samsung-espresso-common.dtsi
+@@ -761,11 +761,7 @@ &sar_target {
+ };
+ 
+ &sar_ram {
+-	/*
+-	 * The Samsung bootloader takes its boot mode from this word. It is
+-	 * also the kernel's saved L2X0 AUXCTRL value, which is only read back
+-	 * on an MPUSS OFF wakeup, so overwriting it at restart is fine.
+-	 */
++	/* The Samsung bootloader takes its boot mode from this word */
+ 	reboot-mode {
+ 		compatible = "syscon-reboot-mode";
+ 		offset = <0xff8>;
+-- 
+2.55.0
+

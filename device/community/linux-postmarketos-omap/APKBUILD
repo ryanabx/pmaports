@@ -2,7 +2,7 @@
 maintainer="Mithil Bavishi <bavishimithil@gmail.com>"
 pkgname=linux-postmarketos-omap
 pkgver=7.1.5
-pkgrel=18
+pkgrel=19
 pkgdesc="Mainline kernel fork for OMAP devices"
 arch="armv7"
 url="https://kernel.org/"
@@ -70,6 +70,10 @@ source="
 	0021-ARM-dts-ti-omap-samsung-espresso10-add-the-BH1721-li.patch
 	0022-ARM-OMAP4-PM-move-the-L2X0-save-area-out-of-the-boot.patch
 	0023-ARM-dts-ti-omap-espresso-common-ramoops-no-map.patch
+	0024-dt-bindings-power-reset-add-Samsung-Galaxy-Tab-2-reboo.patch
+	0025-power-reset-add-Samsung-Galaxy-Tab-2-reboot-mode-driv.patch
+	0026-ARM-dts-ti-omap-espresso-common-fix-the-reboot-mode-c.patch
+	0027-ARM-dts-ti-omap-espresso-common-use-the-Samsung-reboo.patch
 "
 builddir="$srcdir/linux-$_kernver"
 replaces="linux-samsung-espresso3g linux-nokia-n900"
@@ -101,7 +105,7 @@ package() {
 
 sha512sums="
 17f95307b6e86a0794df146d97256ba4783b7a494f5eb43aafc14d64367541874cec7f6e8c2ea724eca149db18e4bd5880bf28a8c5e47ae8a769776bbd955af8  linux-7.1.5.tar.xz
-435b05b5159a62dee3d9084298658d8a3c7662a0e49985e194a908c3061cd8c158546563677ef9ad66c4d407b19aede07891824c0739ec1901e03acdf2c05646  config-postmarketos-omap.armv7
+0431282ce46ba98cbbadd7ee153e294956ff715ef39bf4ce942ecb8c38b88e91130689326fe5c5823850ab8f1c3b5aa67ed50d4ac35c742636df6eafda0ae7b7  config-postmarketos-omap.armv7
 1a68e3a32ae1e56d325c0f759ee66d64d14f46a5d52e75ae008dfddac335beb3aa7acaf62abb95b6d5ce1557f0cf9b4c31ab78e110af178db1ac963bb377dbf0  0001-iio-rescale-revert-logic.patch
 11bcc2bdcd8862e56f23a763d393b1d5f62af82cfd6dd347b5786b9f299144950d5941579091fea144371bad1188f366d8cd5a26453fc852fd3e769df2bd21bc  0002-hsi-dma-fix.patch
 a17ddc7a41ce2a6be04a8ee0ffcfb8dbb0381d1ce7fac8336befd79bc388ce5d16b6ba3a4732a540a43add55c43b015a3b77205a007a058d4d6e3291234b5cc0  0003-Add-TWL6030-power-button-support-to-twl-pwrbutton.patch
@@ -125,4 +129,8 @@ b221c1a3a80b3810750760f8bf955390da7722dcd34fd61b53ba97cd5bd578842ffa2482358ece81
 537388fa96f7b06e8ed7ac98aafbe52300a8ed4bbd27f40e89d776d5a2c662384edaf80aa10f8af4e13cdc88ca7a4ddb9646111359067ac6138e8635d46b879f  0021-ARM-dts-ti-omap-samsung-espresso10-add-the-BH1721-li.patch
 da9144b0ec16af61dff1896c8df476af212c26121dd152bc1f0e3253be4a20a6333f775d181acf2e8f2b29b67e0e806cbc65c99f3abd86c47709697f2accbd18  0022-ARM-OMAP4-PM-move-the-L2X0-save-area-out-of-the-boot.patch
 7622aa9525a1ebdbc4316ad4d232bf85213151f4554a54390275991e28b1e4a7e4dd1aaa0655651389919328ea70699ca0aa5344a3ab2087f83ad38c40fe25ce  0023-ARM-dts-ti-omap-espresso-common-ramoops-no-map.patch
+38f8ea3c7509b82eb48029a18c8a373958910f80788f86333a2b1149e2a61dcca29838c8a73904c398aeb3b53df966403893765ce697d79341b4e2e26e417bd6  0024-dt-bindings-power-reset-add-Samsung-Galaxy-Tab-2-reboo.patch
+f616e592fe4dcae56885e45ade233d95cff116d661201e5c2d23550addd791b4c6c2fdf9c78ea3e6ccb7d7c7b799b4f6253a97a7f98072fff4780a6f265e1f80  0025-power-reset-add-Samsung-Galaxy-Tab-2-reboot-mode-driv.patch
+03287feb902add5f3c5b96a8540a8f04b1c1af3a646919fcbd85467c9b27ca3ac170655aff65ad85bbd93e5d5c0ff6fd0b6ab30ff86503afe3f1cc32b2fc8754  0026-ARM-dts-ti-omap-espresso-common-fix-the-reboot-mode-c.patch
+6abe7835dd196e59d40a1d90c92785e19f57f9a93b54d1b8fa0083aa552d883d56e2cb6d37348072a9e5abe55a420abb9d76e9b42826f5c742897ec8713042e2  0027-ARM-dts-ti-omap-espresso-common-use-the-Samsung-reboo.patch
 "
