@@ -1,0 +1,70 @@
+From cac7ed430a011242e75bf0d8a37df9121da6d61b Mon Sep 17 00:00:00 2001
+From: Ryan Brue <ryanbrue.dev@gmail.com>
+Date: Thu, 24 Sep 2026 14:43:09 -0500
+Subject: [PATCH] power: supply: core: copy the supplier names for
+ supplied_from
+
+With "power-supplies" in the firmware node, supplied_from points at the
+desc->name of each supplier, which is usually a string in the
+supplier's driver. When that driver is a module and gets unloaded, the
+supply keeps the pointer, and the next power_supply_changed() of any
+supply runs __power_supply_is_supplied_by() over it and oopses in
+strcmp(). On a Samsung Galaxy Tab 2 10.1, whose MAX17042 fuel gauge
+lists the SMB347 charger in power-supplies, "modprobe -r smb347-charger"
+followed by a battery event oopsed in power_supply_changed_work(), and
+afterwards power-supply sysfs reads hung.
+
+Store copies of the names instead. The supply then also matches a
+supplier that registers again under the same name, e.g. after its module
+is loaded again.
+
+Fixes: f6e0b081fb30 ("power_supply: Populate supplied_from hierarchy from the device tree")
+Assisted-by: LLM
+---
+ drivers/power/supply/power_supply_core.c | 17 +++++++++++++++--
+ 1 file changed, 15 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/power/supply/power_supply_core.c b/drivers/power/supply/power_supply_core.c
+index df3462e4e9db..1b4a988f4866 100644
+--- a/drivers/power/supply/power_supply_core.c
++++ b/drivers/power/supply/power_supply_core.c
+@@ -196,6 +196,7 @@ static int __power_supply_populate_supplied_from(struct power_supply *epsy,
+ {
+ 	struct power_supply *psy = data;
+ 	struct fwnode_handle *np;
++	const char *name;
+ 	int i = 0;
+ 
+ 	do {
+@@ -206,14 +207,26 @@ static int __power_supply_populate_supplied_from(struct power_supply *epsy,
+ 		if (np == epsy->dev.fwnode) {
+ 			dev_dbg(&psy->dev, "%s: Found supply : %s\n",
+ 				psy->desc->name, epsy->desc->name);
++			/*
++			 * Keep a copy: the supplier's name can live in a module
++			 * that is unloaded before this supply goes away.
++			 */
++			name = devm_kstrdup_const(&psy->dev, epsy->desc->name,
++						  GFP_KERNEL);
++			if (!name) {
++				fwnode_handle_put(np);
++				return -ENOMEM;
++			}
+ 			/*
+ 			 * A node can register more than one supply, e.g. mains
+ 			 * and USB of a charger. They share the entry, and the
+ 			 * array has one per phandle, so count it only once.
+ 			 */
+-			if (!psy->supplied_from[i - 1])
++			if (psy->supplied_from[i - 1])
++				devm_kfree(&psy->dev, psy->supplied_from[i - 1]);
++			else
+ 				psy->num_supplies++;
+-			psy->supplied_from[i - 1] = (char *)epsy->desc->name;
++			psy->supplied_from[i - 1] = (char *)name;
+ 			fwnode_handle_put(np);
+ 			break;
+ 		}
+-- 
+2.55.0
+

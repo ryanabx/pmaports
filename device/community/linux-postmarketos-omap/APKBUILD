@@ -2,7 +2,7 @@
 maintainer="Mithil Bavishi <bavishimithil@gmail.com>"
 pkgname=linux-postmarketos-omap
 pkgver=7.1.5
-pkgrel=20
+pkgrel=21
 pkgdesc="Mainline kernel fork for OMAP devices"
 arch="armv7"
 url="https://kernel.org/"
@@ -75,6 +75,7 @@ source="
 	0026-ARM-dts-ti-omap-espresso-common-fix-the-reboot-mode-c.patch
 	0027-ARM-dts-ti-omap-espresso-common-use-the-Samsung-reboo.patch
 	0028-power-supply-core-count-each-power-supplies-entry-on.patch
+	0029-power-supply-core-copy-the-supplier-names-for-suppli.patch
 "
 builddir="$srcdir/linux-$_kernver"
 replaces="linux-samsung-espresso3g linux-nokia-n900"
@@ -135,4 +136,5 @@ f616e592fe4dcae56885e45ade233d95cff116d661201e5c2d23550addd791b4c6c2fdf9c78ea3e6
 03287feb902add5f3c5b96a8540a8f04b1c1af3a646919fcbd85467c9b27ca3ac170655aff65ad85bbd93e5d5c0ff6fd0b6ab30ff86503afe3f1cc32b2fc8754  0026-ARM-dts-ti-omap-espresso-common-fix-the-reboot-mode-c.patch
 6abe7835dd196e59d40a1d90c92785e19f57f9a93b54d1b8fa0083aa552d883d56e2cb6d37348072a9e5abe55a420abb9d76e9b42826f5c742897ec8713042e2  0027-ARM-dts-ti-omap-espresso-common-use-the-Samsung-reboo.patch
 c06a8ec64fde13af58327be21c555033c9eb3cc8298fddd37742e3a15d9ef61653bf7deea97fe67ce4f95ecf121005e946fd5d9cc609726ac1161097394e6f78  0028-power-supply-core-count-each-power-supplies-entry-on.patch
+822094199c52462b1c8dde2dc2889311265695bbbdbb72b8ede89ac914b07447eda703cc082d111cfe2a06e6399fe6844c2b3c2e88121173b7a4016d2a8d87ac  0029-power-supply-core-copy-the-supplier-names-for-suppli.patch
 "
