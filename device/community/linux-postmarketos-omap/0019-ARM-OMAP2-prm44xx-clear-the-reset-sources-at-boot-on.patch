@@ -1,0 +1,111 @@
+From d89887c6caf0633ea339ac5356e3ad103e0eed65 Mon Sep 17 00:00:00 2001
+From: Ryan Brue <ryanbrue.dev@gmail.com>
+Date: Thu, 24 Sep 2026 00:35:46 -0500
+Subject: [PATCH] ARM: OMAP2+: prm44xx: clear the reset sources at boot on
+ OMAP4
+
+The reset source bits in PRM_RSTST are sticky: every reset sets its own
+bit, and only a cold reset clears the others. Nothing in mainline clears
+them, so after the first warm reboot the register reads 0x3
+(GLOBAL_COLD_RST from the power-on plus GLOBAL_WARM_SW_RST), and it keeps
+the cold bit on every following warm reboot. A watchdog reset stays
+visible in the same way until the next power cycle.
+
+The bootloader of the Samsung Galaxy Tab 2 (espresso) reads PRM_RSTST to
+tell a reboot from a power-on. With GLOBAL_COLD_RST set it takes its
+power-on path and ignores the reboot mode that syscon-reboot-mode leaves
+in the SAR RAM: a normal reboot with USB connected comes back in the
+bootloader's charger mode, not as a reboot. The vendor kernel, like TI's
+kernels for OMAP4, reads PRM_RSTST at boot, logs it and writes the value
+back to clear it.
+
+Do the same on OMAP4: save PRM_RSTST early in omap44xx_prm_init(), log
+it, and clear it. omap44xx_prm_read_reset_sources() now returns the
+saved value, so it still describes the reset that started this boot.
+Leave the other SoCs that share this code as they are; their bootloaders
+haven't been checked, and PRM_RSTST is not at the same offset on AM43xx.
+
+Tested on a Samsung Galaxy Tab 2 10.1 (GT-P5100, OMAP4430).
+
+Assisted-by: LLM
+---
+ arch/arm/mach-omap2/prm44xx.c | 42 +++++++++++++++++++++++++++--------
+ 1 file changed, 33 insertions(+), 9 deletions(-)
+
+diff --git a/arch/arm/mach-omap2/prm44xx.c b/arch/arm/mach-omap2/prm44xx.c
+index 6c555438dd48..6c3851aad4f3 100644
+--- a/arch/arm/mach-omap2/prm44xx.c
++++ b/arch/arm/mach-omap2/prm44xx.c
+@@ -90,6 +90,9 @@ static struct prm_reset_src_map omap44xx_prm_reset_src_map[] = {
+ 	{ -1, -1 },
+ };
+ 
++/* PRM_RSTST as read at boot, see omap44xx_prm_save_reset_sources() */
++static u32 omap44xx_prm_rstst;
++
+ /* PRM low-level functions */
+ 
+ /* Read a register in a CM/PRM instance in the PRM module */
+@@ -361,6 +364,34 @@ static void omap44xx_prm_enable_io_wakeup(void)
+ 				    omap4_prcm_irq_setup.pm_ctrl);
+ }
+ 
++/**
++ * omap44xx_prm_save_reset_sources - save and clear the last reset sources
++ *
++ * The PRM_RSTST bits are sticky: a warm reset only adds bits to the ones
++ * that are already set, and nothing clears them until the next cold reset.
++ * Save the register for omap44xx_prm_read_reset_sources(), and on OMAP4
++ * clear it, so the next boot sees the cause of its own reset only.  The
++ * bootloader of some devices depends on that: the Samsung Galaxy Tab 2
++ * bootloader treats every reset with GLOBAL_COLD_RST set as a power-on and
++ * ignores the reboot mode left in the SAR RAM.
++ */
++static void __init omap44xx_prm_save_reset_sources(void)
++{
++	s32 inst = omap4_prmst_get_prm_dev_inst();
++
++	if (inst == PRM_INSTANCE_UNKNOWN)
++		return;
++
++	omap44xx_prm_rstst = omap4_prm_read_inst_reg(inst, OMAP4_RM_RSTST);
++
++	if (!soc_is_omap44xx())
++		return;
++
++	pr_info("PRM: last reset sources: PRM_RSTST = 0x%08x\n",
++		omap44xx_prm_rstst);
++	omap4_prm_write_inst_reg(omap44xx_prm_rstst, inst, OMAP4_RM_RSTST);
++}
++
+ /**
+  * omap44xx_prm_read_reset_sources - return the last SoC reset source
+  *
+@@ -371,15 +402,7 @@ static u32 omap44xx_prm_read_reset_sources(void)
+ {
+ 	struct prm_reset_src_map *p;
+ 	u32 r = 0;
+-	u32 v;
+-	s32 inst = omap4_prmst_get_prm_dev_inst();
+-
+-	if (inst == PRM_INSTANCE_UNKNOWN)
+-		return 0;
+-
+-
+-	v = omap4_prm_read_inst_reg(inst,
+-				    OMAP4_RM_RSTST);
++	u32 v = omap44xx_prm_rstst;
+ 
+ 	p = omap44xx_prm_reset_src_map;
+ 	while (p->reg_shift >= 0 && p->std_shift >= 0) {
+@@ -815,6 +838,7 @@ int __init omap44xx_prm_init(const struct omap_prcm_init_data *data)
+ 		prm_features |= PRM_HAS_VOLTAGE;
+ 
+ 	omap4_prminst_set_prm_dev_inst(data->device_inst_offset);
++	omap44xx_prm_save_reset_sources();
+ 
+ 	/* Add AM437X specific differences */
+ 	if (of_device_is_compatible(data->np, "ti,am4-prcm")) {
+-- 
+2.55.0
+
