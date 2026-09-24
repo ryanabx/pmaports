@@ -2,7 +2,7 @@
 maintainer="Mithil Bavishi <bavishimithil@gmail.com>"
 pkgname=linux-postmarketos-omap
 pkgver=7.1.5
-pkgrel=8
+pkgrel=10
 pkgdesc="Mainline kernel fork for OMAP devices"
 arch="armv7"
 url="https://kernel.org/"
@@ -60,6 +60,8 @@ source="
 	0011-bus-ti-sysc-populate-simple-mfd-child-nodes-too.patch
 	0012-ARM-dts-ti-omap4-add-the-SAR-RAM.patch
 	0013-ARM-dts-ti-omap-espresso-common-add-the-bootloader-r.patch
+	0014-power-supply-smb347-re-enable-APSD-and-allow-setting.patch
+	0015-ARM-dts-ti-omap-samsung-espresso10-describe-the-batt.patch
 "
 builddir="$srcdir/linux-$_kernver"
 replaces="linux-samsung-espresso3g linux-nokia-n900"
@@ -105,4 +107,6 @@ b2b7950e2d369e484e415919ccdcd84a233b6f618764aa2ed4ea994eb565b150d17184f2c639d10d
 8922e5805ad5e46d85f723b933bf1210b9701813022da0c0afdfbe6492aa01a618ba739473518b1700b4f91ae7a7dd9afcb988a2e2b9765c431a1d2921b541cc  0011-bus-ti-sysc-populate-simple-mfd-child-nodes-too.patch
 3984d139148881ef191e23f1eb5cf7f5ce27492736a80e13606999e692b4008ad6ed4ba453f0371d6d57143818b4c8df65ca6ce61a86a8fdae2e7e43d17db92f  0012-ARM-dts-ti-omap4-add-the-SAR-RAM.patch
 e30dd23ffe29f3f935cacb169439e2c43cfde59f814de13426165471807e63175f358482774ce65627c25369959759775572a9de74b500cec990c7312d257c93  0013-ARM-dts-ti-omap-espresso-common-add-the-bootloader-r.patch
+7d1ab2bdc38384938a022dc9d4bc4d89edbf08eb1ee383743e530d7d767381cbfbeaef2509db738d57d05ef279309a551e977935c7cab1075f3f725442bbf373  0014-power-supply-smb347-re-enable-APSD-and-allow-setting.patch
+85cc484e8c3489c08e65a46bb40a8716bbd29db43fff560056d2513904d9bbdadebd456a11572374b658bac9e7ba1de76e2d2aa8b9e0afd3b84d89005122f1e9  0015-ARM-dts-ti-omap-samsung-espresso10-describe-the-batt.patch
 "
