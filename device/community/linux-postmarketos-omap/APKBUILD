@@ -2,7 +2,7 @@
 maintainer="Mithil Bavishi <bavishimithil@gmail.com>"
 pkgname=linux-postmarketos-omap
 pkgver=7.1.5
-pkgrel=24
+pkgrel=27
 pkgdesc="Mainline kernel fork for OMAP devices"
 arch="armv7"
 url="https://kernel.org/"
@@ -79,6 +79,9 @@ source="
 	0030-ARM-dts-ti-omap-espresso-common-disable-the-keypad-c.patch
 	0031-ARM-dts-ti-omap-espresso-common-disable-the-secure-R.patch
 	0032-ARM-dts-ti-omap-samsung-espresso10-add-the-sensor-mo.patch
+	0033-ASoC-dt-bindings-add-the-Samsung-Galaxy-Tab-2-audio.patch
+	0034-ASoC-ti-add-a-machine-driver-for-the-Samsung-Galaxy.patch
+	0035-ARM-dts-ti-omap-espresso-common-add-the-WM1811-audio.patch
 "
 builddir="$srcdir/linux-$_kernver"
 replaces="linux-samsung-espresso3g linux-nokia-n900"
@@ -110,7 +113,7 @@ package() {
 
 sha512sums="
 17f95307b6e86a0794df146d97256ba4783b7a494f5eb43aafc14d64367541874cec7f6e8c2ea724eca149db18e4bd5880bf28a8c5e47ae8a769776bbd955af8  linux-7.1.5.tar.xz
-0431282ce46ba98cbbadd7ee153e294956ff715ef39bf4ce942ecb8c38b88e91130689326fe5c5823850ab8f1c3b5aa67ed50d4ac35c742636df6eafda0ae7b7  config-postmarketos-omap.armv7
+da76a947971f8556ec6ce1e06c01254ffa49abb9b1d79277f2d5d6847b9c00a842e8f4565c38bb5398e1644116d2d1dd614e2189f73651f1fef960b0a47d7c99  config-postmarketos-omap.armv7
 1a68e3a32ae1e56d325c0f759ee66d64d14f46a5d52e75ae008dfddac335beb3aa7acaf62abb95b6d5ce1557f0cf9b4c31ab78e110af178db1ac963bb377dbf0  0001-iio-rescale-revert-logic.patch
 11bcc2bdcd8862e56f23a763d393b1d5f62af82cfd6dd347b5786b9f299144950d5941579091fea144371bad1188f366d8cd5a26453fc852fd3e769df2bd21bc  0002-hsi-dma-fix.patch
 a17ddc7a41ce2a6be04a8ee0ffcfb8dbb0381d1ce7fac8336befd79bc388ce5d16b6ba3a4732a540a43add55c43b015a3b77205a007a058d4d6e3291234b5cc0  0003-Add-TWL6030-power-button-support-to-twl-pwrbutton.patch
@@ -143,4 +146,7 @@ c06a8ec64fde13af58327be21c555033c9eb3cc8298fddd37742e3a15d9ef61653bf7deea97fe67c
 f7b8c720f94258ea5a2d0643ad6bb153869aec725ca4765ded4a146cdd33a8dc60256239e5b946b0236e426c501cadce8201d03ff7ab96231c6196526c62d3ce  0030-ARM-dts-ti-omap-espresso-common-disable-the-keypad-c.patch
 3a0aa925df48c3cda424dafe8d54abba54578412fdf7a8eb8966a2c79bb70e101cae0945ce798e7a11181cd1afd9d6b36d43c833291c534000a07432e4e1b6dd  0031-ARM-dts-ti-omap-espresso-common-disable-the-secure-R.patch
 d50ae031de3238c3ede29b618e9ad0fe53864a7092b4ba41f9f033846e8d5781e4d784648313d83e74869cfea4df6bb1f6669013ff3a315d86252edf5894ca30  0032-ARM-dts-ti-omap-samsung-espresso10-add-the-sensor-mo.patch
+bc87b845f1c6dc89d1cdd5ab29ecb54969edd3d1f7545f7f51aa2b3d714972627758db9b4a4e8b5985b17b586ac9c439c57efcac1244b593f8f86a42e6d8a9d2  0033-ASoC-dt-bindings-add-the-Samsung-Galaxy-Tab-2-audio.patch
+39c439055c3f2d80c7fe3ae7c1c681a43a088382123e17f7ef73012abf6479c28095901d64830e1f3e1e4099a5506053cf3b255ea4bb44073a191beee4ce82b5  0034-ASoC-ti-add-a-machine-driver-for-the-Samsung-Galaxy.patch
+30c4f353b125d59c0633543722aa80efa4dfa2ab70f620c3fb584c0ac2c0a0f6ad4ba146a754b423ac9fe78115fc3c1ed2de8a35eea29c312694cef8e0de40fe  0035-ARM-dts-ti-omap-espresso-common-add-the-WM1811-audio.patch
 "

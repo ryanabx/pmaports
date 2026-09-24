@@ -1,0 +1,223 @@
+From 5e4198e292bf51155c64280fcebde12799efa76d Mon Sep 17 00:00:00 2001
+From: Ryan Brue <ryanbrue.dev@gmail.com>
+Date: Thu, 24 Sep 2026 14:36:15 -0500
+Subject: [PATCH] ARM: dts: ti: omap: espresso-common: add the WM1811 audio
+ codec
+
+The Galaxy Tab 2 has a WM1811 codec at 0x1a on I2C1 and McBSP3 as its
+I2S link. As in the vendor kernel's board files:
+
+- LDO1 and LDO2 of the codec are enabled with GPIO 45 (CODEC_LDO_EN),
+  the other supplies are always on;
+- MCLK1 is 26 MHz, requested with GPIO 101 (CODEC_CLK_REQ), MCLK2 is
+  the TWL6032's 32 kHz audio clock;
+- the main microphone's bias is switched with GPIO 48 (MICBIAS_EN), the
+  headset microphone uses the codec's MICBIAS2 plus GPIO 49
+  (EAR_MICBIAS_EN);
+- McBSP3 is on the abe_pdm pads.
+
+The codec answers at 0x1a with ID 0x1811 once GPIO 45 is set.
+
+Assisted-by: LLM
+---
+ .../omap/omap4-samsung-espresso-common.dtsi   | 166 ++++++++++++++++++
+ 1 file changed, 166 insertions(+)
+
+diff --git a/arch/arm/boot/dts/ti/omap/omap4-samsung-espresso-common.dtsi b/arch/arm/boot/dts/ti/omap/omap4-samsung-espresso-common.dtsi
+index a75e172e2783..42f905f352b6 100644
+--- a/arch/arm/boot/dts/ti/omap/omap4-samsung-espresso-common.dtsi
++++ b/arch/arm/boot/dts/ti/omap/omap4-samsung-espresso-common.dtsi
+@@ -235,6 +235,91 @@ led-ir {
+ 		pinctrl-names = "default";
+ 		pinctrl-0 = <&ledir_pins>;
+ 	};
++
++	/* Supplies of the WM1811 that the vendor kernel models as always on */
++	reg_vbatt: regulator-vbatt {
++		compatible = "regulator-fixed";
++		regulator-name = "VBATT";
++		regulator-min-microvolt = <3700000>;
++		regulator-max-microvolt = <3700000>;
++		regulator-always-on;
++	};
++
++	reg_main_mic_bias: regulator-main-mic-bias {
++		compatible = "regulator-fixed";
++		regulator-name = "MICBIAS_EN";
++		regulator-min-microvolt = <2800000>;
++		regulator-max-microvolt = <2800000>;
++		gpio = <&gpio2 16 GPIO_ACTIVE_HIGH>; /* GPIO_48 */
++		enable-active-high;
++		pinctrl-names = "default";
++		pinctrl-0 = <&main_mic_bias_pins>;
++	};
++
++	reg_ear_mic_bias: regulator-ear-mic-bias {
++		compatible = "regulator-fixed";
++		regulator-name = "EAR_MICBIAS_EN";
++		regulator-min-microvolt = <2800000>;
++		regulator-max-microvolt = <2800000>;
++		gpio = <&gpio2 17 GPIO_ACTIVE_HIGH>; /* GPIO_49 */
++		enable-active-high;
++		pinctrl-names = "default";
++		pinctrl-0 = <&ear_mic_bias_pins>;
++	};
++
++	codec_osc: clock-codec-osc {
++		compatible = "fixed-clock";
++		#clock-cells = <0>;
++		clock-frequency = <26000000>;
++	};
++
++	/* 26 MHz to the WM1811's MCLK1, requested with CODEC_CLK_REQ */
++	codec_mclk1: clock-codec-mclk1 {
++		compatible = "gpio-gate-clock";
++		#clock-cells = <0>;
++		clocks = <&codec_osc>;
++		enable-gpios = <&gpio4 5 GPIO_ACTIVE_HIGH>; /* GPIO_101 */
++		pinctrl-names = "default";
++		pinctrl-0 = <&codec_clk_req_pins>;
++	};
++
++	sound {
++		compatible = "samsung,espresso-audio";
++		model = "GalaxyTab2";
++
++		mic-bias-supply = <&reg_main_mic_bias>;
++		headset-mic-bias-supply = <&reg_ear_mic_bias>;
++
++		audio-routing =
++			"HP", "HPOUT1L",
++			"HP", "HPOUT1R",
++
++			"SPK", "SPKOUTLN",
++			"SPK", "SPKOUTLP",
++			"SPK", "SPKOUTRN",
++			"SPK", "SPKOUTRP",
++
++			"RCV", "HPOUT2N",
++			"RCV", "HPOUT2P",
++
++			"LINE", "LINEOUT1N",
++			"LINE", "LINEOUT1P",
++
++			"IN1LP", "Main Mic",
++			"IN1LN", "Main Mic",
++
++			"IN1RP", "Headset Mic",
++			"IN1RN", "Headset Mic",
++			"Headset Mic", "MICBIAS2";
++
++		cpu {
++			sound-dai = <&mcbsp3>;
++		};
++
++		codec {
++			sound-dai = <&wm1811>;
++		};
++	};
+ };
+ 
+ &omap4_pmx_wkup {
+@@ -514,6 +599,47 @@ OMAP4_IOPAD(0x146, PIN_OUTPUT | MUX_MODE0)
+ 		>;
+ 	};
+ 
++	codec_clk_req_pins: pinmux-codec-clk-req-pins {
++		pinctrl-single,pins = <
++			OMAP4_IOPAD(0x090, PIN_OUTPUT | MUX_MODE3)
++			/* gpmc_ncs4.gpio_101 - CODEC_CLK_REQ */
++		>;
++	};
++
++	codec_pins: pinmux-codec-pins {
++		pinctrl-single,pins = <
++			OMAP4_IOPAD(0x06a, PIN_OUTPUT | MUX_MODE3)
++			/* gpmc_a21.gpio_45 - CODEC_LDO_EN */
++		>;
++	};
++
++	ear_mic_bias_pins: pinmux-ear-mic-bias-pins {
++		pinctrl-single,pins = <
++			OMAP4_IOPAD(0x072, PIN_OUTPUT | MUX_MODE3)
++			/* gpmc_a25.gpio_49 - EAR_MICBIAS_EN */
++		>;
++	};
++
++	main_mic_bias_pins: pinmux-main-mic-bias-pins {
++		pinctrl-single,pins = <
++			OMAP4_IOPAD(0x070, PIN_OUTPUT | MUX_MODE3)
++			/* gpmc_a24.gpio_48 - MICBIAS_EN */
++		>;
++	};
++
++	mcbsp3_pins: pinmux-mcbsp3-pins {
++		pinctrl-single,pins = <
++			OMAP4_IOPAD(0x106, PIN_INPUT | MUX_MODE1)
++			/* abe_pdm_ul_data.abe_mcbsp3_dr - AP_I2S_DIN */
++			OMAP4_IOPAD(0x108, PIN_OUTPUT | MUX_MODE1)
++			/* abe_pdm_dl_data.abe_mcbsp3_dx - AP_I2S_DOUT */
++			OMAP4_IOPAD(0x10a, PIN_INPUT | MUX_MODE1)
++			/* abe_pdm_frame.abe_mcbsp3_clkx - AP_I2S_CLK */
++			OMAP4_IOPAD(0x10c, PIN_INPUT | MUX_MODE1)
++			/* abe_pdm_lb_clk.abe_mcbsp3_fsx - AP_I2S_SYNC */
++		>;
++	};
++
+ 	vibrator_default: pinmux-vibrator-pins {
+ 		pinctrl-single,pins = <
+ 			OMAP4_IOPAD(0x05c, PIN_INPUT_PULLDOWN | MUX_MODE3)
+@@ -565,6 +691,39 @@ &twl6030_wkup_pins
+ 		interrupt-parent = <&gic>;
+ 		system-power-controller;
+ 	};
++
++	wm1811: audio-codec@1a {
++		compatible = "wlf,wm1811";
++		reg = <0x1a>;
++		pinctrl-names = "default";
++		pinctrl-0 = <&codec_pins>;
++
++		clocks = <&codec_mclk1>, <&twl 1>;
++		clock-names = "MCLK1", "MCLK2";
++
++		gpio-controller;
++		#gpio-cells = <2>;
++		#sound-dai-cells = <0>;
++
++		/* GPIO1 IRQ (not wired), GPIO8-11 AIF3, as the vendor kernel */
++		wlf,gpio-cfg = <0x3 0x0 0x0 0x0 0x0 0x0
++				0x0 0x8000 0x10000 0x10000 0x10000>;
++		wlf,micbias-cfg = <0x2f 0x29>;
++		wlf,ldoena-always-driven;
++
++		AVDD2-supply = <&reg_vbatt>;
++		CPVDD-supply = <&reg_vbatt>;
++		DBVDD1-supply = <&reg_vbatt>;
++		DBVDD2-supply = <&reg_vbatt>;
++		DBVDD3-supply = <&reg_vbatt>;
++		LDO1VDD-supply = <&reg_vbatt>;
++		SPKVDD1-supply = <&reg_vbatt>;
++		SPKVDD2-supply = <&reg_vbatt>;
++
++		/* LDO2 follows LDO1's enable pin */
++		wlf,ldo1ena-gpios = <&gpio2 13 GPIO_ACTIVE_HIGH>; /* GPIO_45 */
++		wlf,ldo2ena-gpios = <&gpio2 13 GPIO_ACTIVE_HIGH>;
++	};
+ };
+ 
+ #include "twl6032.dtsi"
+@@ -781,3 +940,10 @@ reboot-mode {
+ 		mode-download = <0x20>;
+ 	};
+ };
++
++&mcbsp3 {
++	#sound-dai-cells = <0>;
++	pinctrl-names = "default";
++	pinctrl-0 = <&mcbsp3_pins>;
++	status = "okay";
++};
+-- 
+2.55.0
+

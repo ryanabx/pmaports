@@ -1,0 +1,450 @@
+From d5df11b8cbd921eb0a2528a2b1c2e2beff57acd6 Mon Sep 17 00:00:00 2001
+From: Ryan Brue <ryanbrue.dev@gmail.com>
+Date: Thu, 24 Sep 2026 14:36:15 -0500
+Subject: [PATCH] ASoC: ti: add a machine driver for the Samsung Galaxy Tab 2
+
+The Samsung Galaxy Tab 2 (espresso) tablets have a WM1811 codec on
+McBSP3 of the OMAP4430. The codec is the bit and frame clock provider
+and needs its FLL set up for each sample rate, which the generic sound
+cards can't do: the WM8994 driver has no default SYSCLK source.
+
+Add a machine driver for the HiFi link, based on the Midas WM1811
+driver: FLL1 from MCLK1 (26 MHz on these boards, the rate is taken from
+the codec's clock) at 256 fs, or 512 fs for 8 and 11.025 kHz, and
+regulator supplies for the mic biases. The routes come from the device
+tree.
+
+Three things differ from Midas, whose MCLKs are always running:
+
+- MCLK1 is a gated 26 MHz clock here, and the codec takes a reference
+  on its SYSCLK source only when AIF1CLK powers up, and drops the one it
+  holds for the FLL1 reference while reprogramming FLL1. On a rate
+  change the clock then stopped while SYSCLK ran from it, and the codec
+  dropped register writes until it came back: FLL1 kept part of its old
+  configuration (48 kHz after 44.1 kHz played at 38.8 kHz). The driver
+  holds MCLK1 while the codec is biased.
+- SYSCLK runs from MCLK1, not from the 32 kHz MCLK2, while FLL1 is
+  stopped or reprogrammed, so that it doesn't depend on the TWL6032's
+  audio clock, which the codec never enables in that case either.
+- FLL1 is only stopped when the bias goes down from PREPARE to
+  STANDBY. Going up from OFF, which happens here because nothing keeps
+  the codec biased while idle, it reset FLL1 to the default rate after
+  hw_params had set it up, and 48 kHz played at 44.1 kHz.
+
+Tested on a Galaxy Tab 2 10.1: playback at 8, 16, 32, 44.1 and 48 kHz
+in any order runs at the requested rate (measured from the hw_ptr).
+
+Assisted-by: LLM
+---
+ sound/soc/ti/Kconfig            |  13 ++
+ sound/soc/ti/Makefile           |   2 +
+ sound/soc/ti/samsung-espresso.c | 355 ++++++++++++++++++++++++++++++++
+ 3 files changed, 370 insertions(+)
+ create mode 100644 sound/soc/ti/samsung-espresso.c
+
+diff --git a/sound/soc/ti/Kconfig b/sound/soc/ti/Kconfig
+index 3323cf96e309..fb6b0067ca2c 100644
+--- a/sound/soc/ti/Kconfig
++++ b/sound/soc/ti/Kconfig
+@@ -123,6 +123,19 @@ config SND_SOC_OMAP_ABE_TWL6040
+ 	  - PandaBoardES (4460)
+ 	  - OMAP5 uEVM
+ 
++config SND_SOC_OMAP_SAMSUNG_ESPRESSO
++	tristate "SoC Audio support for the Samsung Galaxy Tab 2 (espresso)"
++	depends on ARCH_OMAP4 || COMPILE_TEST
++	depends on I2C && COMMON_CLK
++	select SND_SOC_OMAP_MCBSP
++	select MFD_WM8994
++	select SND_SOC_WM8994
++	help
++	  Say Y or M if you want to add support for SoC audio on the Samsung
++	  Galaxy Tab 2 7.0 and 10.1 (espresso) tablets, which have a WM1811
++	  codec on McBSP3. The machine driver sets up the codec's FLL for
++	  each sample rate and switches the microphone biases.
++
+ config SND_SOC_OMAP_AMS_DELTA
+ 	tristate "SoC Audio support for Amstrad E3 (Delta) videophone"
+ 	depends on MACH_AMS_DELTA || COMPILE_TEST
+diff --git a/sound/soc/ti/Makefile b/sound/soc/ti/Makefile
+index 421e13bc04db..d2a7c0d19d78 100644
+--- a/sound/soc/ti/Makefile
++++ b/sound/soc/ti/Makefile
+@@ -32,6 +32,7 @@ snd-soc-omap-abe-twl6040-y := omap-abe-twl6040.o
+ snd-soc-ams-delta-y := ams-delta.o
+ snd-soc-omap-hdmi-y := omap-hdmi.o
+ snd-soc-osk5912-y := osk5912.o
++snd-soc-samsung-espresso-y := samsung-espresso.o
+ snd-soc-j721e-evm-y := j721e-evm.o
+ 
+ obj-$(CONFIG_SND_SOC_DAVINCI_EVM) += snd-soc-davinci-evm.o
+@@ -43,4 +44,5 @@ obj-$(CONFIG_SND_SOC_OMAP_ABE_TWL6040) += snd-soc-omap-abe-twl6040.o
+ obj-$(CONFIG_SND_SOC_OMAP_AMS_DELTA) += snd-soc-ams-delta.o
+ obj-$(CONFIG_SND_SOC_OMAP_HDMI) += snd-soc-omap-hdmi.o
+ obj-$(CONFIG_SND_SOC_OMAP_OSK5912) += snd-soc-osk5912.o
++obj-$(CONFIG_SND_SOC_OMAP_SAMSUNG_ESPRESSO) += snd-soc-samsung-espresso.o
+ obj-$(CONFIG_SND_SOC_J721E_EVM) += snd-soc-j721e-evm.o
+diff --git a/sound/soc/ti/samsung-espresso.c b/sound/soc/ti/samsung-espresso.c
+new file mode 100644
+index 000000000000..bec9749137b5
+--- /dev/null
++++ b/sound/soc/ti/samsung-espresso.c
+@@ -0,0 +1,355 @@
++// SPDX-License-Identifier: GPL-2.0-only
++/*
++ * ASoC machine driver for the Samsung Galaxy Tab 2 (espresso): a WM1811 codec
++ * on McBSP3 of the OMAP4430, with the codec as bit and frame clock provider.
++ *
++ * Based on the Midas WM1811 driver (sound/soc/samsung/midas_wm1811.c).
++ */
++
++#include <linux/clk.h>
++#include <linux/mod_devicetable.h>
++#include <linux/module.h>
++#include <linux/of.h>
++#include <linux/platform_device.h>
++#include <sound/pcm_params.h>
++#include <sound/soc.h>
++#include <sound/soc-dapm.h>
++
++#include "../codecs/wm8994.h"
++
++#define ESPRESSO_DEFAULT_FLL1_RATE	11289600U
++
++struct espresso_priv {
++	struct clk *mclk1;
++	unsigned int mclk1_rate;
++	unsigned int fll1_rate;
++	bool mclk1_enabled;
++};
++
++static int espresso_start_fll1(struct snd_soc_pcm_runtime *rtd,
++			       unsigned int rate)
++{
++	struct snd_soc_card *card = rtd->card;
++	struct espresso_priv *priv = snd_soc_card_get_drvdata(card);
++	struct snd_soc_dai *aif1_dai = snd_soc_rtd_to_codec(rtd, 0);
++	int ret;
++
++	if (!rate)
++		rate = priv->fll1_rate;
++	/*
++	 * If no new rate is requested, set FLL1 to a sane default for jack
++	 * detection.
++	 */
++	if (!rate)
++		rate = ESPRESSO_DEFAULT_FLL1_RATE;
++
++	if (rate != priv->fll1_rate && priv->fll1_rate) {
++		/* while reconfiguring, switch to MCLK1 for SYSCLK */
++		ret = snd_soc_dai_set_sysclk(aif1_dai, WM8994_SYSCLK_MCLK1,
++					     priv->mclk1_rate,
++					     SND_SOC_CLOCK_IN);
++		if (ret < 0) {
++			dev_err(card->dev, "Unable to switch to MCLK1: %d\n",
++				ret);
++			return ret;
++		}
++	}
++
++	ret = snd_soc_dai_set_pll(aif1_dai, WM8994_FLL1, WM8994_FLL_SRC_MCLK1,
++				  priv->mclk1_rate, rate);
++	if (ret < 0) {
++		dev_err(card->dev, "Failed to set FLL1 rate: %d\n", ret);
++		return ret;
++	}
++	priv->fll1_rate = rate;
++
++	ret = snd_soc_dai_set_sysclk(aif1_dai, WM8994_SYSCLK_FLL1,
++				     priv->fll1_rate, SND_SOC_CLOCK_IN);
++	if (ret < 0) {
++		dev_err(card->dev, "Failed to set SYSCLK source: %d\n", ret);
++		return ret;
++	}
++
++	return 0;
++}
++
++static int espresso_stop_fll1(struct snd_soc_pcm_runtime *rtd)
++{
++	struct snd_soc_card *card = rtd->card;
++	struct espresso_priv *priv = snd_soc_card_get_drvdata(card);
++	struct snd_soc_dai *aif1_dai = snd_soc_rtd_to_codec(rtd, 0);
++	int ret;
++
++	ret = snd_soc_dai_set_sysclk(aif1_dai, WM8994_SYSCLK_MCLK1,
++				     priv->mclk1_rate, SND_SOC_CLOCK_IN);
++	if (ret < 0) {
++		dev_err(card->dev, "Unable to switch to MCLK1: %d\n", ret);
++		return ret;
++	}
++
++	ret = snd_soc_dai_set_pll(aif1_dai, WM8994_FLL1, 0, 0, 0);
++	if (ret < 0) {
++		dev_err(card->dev, "Unable to stop FLL1: %d\n", ret);
++		return ret;
++	}
++
++	priv->fll1_rate = 0;
++
++	return 0;
++}
++
++static int espresso_aif1_hw_params(struct snd_pcm_substream *substream,
++				   struct snd_pcm_hw_params *params)
++{
++	struct snd_soc_pcm_runtime *rtd = snd_soc_substream_to_rtd(substream);
++	unsigned int pll_out;
++
++	/* AIF1CLK should be at least 3MHz for "optimal performance" */
++	if (params_rate(params) == 8000 || params_rate(params) == 11025)
++		pll_out = params_rate(params) * 512;
++	else
++		pll_out = params_rate(params) * 256;
++
++	return espresso_start_fll1(rtd, pll_out);
++}
++
++static const struct snd_soc_ops espresso_aif1_ops = {
++	.hw_params = espresso_aif1_hw_params,
++};
++
++static const struct snd_kcontrol_new espresso_controls[] = {
++	SOC_DAPM_PIN_SWITCH("HP"),
++	SOC_DAPM_PIN_SWITCH("SPK"),
++	SOC_DAPM_PIN_SWITCH("RCV"),
++	SOC_DAPM_PIN_SWITCH("LINE"),
++
++	SOC_DAPM_PIN_SWITCH("Main Mic"),
++	SOC_DAPM_PIN_SWITCH("Headset Mic"),
++};
++
++static const struct snd_soc_dapm_widget espresso_dapm_widgets[] = {
++	SND_SOC_DAPM_HP("HP", NULL),
++	SND_SOC_DAPM_SPK("SPK", NULL),
++	SND_SOC_DAPM_SPK("RCV", NULL),
++	SND_SOC_DAPM_LINE("LINE", NULL),
++
++	SND_SOC_DAPM_MIC("Main Mic", NULL),
++	SND_SOC_DAPM_REGULATOR_SUPPLY("mic-bias", 0, 0),
++	SND_SOC_DAPM_MIC("Headset Mic", NULL),
++	SND_SOC_DAPM_REGULATOR_SUPPLY("headset-mic-bias", 0, 0),
++};
++
++/* Default routing; supplemented by the audio-routing DT property */
++static const struct snd_soc_dapm_route espresso_dapm_routes[] = {
++	/* Bind microphones with their respective regulator supplies */
++	{ "Main Mic", NULL, "mic-bias" },
++	{ "Headset Mic", NULL, "headset-mic-bias" },
++};
++
++static int espresso_set_bias_level(struct snd_soc_card *card,
++				   struct snd_soc_dapm_context *dapm,
++				   enum snd_soc_bias_level level)
++{
++	struct snd_soc_pcm_runtime *rtd = snd_soc_get_pcm_runtime(card,
++						  &card->dai_link[0]);
++	struct snd_soc_dai *aif1_dai = snd_soc_rtd_to_codec(rtd, 0);
++	struct espresso_priv *priv = snd_soc_card_get_drvdata(card);
++	int ret;
++
++	if (snd_soc_dapm_to_dev(dapm) != aif1_dai->dev)
++		return 0;
++
++	switch (level) {
++	case SND_SOC_BIAS_STANDBY:
++		/*
++		 * MCLK1 is the FLL1 reference and SYSCLK whenever FLL1 is
++		 * stopped or reprogrammed. The codec takes a reference on its
++		 * SYSCLK source only when AIF1CLK powers up, and drops the one
++		 * for the FLL1 reference while it reprograms FLL1, so hold
++		 * MCLK1 as long as the codec is biased: otherwise the gated
++		 * 26 MHz clock stops under SYSCLK and the codec loses
++		 * register writes.
++		 */
++		if (!priv->mclk1_enabled) {
++			ret = clk_prepare_enable(priv->mclk1);
++			if (ret)
++				return ret;
++			priv->mclk1_enabled = true;
++		}
++		/*
++		 * Stop FLL1 only on the way down: coming up from OFF,
++		 * hw_params has already set it up for the stream.
++		 */
++		if (snd_soc_dapm_get_bias_level(dapm) != SND_SOC_BIAS_PREPARE)
++			return 0;
++		return espresso_stop_fll1(rtd);
++	case SND_SOC_BIAS_PREPARE:
++		return espresso_start_fll1(rtd, 0);
++	case SND_SOC_BIAS_OFF:
++		if (priv->mclk1_enabled) {
++			clk_disable_unprepare(priv->mclk1);
++			priv->mclk1_enabled = false;
++		}
++		break;
++	default:
++		break;
++	}
++
++	return 0;
++}
++
++static int espresso_late_probe(struct snd_soc_card *card)
++{
++	struct espresso_priv *priv = snd_soc_card_get_drvdata(card);
++	struct snd_soc_pcm_runtime *rtd = snd_soc_get_pcm_runtime(card,
++						  &card->dai_link[0]);
++	struct snd_soc_dai *aif1_dai = snd_soc_rtd_to_codec(rtd, 0);
++	int ret;
++
++	/* Use MCLK1 as SYSCLK for boot */
++	ret = snd_soc_dai_set_sysclk(aif1_dai, WM8994_SYSCLK_MCLK1,
++				     priv->mclk1_rate, SND_SOC_CLOCK_IN);
++	if (ret < 0)
++		dev_err(aif1_dai->dev, "Failed to switch to MCLK1: %d\n", ret);
++
++	return ret;
++}
++
++SND_SOC_DAILINK_DEFS(wm1811_hifi,
++	DAILINK_COMP_ARRAY(COMP_EMPTY()),
++	DAILINK_COMP_ARRAY(COMP_CODEC(NULL, "wm8994-aif1")),
++	DAILINK_COMP_ARRAY(COMP_EMPTY()));
++
++static struct snd_soc_dai_link espresso_dai[] = {
++	{
++		.name = "WM1811 AIF1",
++		.stream_name = "HiFi Primary",
++		.ops = &espresso_aif1_ops,
++		.dai_fmt = SND_SOC_DAIFMT_I2S | SND_SOC_DAIFMT_NB_NF |
++			SND_SOC_DAIFMT_CBP_CFP,
++		SND_SOC_DAILINK_REG(wm1811_hifi),
++	},
++};
++
++static struct snd_soc_card espresso_card = {
++	.name = "Galaxy Tab 2 WM1811",
++	.owner = THIS_MODULE,
++
++	.dai_link = espresso_dai,
++	.num_links = ARRAY_SIZE(espresso_dai),
++	.controls = espresso_controls,
++	.num_controls = ARRAY_SIZE(espresso_controls),
++	.dapm_widgets = espresso_dapm_widgets,
++	.num_dapm_widgets = ARRAY_SIZE(espresso_dapm_widgets),
++	.dapm_routes = espresso_dapm_routes,
++	.num_dapm_routes = ARRAY_SIZE(espresso_dapm_routes),
++
++	.set_bias_level = espresso_set_bias_level,
++	.late_probe = espresso_late_probe,
++};
++
++static void espresso_put_clk(void *data)
++{
++	clk_put(data);
++}
++
++static int espresso_probe(struct platform_device *pdev)
++{
++	struct device_node *cpu_dai_node, *codec_dai_node, *np;
++	struct snd_soc_card *card = &espresso_card;
++	struct device *dev = &pdev->dev;
++	struct espresso_priv *priv;
++	struct clk *mclk1;
++	int ret;
++
++	priv = devm_kzalloc(dev, sizeof(*priv), GFP_KERNEL);
++	if (!priv)
++		return -ENOMEM;
++
++	snd_soc_card_set_drvdata(card, priv);
++	card->dev = dev;
++
++	ret = snd_soc_of_parse_card_name(card, "model");
++	if (ret < 0)
++		return dev_err_probe(dev, ret, "Card name is not specified\n");
++
++	ret = snd_soc_of_parse_audio_routing(card, "audio-routing");
++	if (ret < 0)
++		return dev_err_probe(dev, ret,
++				     "Audio routing invalid/unspecified\n");
++
++	np = of_get_child_by_name(dev->of_node, "cpu");
++	if (!np)
++		return dev_err_probe(dev, -EINVAL, "Missing cpu node\n");
++	cpu_dai_node = of_parse_phandle(np, "sound-dai", 0);
++	of_node_put(np);
++	if (!cpu_dai_node)
++		return dev_err_probe(dev, -EINVAL,
++				     "Parsing cpu/sound-dai failed\n");
++
++	np = of_get_child_by_name(dev->of_node, "codec");
++	if (!np) {
++		ret = dev_err_probe(dev, -EINVAL, "Missing codec node\n");
++		goto put_cpu_dai_node;
++	}
++	codec_dai_node = of_parse_phandle(np, "sound-dai", 0);
++	of_node_put(np);
++	if (!codec_dai_node) {
++		ret = dev_err_probe(dev, -EINVAL,
++				    "Parsing codec/sound-dai failed\n");
++		goto put_cpu_dai_node;
++	}
++
++	mclk1 = of_clk_get_by_name(codec_dai_node, "MCLK1");
++	if (IS_ERR(mclk1)) {
++		ret = dev_err_probe(dev, PTR_ERR(mclk1),
++				    "Failed to get the codec's MCLK1\n");
++		goto put_codec_dai_node;
++	}
++	ret = devm_add_action_or_reset(dev, espresso_put_clk, mclk1);
++	if (ret)
++		goto put_codec_dai_node;
++	priv->mclk1 = mclk1;
++	priv->mclk1_rate = clk_get_rate(mclk1);
++	if (!priv->mclk1_rate) {
++		ret = dev_err_probe(dev, -EINVAL, "MCLK1 has no rate\n");
++		goto put_codec_dai_node;
++	}
++
++	espresso_dai[0].codecs->of_node = codec_dai_node;
++	espresso_dai[0].cpus->of_node = cpu_dai_node;
++	espresso_dai[0].platforms->of_node = cpu_dai_node;
++
++	ret = devm_snd_soc_register_card(dev, card);
++	if (ret < 0) {
++		dev_err_probe(dev, ret, "Failed to register card\n");
++		goto put_codec_dai_node;
++	}
++
++	return 0;
++
++put_codec_dai_node:
++	of_node_put(codec_dai_node);
++put_cpu_dai_node:
++	of_node_put(cpu_dai_node);
++	return ret;
++}
++
++static const struct of_device_id espresso_of_match[] = {
++	{ .compatible = "samsung,espresso-audio" },
++	{ }
++};
++MODULE_DEVICE_TABLE(of, espresso_of_match);
++
++static struct platform_driver espresso_driver = {
++	.driver = {
++		.name = "espresso-audio",
++		.of_match_table = espresso_of_match,
++		.pm = &snd_soc_pm_ops,
++	},
++	.probe = espresso_probe,
++};
++module_platform_driver(espresso_driver);
++
++MODULE_DESCRIPTION("ASoC support for the Samsung Galaxy Tab 2 (espresso)");
++MODULE_LICENSE("GPL");
+-- 
+2.55.0
+
