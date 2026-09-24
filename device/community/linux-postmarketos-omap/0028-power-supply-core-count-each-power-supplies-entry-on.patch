@@ -1,0 +1,49 @@
+From 88d431214ce73e58a629cd3920b2b14f6a493bb2 Mon Sep 17 00:00:00 2001
+From: Ryan Brue <ryanbrue.dev@gmail.com>
+Date: Thu, 24 Sep 2026 14:43:09 -0500
+Subject: [PATCH] power: supply: core: count each power-supplies entry only
+ once
+
+power_supply_check_supplies() allocates one supplied_from slot per
+phandle in "power-supplies", and __power_supply_populate_supplied_from()
+fills the slot of the phandle that points at each registered supply's
+node. It also increments num_supplies for every supply it finds there.
+A device can register several supplies with the same node, for example
+the smb347 charger's mains and USB supplies. A "power-supplies =
+<&charger>" then counts two supplies for one slot, and every
+__power_supply_is_supplied_by() check reads supplied_from[1], past the
+end of the array.
+
+Count a slot only when it is filled the first time. Which of the
+supplies it names (the last one found) doesn't change.
+
+Fixes: f6e0b081fb30 ("power_supply: Populate supplied_from hierarchy from the device tree")
+Assisted-by: LLM
+---
+ drivers/power/supply/power_supply_core.c | 10 ++++++++--
+ 1 file changed, 8 insertions(+), 2 deletions(-)
+
+diff --git a/drivers/power/supply/power_supply_core.c b/drivers/power/supply/power_supply_core.c
+index 47e307709e5e..df3462e4e9db 100644
+--- a/drivers/power/supply/power_supply_core.c
++++ b/drivers/power/supply/power_supply_core.c
+@@ -206,8 +206,14 @@ static int __power_supply_populate_supplied_from(struct power_supply *epsy,
+ 		if (np == epsy->dev.fwnode) {
+ 			dev_dbg(&psy->dev, "%s: Found supply : %s\n",
+ 				psy->desc->name, epsy->desc->name);
+-			psy->supplied_from[i-1] = (char *)epsy->desc->name;
+-			psy->num_supplies++;
++			/*
++			 * A node can register more than one supply, e.g. mains
++			 * and USB of a charger. They share the entry, and the
++			 * array has one per phandle, so count it only once.
++			 */
++			if (!psy->supplied_from[i - 1])
++				psy->num_supplies++;
++			psy->supplied_from[i - 1] = (char *)epsy->desc->name;
+ 			fwnode_handle_put(np);
+ 			break;
+ 		}
+-- 
+2.55.0
+
