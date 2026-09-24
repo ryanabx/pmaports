@@ -1,0 +1,62 @@
+From 375e00e659e558e60f8786cb6ca3c1645126fc23 Mon Sep 17 00:00:00 2001
+From: Ryan Brue <ryanbrue.dev@gmail.com>
+Date: Thu, 24 Sep 2026 14:38:18 -0500
+Subject: [PATCH] ARM: dts: ti: omap: samsung-espresso10: add the sensor mount
+ matrices
+
+The vendor kernel sets the orientation of the 10.1" accelerometer and
+magnetometer in its board file (accelerometer_pdata.orientation = 6,
+magnetic_pdata.orientation = 7), which its drivers turn into these
+transforms from the chip axes to the Android device axes, the same as
+the IIO ones:
+
+  BMA254 (position 5):  x' = -x, y' = y, z' = -z
+  YAS530 (position 6):  x' = y,  y' = x, z' = -z
+
+With the tablet lying flat, the BMA254 reads -1 g on its z axis and the
+YAS530 a positive z field. After the transforms the accelerometer's z
+axis points up and the field's vertical part points down, as it does in
+the northern hemisphere, so the two agree.
+
+Describe them as mount matrices.
+
+Assisted-by: LLM
+---
+ .../boot/dts/ti/omap/omap4-samsung-espresso10.dts  | 14 ++++++++++++++
+ 1 file changed, 14 insertions(+)
+
+diff --git a/arch/arm/boot/dts/ti/omap/omap4-samsung-espresso10.dts b/arch/arm/boot/dts/ti/omap/omap4-samsung-espresso10.dts
+index 76a1a928bfbd..fc65d610654a 100644
+--- a/arch/arm/boot/dts/ti/omap/omap4-samsung-espresso10.dts
++++ b/arch/arm/boot/dts/ti/omap/omap4-samsung-espresso10.dts
+@@ -125,6 +125,13 @@ &fuel_gauge {
+ };
+ 
+ &i2c4 {
++	accelerometer@18 {
++		/* orientation 6 (BMA250 position 5) in the vendor kernel */
++		mount-matrix = "-1", "0", "0",
++			       "0", "1", "0",
++			       "0", "0", "-1";
++	};
++
+ 	light-sensor@23 {
+ 		compatible = "rohm,bh1721";
+ 		reg = <0x23>;
+@@ -132,6 +139,13 @@ light-sensor@23 {
+ 		pinctrl-0 = <&als_pins>;
+ 		reset-gpios = <&gpio2 1 GPIO_ACTIVE_LOW>; /* GPIO_33 */
+ 	};
++
++	magnetometer@2e {
++		/* orientation 7 (YAS530 position 6) in the vendor kernel */
++		mount-matrix = "0", "1", "0",
++			       "1", "0", "0",
++			       "0", "0", "-1";
++	};
+ };
+ 
+ &omap4_pmx_core {
+-- 
+2.55.0
+

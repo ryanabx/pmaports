@@ -2,7 +2,7 @@
 maintainer="Mithil Bavishi <bavishimithil@gmail.com>"
 pkgname=linux-postmarketos-omap
 pkgver=7.1.5
-pkgrel=23
+pkgrel=24
 pkgdesc="Mainline kernel fork for OMAP devices"
 arch="armv7"
 url="https://kernel.org/"
@@ -78,6 +78,7 @@ source="
 	0029-power-supply-core-copy-the-supplier-names-for-suppli.patch
 	0030-ARM-dts-ti-omap-espresso-common-disable-the-keypad-c.patch
 	0031-ARM-dts-ti-omap-espresso-common-disable-the-secure-R.patch
+	0032-ARM-dts-ti-omap-samsung-espresso10-add-the-sensor-mo.patch
 "
 builddir="$srcdir/linux-$_kernver"
 replaces="linux-samsung-espresso3g linux-nokia-n900"
@@ -141,4 +142,5 @@ c06a8ec64fde13af58327be21c555033c9eb3cc8298fddd37742e3a15d9ef61653bf7deea97fe67c
 822094199c52462b1c8dde2dc2889311265695bbbdbb72b8ede89ac914b07447eda703cc082d111cfe2a06e6399fe6844c2b3c2e88121173b7a4016d2a8d87ac  0029-power-supply-core-copy-the-supplier-names-for-suppli.patch
 f7b8c720f94258ea5a2d0643ad6bb153869aec725ca4765ded4a146cdd33a8dc60256239e5b946b0236e426c501cadce8201d03ff7ab96231c6196526c62d3ce  0030-ARM-dts-ti-omap-espresso-common-disable-the-keypad-c.patch
 3a0aa925df48c3cda424dafe8d54abba54578412fdf7a8eb8966a2c79bb70e101cae0945ce798e7a11181cd1afd9d6b36d43c833291c534000a07432e4e1b6dd  0031-ARM-dts-ti-omap-espresso-common-disable-the-secure-R.patch
+d50ae031de3238c3ede29b618e9ad0fe53864a7092b4ba41f9f033846e8d5781e4d784648313d83e74869cfea4df6bb1f6669013ff3a315d86252edf5894ca30  0032-ARM-dts-ti-omap-samsung-espresso10-add-the-sensor-mo.patch
 "
