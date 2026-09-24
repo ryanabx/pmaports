@@ -1,0 +1,34 @@
+From b9e4ff7e1b6497627ea5399fb7db631b3d1e0b2e Mon Sep 17 00:00:00 2001
+From: Ryan Brue <ryanbrue.dev@gmail.com>
+Date: Thu, 24 Sep 2026 12:10:42 -0500
+Subject: [PATCH] ARM: dts: ti: omap: espresso-common: reserve ramoops with no-map
+
+Reserve the region with no-map: otherwise the pages stay in the cacheable linear map while ramoops maps them uncached (mem-type 1, Strongly-ordered), which ARMv7 doesn't allow. pfn_valid() stays true for no-map memory on ARM, so ramoops keeps using vmap(). Squash before sending.
+
+Assisted-by: LLM
+---
+ arch/arm/boot/dts/ti/omap/omap4-samsung-espresso-common.dtsi | 4 +++-
+ 1 file changed, 3 insertions(+), 1 deletion(-)
+
+diff --git a/arch/arm/boot/dts/ti/omap/omap4-samsung-espresso-common.dtsi b/arch/arm/boot/dts/ti/omap/omap4-samsung-espresso-common.dtsi
+index 9c7b77858ca9..0f0553d58bd4 100644
+--- a/arch/arm/boot/dts/ti/omap/omap4-samsung-espresso-common.dtsi
++++ b/arch/arm/boot/dts/ti/omap/omap4-samsung-espresso-common.dtsi
+@@ -19,11 +19,13 @@ reserved-memory {
+ 		/*
+ 		 * Where the vendor kernel keeps its RAM console. Unbuffered, so
+ 		 * that a panic's last writes reach the DDR before the reset, and
+-		 * with ECC like the vendor console.
++		 * with ECC like the vendor console. Not in the linear map, so
++		 * that the uncached mapping is the only one.
+ 		 */
+ 		ramoops@a0000000 {
+ 			compatible = "ramoops";
+ 			reg = <0xa0000000 0x200000>;
++			no-map;
+ 			record-size = <0x20000>;
+ 			console-size = <0x40000>;
+ 			pmsg-size = <0x20000>;
+-- 
+2.55.0
+
