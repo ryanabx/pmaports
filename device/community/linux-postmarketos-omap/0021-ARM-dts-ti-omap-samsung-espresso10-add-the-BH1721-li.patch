@@ -1,0 +1,47 @@
+From 1b5344f6201fbba62987f65d47d56bcb1d294031 Mon Sep 17 00:00:00 2001
+From: Ryan Brue <ryanbrue.dev@gmail.com>
+Date: Thu, 24 Sep 2026 00:39:25 -0500
+Subject: [PATCH 2/2] ARM: dts: ti: omap: samsung-espresso10: add the BH1721
+ light sensor
+
+The 10.1" has a ROHM BH1721FVC ambient light sensor at 0x23 on I2C4,
+with its DVI (reset) pin on GPIO 33, as in the vendor kernel's board
+file. It is supported by the bh1750 driver.
+
+Assisted-by: LLM
+---
+ .../dts/ti/omap/omap4-samsung-espresso10.dts    | 17 +++++++++++++++++
+ 1 file changed, 17 insertions(+)
+
+diff --git a/arch/arm/boot/dts/ti/omap/omap4-samsung-espresso10.dts b/arch/arm/boot/dts/ti/omap/omap4-samsung-espresso10.dts
+index 91e152c6fade..d6e37bb46b48 100644
+--- a/arch/arm/boot/dts/ti/omap/omap4-samsung-espresso10.dts
++++ b/arch/arm/boot/dts/ti/omap/omap4-samsung-espresso10.dts
+@@ -135,7 +135,24 @@ &fuel_gauge {
+ 	monitored-battery = <&battery>;
+ };
+ 
++&i2c4 {
++	light-sensor@23 {
++		compatible = "rohm,bh1721";
++		reg = <0x23>;
++		pinctrl-names = "default";
++		pinctrl-0 = <&als_pins>;
++		reset-gpios = <&gpio2 1 GPIO_ACTIVE_LOW>; /* GPIO_33 */
++	};
++};
++
+ &omap4_pmx_core {
++	als_pins: pinmux-als-pins {
++		pinctrl-single,pins = <
++			OMAP4_IOPAD(0x052, PIN_OUTPUT | MUX_MODE3)
++			/* gpmc_ad9.gpio_33 - ALS_INT_18 (BH1721 DVI) */
++		>;
++	};
++
+ 	i2c5_pins_espresso10: pinmux-i2c5-espresso10-pins {
+ 		pinctrl-single,pins = <
+ 			OMAP4_IOPAD(0x0fc, PIN_INPUT_PULLUP | MUX_MODE3)
+-- 
+2.55.0
+

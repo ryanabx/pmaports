@@ -2,7 +2,7 @@
 maintainer="Mithil Bavishi <bavishimithil@gmail.com>"
 pkgname=linux-postmarketos-omap
 pkgver=7.1.5
-pkgrel=14
+pkgrel=15
 pkgdesc="Mainline kernel fork for OMAP devices"
 arch="armv7"
 url="https://kernel.org/"
@@ -66,6 +66,8 @@ source="
 	0017-ARM-dts-ti-omap-samsung-espresso10-size-the-splash-r.patch
 	0018-ARM-dts-ti-omap-espresso-common-add-ramoops.patch
 	0019-ARM-OMAP2-prm44xx-clear-the-reset-sources-at-boot-on.patch
+	0020-ARM-dts-ti-omap-espresso-move-the-GP2AP002-light-sen.patch
+	0021-ARM-dts-ti-omap-samsung-espresso10-add-the-BH1721-li.patch
 "
 builddir="$srcdir/linux-$_kernver"
 replaces="linux-samsung-espresso3g linux-nokia-n900"
@@ -97,7 +99,7 @@ package() {
 
 sha512sums="
 17f95307b6e86a0794df146d97256ba4783b7a494f5eb43aafc14d64367541874cec7f6e8c2ea724eca149db18e4bd5880bf28a8c5e47ae8a769776bbd955af8  linux-7.1.5.tar.xz
-07e570fade381683ce62a6def86ce69ac6a5180b150a6bd817cbcdcfb85b369fd62d7696ec7c67f93ba8f1bfb1f2ec9a13b0495139930bcab3cf71e3eb834875  config-postmarketos-omap.armv7
+435b05b5159a62dee3d9084298658d8a3c7662a0e49985e194a908c3061cd8c158546563677ef9ad66c4d407b19aede07891824c0739ec1901e03acdf2c05646  config-postmarketos-omap.armv7
 1a68e3a32ae1e56d325c0f759ee66d64d14f46a5d52e75ae008dfddac335beb3aa7acaf62abb95b6d5ce1557f0cf9b4c31ab78e110af178db1ac963bb377dbf0  0001-iio-rescale-revert-logic.patch
 11bcc2bdcd8862e56f23a763d393b1d5f62af82cfd6dd347b5786b9f299144950d5941579091fea144371bad1188f366d8cd5a26453fc852fd3e769df2bd21bc  0002-hsi-dma-fix.patch
 a17ddc7a41ce2a6be04a8ee0ffcfb8dbb0381d1ce7fac8336befd79bc388ce5d16b6ba3a4732a540a43add55c43b015a3b77205a007a058d4d6e3291234b5cc0  0003-Add-TWL6030-power-button-support-to-twl-pwrbutton.patch
@@ -117,4 +119,6 @@ f4e95c50761402cbba24d79d0e51289e90e6622d19b068c14792c9030d2104d64bd97581b6bf547e
 1eba16edd2dded602b463fcd59f663395fb3e268c63c6576134c123d66d8344734ce4ec181c23746232c8cc3d0f7a90b53fd1ec99cb3ad9fbbe2b622cd12f333  0017-ARM-dts-ti-omap-samsung-espresso10-size-the-splash-r.patch
 b221c1a3a80b3810750760f8bf955390da7722dcd34fd61b53ba97cd5bd578842ffa2482358ece8104b46f648fb2b63ba562214e7aaff320925a816103fb8d4f  0018-ARM-dts-ti-omap-espresso-common-add-ramoops.patch
 9d8ae115b01f8ad93bb3ff59aab5bd10cd7a9842c04066b4f9172587190979bf493e42ac4fdacdf37e86b95f6359ea8b6d23fc42823e0681413fe0c909e40a66  0019-ARM-OMAP2-prm44xx-clear-the-reset-sources-at-boot-on.patch
+39654f139419c53d0a51d04f8a27b9926f791288969aab9fc53e2edf9c5b5886e7e4432dc52aef580fa658f24e7e01b74dc88c102651f8892ff4d831f0fab01a  0020-ARM-dts-ti-omap-espresso-move-the-GP2AP002-light-sen.patch
+537388fa96f7b06e8ed7ac98aafbe52300a8ed4bbd27f40e89d776d5a2c662384edaf80aa10f8af4e13cdc88ca7a4ddb9646111359067ac6138e8635d46b879f  0021-ARM-dts-ti-omap-samsung-espresso10-add-the-BH1721-li.patch
 "
