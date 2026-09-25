@@ -3,19 +3,24 @@ maintainer="Mithil Bavishi <bavishimithil@gmail.com>"
 pkgname=device-samsung-espresso10
 pkgdesc="Samsung Galaxy Tab 2 (10.1 inch)"
 pkgver=9
-pkgrel=0
+pkgrel=1
 url="https://postmarketos.org"
 license="MIT"
 arch="armv7"
 options="!check !archcheck"
 depends="
+	alsa-ucm-conf
 	firmware-samsung-espresso
 	linux-postmarketos-omap
 	mkbootimg
 	postmarketos-base
 	"
 makedepends="devicepkg-dev"
-source="deviceinfo"
+source="
+	deviceinfo
+	ucm/GalaxyTab2.conf
+	ucm/HiFi.conf
+	"
 
 build() {
 	devicepkg_build $startdir $pkgname
@@ -23,8 +28,14 @@ build() {
 
 package() {
 	devicepkg_package $startdir $pkgname
+
+	# ALSA UCM configs
+	install -Dm644 "$srcdir"/GalaxyTab2.conf "$srcdir"/HiFi.conf \
+		-t "$pkgdir"/usr/share/alsa/ucm2/conf.d/GalaxyTab2
 }
 
 sha512sums="
 9a8cd2f420eed7ab10138acf12128b6194132267c99f3c1b5bf73e9eefd67c83448f54f0365dbad378f2059830eec75ac96ba90646b39e137bf8630bc22c8959  deviceinfo
+f4239fd72916aafb963b5c4d873ae8c59d6e5dba74c250147000d2403a77fff9f4620bd0bd5f725c4071d72fda8cdc0187c250f1967f2ff3136f6369426b948d  GalaxyTab2.conf
+e7210cbe5a5c0e86160bb4f7fb81079f36cf01270c04b3f80d991db8543830f7b4c3870018b48f6f4a844907698c925dd0de2844ed9da9d2538aea385a5b3eb0  HiFi.conf
 "
