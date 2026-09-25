@@ -1,4 +1,4 @@
-From d5df11b8cbd921eb0a2528a2b1c2e2beff57acd6 Mon Sep 17 00:00:00 2001
+From 14709d2ddadb61f4d72f19b2ac4d66624321925b Mon Sep 17 00:00:00 2001
 From: Ryan Brue <ryanbrue.dev@gmail.com>
 Date: Thu, 24 Sep 2026 14:36:15 -0500
 Subject: [PATCH] ASoC: ti: add a machine driver for the Samsung Galaxy Tab 2
@@ -14,7 +14,7 @@ the codec's clock) at 256 fs, or 512 fs for 8 and 11.025 kHz, and
 regulator supplies for the mic biases. The routes come from the device
 tree.
 
-Three things differ from Midas, whose MCLKs are always running:
+Four things differ from Midas, whose MCLKs are always running:
 
 - MCLK1 is a gated 26 MHz clock here, and the codec takes a reference
   on its SYSCLK source only when AIF1CLK powers up, and drops the one it
@@ -30,16 +30,23 @@ Three things differ from Midas, whose MCLKs are always running:
   STANDBY. Going up from OFF, which happens here because nothing keeps
   the codec biased while idle, it reset FLL1 to the default rate after
   hw_params had set it up, and 48 kHz played at 44.1 kHz.
+- The codec provides BCLK and LRCLK, but DAPM powers AIF1CLK only for a
+  complete path, so a stream with no input or output enabled got no
+  clocks and failed with -EIO. AIF1CLK is kept on from hw_params to
+  hw_free. A supply alone takes the bias only to STANDBY, never to
+  PREPARE, so FLL1 is also stopped on the way to OFF.
 
-Tested on a Galaxy Tab 2 10.1: playback at 8, 16, 32, 44.1 and 48 kHz
-in any order runs at the requested rate (measured from the hw_ptr).
+Tested on a Galaxy Tab 2 10.1 (GT-P5113): playback at 8, 16, 32, 44.1
+and 48 kHz in any order runs at the requested rate (measured from the
+hw_ptr), also with no output or input enabled; the speakers and the
+internal microphone were checked by ear.
 
 Assisted-by: LLM
 ---
- sound/soc/ti/Kconfig            |  13 ++
+ sound/soc/ti/Kconfig            |  13 +
  sound/soc/ti/Makefile           |   2 +
- sound/soc/ti/samsung-espresso.c | 355 ++++++++++++++++++++++++++++++++
- 3 files changed, 370 insertions(+)
+ sound/soc/ti/samsung-espresso.c | 405 ++++++++++++++++++++++++++++++++
+ 3 files changed, 420 insertions(+)
  create mode 100644 sound/soc/ti/samsung-espresso.c
 
 diff --git a/sound/soc/ti/Kconfig b/sound/soc/ti/Kconfig
@@ -86,10 +93,10 @@ index 421e13bc04db..d2a7c0d19d78 100644
  obj-$(CONFIG_SND_SOC_J721E_EVM) += snd-soc-j721e-evm.o
 diff --git a/sound/soc/ti/samsung-espresso.c b/sound/soc/ti/samsung-espresso.c
 new file mode 100644
-index 000000000000..bec9749137b5
+index 000000000000..9c00da0dfab9
 --- /dev/null
 +++ b/sound/soc/ti/samsung-espresso.c
-@@ -0,0 +1,355 @@
+@@ -0,0 +1,405 @@
 +// SPDX-License-Identifier: GPL-2.0-only
 +/*
 + * ASoC machine driver for the Samsung Galaxy Tab 2 (espresso): a WM1811 codec
@@ -116,6 +123,7 @@ index 000000000000..bec9749137b5
 +	unsigned int mclk1_rate;
 +	unsigned int fll1_rate;
 +	bool mclk1_enabled;
++	bool aif1clk_forced;
 +};
 +
 +static int espresso_start_fll1(struct snd_soc_pcm_runtime *rtd,
@@ -194,7 +202,12 @@ index 000000000000..bec9749137b5
 +				   struct snd_pcm_hw_params *params)
 +{
 +	struct snd_soc_pcm_runtime *rtd = snd_soc_substream_to_rtd(substream);
++	struct espresso_priv *priv = snd_soc_card_get_drvdata(rtd->card);
++	struct snd_soc_dai *aif1_dai = snd_soc_rtd_to_codec(rtd, 0);
++	struct snd_soc_dapm_context *dapm =
++		snd_soc_component_to_dapm(aif1_dai->component);
 +	unsigned int pll_out;
++	int ret;
 +
 +	/* AIF1CLK should be at least 3MHz for "optimal performance" */
 +	if (params_rate(params) == 8000 || params_rate(params) == 11025)
@@ -202,11 +215,45 @@ index 000000000000..bec9749137b5
 +	else
 +		pll_out = params_rate(params) * 256;
 +
-+	return espresso_start_fll1(rtd, pll_out);
++	ret = espresso_start_fll1(rtd, pll_out);
++	if (ret < 0)
++		return ret;
++
++	/*
++	 * The codec provides BCLK and LRCLK, but DAPM powers AIF1CLK only for
++	 * a complete path. Without an enabled input or output, McBSP would
++	 * get no clocks and the stream would time out, so keep AIF1CLK on
++	 * while the stream is set up.
++	 */
++	if (!priv->aif1clk_forced) {
++		ret = snd_soc_dapm_force_enable_pin(dapm, "AIF1CLK");
++		if (ret < 0)
++			return ret;
++		priv->aif1clk_forced = true;
++	}
++
++	return 0;
++}
++
++static int espresso_aif1_hw_free(struct snd_pcm_substream *substream)
++{
++	struct snd_soc_pcm_runtime *rtd = snd_soc_substream_to_rtd(substream);
++	struct espresso_priv *priv = snd_soc_card_get_drvdata(rtd->card);
++	struct snd_soc_dai *aif1_dai = snd_soc_rtd_to_codec(rtd, 0);
++	struct snd_soc_dapm_context *dapm =
++		snd_soc_component_to_dapm(aif1_dai->component);
++
++	/* both directions share the clocks: release them with the last one */
++	if (!priv->aif1clk_forced || snd_soc_dai_active(aif1_dai) > 1)
++		return 0;
++
++	priv->aif1clk_forced = false;
++	return snd_soc_dapm_disable_pin(dapm, "AIF1CLK");
 +}
 +
 +static const struct snd_soc_ops espresso_aif1_ops = {
 +	.hw_params = espresso_aif1_hw_params,
++	.hw_free = espresso_aif1_hw_free,
 +};
 +
 +static const struct snd_kcontrol_new espresso_controls[] = {
@@ -278,6 +325,16 @@ index 000000000000..bec9749137b5
 +	case SND_SOC_BIAS_PREPARE:
 +		return espresso_start_fll1(rtd, 0);
 +	case SND_SOC_BIAS_OFF:
++		/*
++		 * A stream with no complete path only powers AIF1CLK, a
++		 * supply, which takes the bias to STANDBY but never to
++		 * PREPARE, so FLL1 is still running here.
++		 */
++		if (priv->fll1_rate) {
++			ret = espresso_stop_fll1(rtd);
++			if (ret)
++				return ret;
++		}
 +		if (priv->mclk1_enabled) {
 +			clk_disable_unprepare(priv->mclk1);
 +			priv->mclk1_enabled = false;

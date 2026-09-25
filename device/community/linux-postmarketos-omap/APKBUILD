@@ -2,7 +2,7 @@
 maintainer="Mithil Bavishi <bavishimithil@gmail.com>"
 pkgname=linux-postmarketos-omap
 pkgver=7.1.5
-pkgrel=27
+pkgrel=29
 pkgdesc="Mainline kernel fork for OMAP devices"
 arch="armv7"
 url="https://kernel.org/"
@@ -147,6 +147,6 @@ f7b8c720f94258ea5a2d0643ad6bb153869aec725ca4765ded4a146cdd33a8dc60256239e5b946b0
 3a0aa925df48c3cda424dafe8d54abba54578412fdf7a8eb8966a2c79bb70e101cae0945ce798e7a11181cd1afd9d6b36d43c833291c534000a07432e4e1b6dd  0031-ARM-dts-ti-omap-espresso-common-disable-the-secure-R.patch
 d50ae031de3238c3ede29b618e9ad0fe53864a7092b4ba41f9f033846e8d5781e4d784648313d83e74869cfea4df6bb1f6669013ff3a315d86252edf5894ca30  0032-ARM-dts-ti-omap-samsung-espresso10-add-the-sensor-mo.patch
 bc87b845f1c6dc89d1cdd5ab29ecb54969edd3d1f7545f7f51aa2b3d714972627758db9b4a4e8b5985b17b586ac9c439c57efcac1244b593f8f86a42e6d8a9d2  0033-ASoC-dt-bindings-add-the-Samsung-Galaxy-Tab-2-audio.patch
-39c439055c3f2d80c7fe3ae7c1c681a43a088382123e17f7ef73012abf6479c28095901d64830e1f3e1e4099a5506053cf3b255ea4bb44073a191beee4ce82b5  0034-ASoC-ti-add-a-machine-driver-for-the-Samsung-Galaxy.patch
+0496d89df735976c19d86527e4783d423e0914c5589c1a2ae88fdee689bedd6d57751813aa6ae138786e4ae118cb4004b5e2dc1f9ea5aa36ecf44b94a34f041d  0034-ASoC-ti-add-a-machine-driver-for-the-Samsung-Galaxy.patch
 30c4f353b125d59c0633543722aa80efa4dfa2ab70f620c3fb584c0ac2c0a0f6ad4ba146a754b423ac9fe78115fc3c1ed2de8a35eea29c312694cef8e0de40fe  0035-ARM-dts-ti-omap-espresso-common-add-the-WM1811-audio.patch
 "
