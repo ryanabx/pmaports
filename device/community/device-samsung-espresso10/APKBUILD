@@ -3,7 +3,7 @@ maintainer="Mithil Bavishi <bavishimithil@gmail.com>"
 pkgname=device-samsung-espresso10
 pkgdesc="Samsung Galaxy Tab 2 (10.1 inch)"
 pkgver=9
-pkgrel=1
+pkgrel=2
 url="https://postmarketos.org"
 license="MIT"
 arch="armv7"
@@ -16,6 +16,10 @@ depends="
 	postmarketos-base
 	"
 makedepends="devicepkg-dev"
+subpackages="
+	$pkgname-kernel-standard:kernel_standard
+	$pkgname-kernel-bby:kernel_bby
+	"
 source="
 	deviceinfo
 	ucm/GalaxyTab2.conf
@@ -34,8 +38,20 @@ package() {
 		-t "$pkgdir"/usr/share/alsa/ucm2/conf.d/GalaxyTab2
 }
 
+kernel_standard() {
+	pkgdesc="Standard board layout, without the IR blaster"
+	depends="linux-postmarketos-omap"
+	devicepkg_subpackage_kernel $startdir $pkgname $subpkgname
+}
+
+kernel_bby() {
+	pkgdesc="Board layout with the IR blaster (\"Best Buy\", e.g. GT-P5113): charger and ADC on other pins"
+	depends="linux-postmarketos-omap"
+	devicepkg_subpackage_kernel $startdir $pkgname $subpkgname
+}
+
 sha512sums="
-9a8cd2f420eed7ab10138acf12128b6194132267c99f3c1b5bf73e9eefd67c83448f54f0365dbad378f2059830eec75ac96ba90646b39e137bf8630bc22c8959  deviceinfo
+666767723df359780d667d333fde25d911a432450243632161c9996e91b624246d01234fa2cbbfd7ff597d574591e01354b84541645e3c85810cad17cae8d0a4  deviceinfo
 f4239fd72916aafb963b5c4d873ae8c59d6e5dba74c250147000d2403a77fff9f4620bd0bd5f725c4071d72fda8cdc0187c250f1967f2ff3136f6369426b948d  GalaxyTab2.conf
 e7210cbe5a5c0e86160bb4f7fb81079f36cf01270c04b3f80d991db8543830f7b4c3870018b48f6f4a844907698c925dd0de2844ed9da9d2538aea385a5b3eb0  HiFi.conf
 "
