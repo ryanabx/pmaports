@@ -1,0 +1,37 @@
+From f73934f91521bd05687424ca7c82ea23ff04fe45 Mon Sep 17 00:00:00 2001
+From: Ryan Brue <ryanbrue.dev@gmail.com>
+Date: Fri, 25 Sep 2026 17:22:22 -0500
+Subject: [PATCH] dt-bindings: arm: ti: omap: add the Galaxy Tab 2 10.1 Best
+ Buy variant
+
+Samsung built the Galaxy Tab 2 10.1 (espresso10) in two board layouts.
+The one Samsung's kernel calls the "Best Buy" variant (the boards with
+the IR blaster) has the charger and ADC I2C buses on other pins. Add a
+compatible for it, with the espresso10 one as fallback.
+
+Assisted-by: LLM
+---
+ Documentation/devicetree/bindings/arm/ti/omap.yaml | 7 +++++++
+ 1 file changed, 7 insertions(+)
+
+diff --git a/Documentation/devicetree/bindings/arm/ti/omap.yaml b/Documentation/devicetree/bindings/arm/ti/omap.yaml
+index f694dcbf2348..415734667292 100644
+--- a/Documentation/devicetree/bindings/arm/ti/omap.yaml
++++ b/Documentation/devicetree/bindings/arm/ti/omap.yaml
+@@ -151,6 +151,13 @@ properties:
+           - const: ti,omap4430
+           - const: ti,omap4
+ 
++      - description: Samsung Galaxy Tab 2 10.1 "Best Buy" board variant
++        items:
++          - const: samsung,espresso10-bby
++          - const: samsung,espresso10
++          - const: ti,omap4430
++          - const: ti,omap4
++
+       - description: OMAP4 PandaBoard Revision A4 and later
+         items:
+           - const: ti,omap4-panda-a4
+-- 
+2.55.0
+

@@ -1,0 +1,98 @@
+From dda91f27f500482e8a479a47b01fbc519a830277 Mon Sep 17 00:00:00 2001
+From: Ryan Brue <ryanbrue.dev@gmail.com>
+Date: Fri, 25 Sep 2026 17:23:24 -0500
+Subject: [PATCH] ARM: dts: ti: omap: add the Samsung Galaxy Tab 2 10.1 Best
+ Buy variant
+
+Samsung's kernel knows two board layouts of the Galaxy Tab 2 10.1. On
+the one it calls the "Best Buy" variant, which it detects by HW_REV4
+(GPIO 41) reading high ("IrDA O": the boards with the IR blaster), the
+SMB347 charger is on GPIO 113 (SDA) / 110 (SCL) instead of GPIO 98/99,
+and the STMPE811 ADC on GPIO 137 (SDA) / 134 (SCL) instead of 66/65
+(board-espresso-power.c, board-espresso10-usa-bby-muxset-r07.c). On
+that layout the charger and the ADC don't probe with the espresso10 DT,
+so the battery isn't charged under Linux.
+
+A GT-P5113 (US) has this layout: GPIO 41 reads high, the SMB347 ACKs at
+0x06 on GPIO 113/110 and nothing answers on 98/99, the STMPE811 ACKs at
+0x41 on GPIO 137/134, and the bootloader leaves exactly those four pads
+as GPIO inputs with pull-up.
+
+Add a DT for the variant that overrides the two bus pin sets.
+
+Tested on a GT-P5113: the charger probes and charges the battery, the
+STMPE811 probes and reads its channels.
+
+Assisted-by: LLM
+---
+ arch/arm/boot/dts/ti/omap/Makefile            |  1 +
+ .../ti/omap/omap4-samsung-espresso10-bby.dts  | 45 +++++++++++++++++++
+ 2 files changed, 46 insertions(+)
+ create mode 100644 arch/arm/boot/dts/ti/omap/omap4-samsung-espresso10-bby.dts
+
+diff --git a/arch/arm/boot/dts/ti/omap/Makefile b/arch/arm/boot/dts/ti/omap/Makefile
+index 498c36ccb5ea..85e9de785dd4 100644
+--- a/arch/arm/boot/dts/ti/omap/Makefile
++++ b/arch/arm/boot/dts/ti/omap/Makefile
+@@ -82,6 +82,7 @@ dtb-$(CONFIG_ARCH_OMAP4) += \
+ 	omap4-var-stk-om44.dtb \
+ 	omap4-samsung-espresso7.dtb \
+ 	omap4-samsung-espresso10.dtb \
++	omap4-samsung-espresso10-bby.dtb \
+ 	omap4-xyboard-mz609.dtb \
+ 	omap4-xyboard-mz617.dtb
+ 
+diff --git a/arch/arm/boot/dts/ti/omap/omap4-samsung-espresso10-bby.dts b/arch/arm/boot/dts/ti/omap/omap4-samsung-espresso10-bby.dts
+new file mode 100644
+index 000000000000..6cd591401cb6
+--- /dev/null
++++ b/arch/arm/boot/dts/ti/omap/omap4-samsung-espresso10-bby.dts
+@@ -0,0 +1,45 @@
++// SPDX-License-Identifier: (GPL-2.0 OR MIT)
++/*
++ * Samsung Galaxy Tab 2 10.1, "Best Buy" board variant (the boards with the IR
++ * blaster, e.g. GT-P5113): the charger and ADC I2C buses are on other pins.
++ */
++/dts-v1/;
++
++#include "omap4-samsung-espresso10.dts"
++
++/ {
++	model = "Samsung Galaxy Tab 2 (10 inch, Best Buy variant)";
++	compatible = "samsung,espresso10-bby", "samsung,espresso10", "ti,omap4430", "ti,omap4";
++
++	i2c-gpio5 {
++		pinctrl-0 = <&i2c5_pins_bby>;
++		sda-gpios = <&gpio4 17 (GPIO_ACTIVE_HIGH | GPIO_OPEN_DRAIN)>; /* GPIO_113 */
++		scl-gpios = <&gpio4 14 (GPIO_ACTIVE_HIGH | GPIO_OPEN_DRAIN)>; /* GPIO_110 */
++	};
++
++	i2c-gpio6 {
++		pinctrl-0 = <&i2c6_pins_bby>;
++		sda-gpios = <&gpio5 9 (GPIO_ACTIVE_HIGH | GPIO_OPEN_DRAIN)>; /* GPIO_137 */
++		scl-gpios = <&gpio5 6 (GPIO_ACTIVE_HIGH | GPIO_OPEN_DRAIN)>; /* GPIO_134 */
++	};
++};
++
++&omap4_pmx_core {
++	i2c5_pins_bby: pinmux-i2c5-bby-pins {
++		pinctrl-single,pins = <
++			OMAP4_IOPAD(0x0fc, PIN_INPUT_PULLUP | MUX_MODE3)
++			/* abe_mcbsp2_fsx.gpio_113 - CHG_SDA */
++			OMAP4_IOPAD(0x0f6, PIN_INPUT_PULLUP | MUX_MODE3)
++			/* abe_mcbsp2_clkx.gpio_110 - CHG_SCL */
++		>;
++	};
++
++	i2c6_pins_bby: pinmux-i2c6-bby-pins {
++		pinctrl-single,pins = <
++			OMAP4_IOPAD(0x138, PIN_INPUT_PULLUP | MUX_MODE3)
++			/* mcspi1_cs0.gpio_137 - ADC_I2C_SDA */
++			OMAP4_IOPAD(0x132, PIN_INPUT_PULLUP | MUX_MODE3)
++			/* mcspi1_clk.gpio_134 - ADC_I2C_SCL */
++		>;
++	};
++};
+-- 
+2.55.0
+

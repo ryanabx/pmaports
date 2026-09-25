@@ -2,7 +2,7 @@
 maintainer="Mithil Bavishi <bavishimithil@gmail.com>"
 pkgname=linux-postmarketos-omap
 pkgver=7.1.5
-pkgrel=31
+pkgrel=35
 pkgdesc="Mainline kernel fork for OMAP devices"
 arch="armv7"
 url="https://kernel.org/"
@@ -54,7 +54,6 @@ source="
 	0005-panel-Add-lg-ld070ws1-for-barnesnoble-encore.patch
 	0006-omap4-cfi.patch
 	0007-power-supply-smb347-treat-a-missing-monitored-battery-as-no-battery-info.patch
-	0008-ARM-dts-ti-omap-samsung-espresso10-fix-the-charger-I2C-pins.patch
 	0009-ARM-dts-ti-omap-espresso-common-keep-the-TWL6032-VIO-regulator-on.patch
 	0010-dt-bindings-sram-add-TI-OMAP4-SAR-RAM.patch
 	0011-bus-ti-sysc-populate-simple-mfd-child-nodes-too.patch
@@ -82,8 +81,10 @@ source="
 	0033-ASoC-dt-bindings-add-the-Samsung-Galaxy-Tab-2-audio.patch
 	0034-ASoC-ti-add-a-machine-driver-for-the-Samsung-Galaxy.patch
 	0035-ARM-dts-ti-omap-espresso-common-add-the-WM1811-audio.patch
-	0036-ARM-dts-ti-omap-samsung-espresso10-add-the-STMPE811-.patch
+	0036-ARM-dts-ti-omap-espresso-common-add-the-STMPE811-ADC.patch
 	0037-usb-phy-twl6030-balance-the-usb3v3-regulator-enables.patch
+	0038-dt-bindings-arm-ti-omap-add-the-Galaxy-Tab-2-10.1-Best-Buy-variant.patch
+	0039-ARM-dts-ti-omap-add-the-Samsung-Galaxy-Tab-2-10.1-Best-Buy-variant.patch
 "
 builddir="$srcdir/linux-$_kernver"
 replaces="linux-samsung-espresso3g linux-nokia-n900"
@@ -123,20 +124,19 @@ a17ddc7a41ce2a6be04a8ee0ffcfb8dbb0381d1ce7fac8336befd79bc388ce5d16b6ba3a4732a540
 f03770e3c2f4c2876b31750f194646bbbe43b60fc7489ee9c54d1f6b36d72da4d2894b86dc47c1c9bf7676ef0c5d1788fa4f8c4d0f8eff1dd4e75d1ce4b9dfc8  0005-panel-Add-lg-ld070ws1-for-barnesnoble-encore.patch
 25df8fb362e6f4e3612fd2e7ac02978674daabb7bf246928f94f4c8e408e196c5831f6eace3e2838c2e8f835cf1517f6a5e96160fcaec4ff4020c8859e25712c  0006-omap4-cfi.patch
 cb18c37712187c5bb9f3d180b32458aa502558996c8e37f6d1caf33c3b2764659f182ab721df62560e336802b051fc6ea1b14e955c1a0daf96cebe2de33578a5  0007-power-supply-smb347-treat-a-missing-monitored-battery-as-no-battery-info.patch
-625b55f695f5f245d0cb2b02227ba49031c9f673642349d1a15ed2bb5163b0b46abee43ec7bed8bbcbf1c728a7d2fdd212fc0f91d29d4bc2baef3a9f8a5cbc45  0008-ARM-dts-ti-omap-samsung-espresso10-fix-the-charger-I2C-pins.patch
 f1598970f1144d6ce938dba2f472937241a6a1f86f88678fcd4fdeb424ba0d671def2887d749272d83a7559f48cee0bdcddc35cec4bdaa8348abefecc53d1c5d  0009-ARM-dts-ti-omap-espresso-common-keep-the-TWL6032-VIO-regulator-on.patch
 b2b7950e2d369e484e415919ccdcd84a233b6f618764aa2ed4ea994eb565b150d17184f2c639d10d2de7c74feeb068a1d5fe1402d3c8504f4abe8448e113bd63  0010-dt-bindings-sram-add-TI-OMAP4-SAR-RAM.patch
 8922e5805ad5e46d85f723b933bf1210b9701813022da0c0afdfbe6492aa01a618ba739473518b1700b4f91ae7a7dd9afcb988a2e2b9765c431a1d2921b541cc  0011-bus-ti-sysc-populate-simple-mfd-child-nodes-too.patch
 3984d139148881ef191e23f1eb5cf7f5ce27492736a80e13606999e692b4008ad6ed4ba453f0371d6d57143818b4c8df65ca6ce61a86a8fdae2e7e43d17db92f  0012-ARM-dts-ti-omap4-add-the-SAR-RAM.patch
 e30dd23ffe29f3f935cacb169439e2c43cfde59f814de13426165471807e63175f358482774ce65627c25369959759775572a9de74b500cec990c7312d257c93  0013-ARM-dts-ti-omap-espresso-common-add-the-bootloader-r.patch
 7d1ab2bdc38384938a022dc9d4bc4d89edbf08eb1ee383743e530d7d767381cbfbeaef2509db738d57d05ef279309a551e977935c7cab1075f3f725442bbf373  0014-power-supply-smb347-re-enable-APSD-and-allow-setting.patch
-85cc484e8c3489c08e65a46bb40a8716bbd29db43fff560056d2513904d9bbdadebd456a11572374b658bac9e7ba1de76e2d2aa8b9e0afd3b84d89005122f1e9  0015-ARM-dts-ti-omap-samsung-espresso10-describe-the-batt.patch
+6f881518ea3144b341053b77c1a570032303107d77dc67fd67d19765bcb9b5d1d4cd4c058d9e4c800003591e384e65acfe183ab189251c52baef41d7595560fb  0015-ARM-dts-ti-omap-samsung-espresso10-describe-the-batt.patch
 f4e95c50761402cbba24d79d0e51289e90e6622d19b068c14792c9030d2104d64bd97581b6bf547edc839c78e5a8fb9ed1f512fbd230bef3c92c5f2243b9e119  0016-ARM-dts-ti-omap-espresso-common-reserve-the-secure-m.patch
-1eba16edd2dded602b463fcd59f663395fb3e268c63c6576134c123d66d8344734ce4ec181c23746232c8cc3d0f7a90b53fd1ec99cb3ad9fbbe2b622cd12f333  0017-ARM-dts-ti-omap-samsung-espresso10-size-the-splash-r.patch
+f556e0faace9b291c8c1647341abfaba5debe761ffc083115f0cdafef56fc6c056fab1424e1cc6515afbec93529c3cdbe6bb87e184f4dacffc56ff8b66b0ff00  0017-ARM-dts-ti-omap-samsung-espresso10-size-the-splash-r.patch
 b221c1a3a80b3810750760f8bf955390da7722dcd34fd61b53ba97cd5bd578842ffa2482358ece8104b46f648fb2b63ba562214e7aaff320925a816103fb8d4f  0018-ARM-dts-ti-omap-espresso-common-add-ramoops.patch
 9d8ae115b01f8ad93bb3ff59aab5bd10cd7a9842c04066b4f9172587190979bf493e42ac4fdacdf37e86b95f6359ea8b6d23fc42823e0681413fe0c909e40a66  0019-ARM-OMAP2-prm44xx-clear-the-reset-sources-at-boot-on.patch
 39654f139419c53d0a51d04f8a27b9926f791288969aab9fc53e2edf9c5b5886e7e4432dc52aef580fa658f24e7e01b74dc88c102651f8892ff4d831f0fab01a  0020-ARM-dts-ti-omap-espresso-move-the-GP2AP002-light-sen.patch
-537388fa96f7b06e8ed7ac98aafbe52300a8ed4bbd27f40e89d776d5a2c662384edaf80aa10f8af4e13cdc88ca7a4ddb9646111359067ac6138e8635d46b879f  0021-ARM-dts-ti-omap-samsung-espresso10-add-the-BH1721-li.patch
+fd137ebe90d2d24e061fbd038d3ccd8a4ebc99045108a482205763f8e88d53e81af4b1b20e73a0c46c4653ca6e3e5cbc5ba83cfbd09dd1ecaa4520b4a506cd7c  0021-ARM-dts-ti-omap-samsung-espresso10-add-the-BH1721-li.patch
 da9144b0ec16af61dff1896c8df476af212c26121dd152bc1f0e3253be4a20a6333f775d181acf2e8f2b29b67e0e806cbc65c99f3abd86c47709697f2accbd18  0022-ARM-OMAP4-PM-move-the-L2X0-save-area-out-of-the-boot.patch
 7622aa9525a1ebdbc4316ad4d232bf85213151f4554a54390275991e28b1e4a7e4dd1aaa0655651389919328ea70699ca0aa5344a3ab2087f83ad38c40fe25ce  0023-ARM-dts-ti-omap-espresso-common-ramoops-no-map.patch
 38f8ea3c7509b82eb48029a18c8a373958910f80788f86333a2b1149e2a61dcca29838c8a73904c398aeb3b53df966403893765ce697d79341b4e2e26e417bd6  0024-dt-bindings-power-reset-add-Samsung-Galaxy-Tab-2-reboo.patch
@@ -147,10 +147,12 @@ c06a8ec64fde13af58327be21c555033c9eb3cc8298fddd37742e3a15d9ef61653bf7deea97fe67c
 822094199c52462b1c8dde2dc2889311265695bbbdbb72b8ede89ac914b07447eda703cc082d111cfe2a06e6399fe6844c2b3c2e88121173b7a4016d2a8d87ac  0029-power-supply-core-copy-the-supplier-names-for-suppli.patch
 f7b8c720f94258ea5a2d0643ad6bb153869aec725ca4765ded4a146cdd33a8dc60256239e5b946b0236e426c501cadce8201d03ff7ab96231c6196526c62d3ce  0030-ARM-dts-ti-omap-espresso-common-disable-the-keypad-c.patch
 3a0aa925df48c3cda424dafe8d54abba54578412fdf7a8eb8966a2c79bb70e101cae0945ce798e7a11181cd1afd9d6b36d43c833291c534000a07432e4e1b6dd  0031-ARM-dts-ti-omap-espresso-common-disable-the-secure-R.patch
-d50ae031de3238c3ede29b618e9ad0fe53864a7092b4ba41f9f033846e8d5781e4d784648313d83e74869cfea4df6bb1f6669013ff3a315d86252edf5894ca30  0032-ARM-dts-ti-omap-samsung-espresso10-add-the-sensor-mo.patch
+3f449a62543f9cd52bb92603d9e6c9acdee0d392142bd5a8dcb20393a47897a59ade79e059f96dc3fc182ecb551d2187dea1dff21b4c3d58b79c8cc53dd965f0  0032-ARM-dts-ti-omap-samsung-espresso10-add-the-sensor-mo.patch
 bc87b845f1c6dc89d1cdd5ab29ecb54969edd3d1f7545f7f51aa2b3d714972627758db9b4a4e8b5985b17b586ac9c439c57efcac1244b593f8f86a42e6d8a9d2  0033-ASoC-dt-bindings-add-the-Samsung-Galaxy-Tab-2-audio.patch
 0496d89df735976c19d86527e4783d423e0914c5589c1a2ae88fdee689bedd6d57751813aa6ae138786e4ae118cb4004b5e2dc1f9ea5aa36ecf44b94a34f041d  0034-ASoC-ti-add-a-machine-driver-for-the-Samsung-Galaxy.patch
 30c4f353b125d59c0633543722aa80efa4dfa2ab70f620c3fb584c0ac2c0a0f6ad4ba146a754b423ac9fe78115fc3c1ed2de8a35eea29c312694cef8e0de40fe  0035-ARM-dts-ti-omap-espresso-common-add-the-WM1811-audio.patch
-2f23990370d2b8f3a7f040021475fc7a6fe7b5803e1f0f955a5b295f07bcba9511feafa70d85956d4b3af2048e11ffbe83811203341f27ac3e82d8b364f10bf8  0036-ARM-dts-ti-omap-samsung-espresso10-add-the-STMPE811-.patch
+43249c206fd9cd7530e35ee3ceac3c2ba1701f806dd3403106fdf35cfd385b963b515f860090b49d68b3b4cc123d661346fb62969b769c8867c30caa324fcbcb  0036-ARM-dts-ti-omap-espresso-common-add-the-STMPE811-ADC.patch
 7068d5edfe9a581136a4d117ad644b1103b1efd561c3bd91a6510b2d26e6ecdb5a15752ab1c4cc5fb1e4fb6c4c468ada94740a1dec2f36947cd038f1fefbcda8  0037-usb-phy-twl6030-balance-the-usb3v3-regulator-enables.patch
+570b5bfee59320c02ddeab18f7b581b0d1b58da0cf4cfb2114b65af7cdfc379ccc0b20c96d3dec09b352cab773e2e72f5d9e0f6e3b17ac4d1b90dd4c5397900d  0038-dt-bindings-arm-ti-omap-add-the-Galaxy-Tab-2-10.1-Best-Buy-variant.patch
+30cfaee668bc9c268a1342139e0112156b74258815e4458ba3fdd5247d5eb4d9386f9d147009363325aefbb00d4bd2bf6dfb1eac8b2ca7d7c436cff0d9117c04  0039-ARM-dts-ti-omap-add-the-Samsung-Galaxy-Tab-2-10.1-Best-Buy-variant.patch
 "

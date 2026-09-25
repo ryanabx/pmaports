@@ -1,0 +1,80 @@
+From 64ec803c3fff28078ec8b3ebf936acc92af627bf Mon Sep 17 00:00:00 2001
+From: Ryan Brue <ryanbrue.dev@gmail.com>
+Date: Fri, 25 Sep 2026 17:21:30 -0500
+Subject: [PATCH] ARM: dts: ti: omap: espresso-common: add the STMPE811 ADC
+
+The Galaxy Tab 2 has an STMPE811 at 0x41 on the bit-banged ADC bus,
+used as an ADC only. Samsung's kernel reads the headset detection
+voltage (EAR_ADC_35, channel 4), REMOTE_SENSE (5), the charger type
+(ADC_CHECK_1, 6) and the accessory ID of the 30-pin connector (7) from
+it, with a 12-bit, internal-reference setup at 6.5 MHz, and leaves
+channels 0-3 unused. Its interrupt output is ADC_INT on GPIO 36
+(gpmc_ad12), which the bootloader sets up as an input with pull-up;
+mainline's stmpe-adc needs it for the conversion-done interrupt.
+
+Describe the chip and its ADC.
+
+Tested on a Galaxy Tab 2 10.1 (GT-P5113), on the bus pins of the
+"Best Buy" variant: chip ID 0x811, all four channels read through the
+interrupt (with nothing attached: headset line 0 V, 2.78 V with the
+headset mic bias on; accessory ID at 3.3 V), and the chip temperature.
+
+Assisted-by: LLM
+---
+ .../omap/omap4-samsung-espresso-common.dtsi   | 33 ++++++++++++++++++-
+ 1 file changed, 32 insertions(+), 1 deletion(-)
+
+diff --git a/arch/arm/boot/dts/ti/omap/omap4-samsung-espresso-common.dtsi b/arch/arm/boot/dts/ti/omap/omap4-samsung-espresso-common.dtsi
+index 42f905f352b6..a70a964dc0c2 100644
+--- a/arch/arm/boot/dts/ti/omap/omap4-samsung-espresso-common.dtsi
++++ b/arch/arm/boot/dts/ti/omap/omap4-samsung-espresso-common.dtsi
+@@ -76,7 +76,31 @@ i2c-gpio6 {
+ 		#address-cells = <1>;
+ 		#size-cells = <0>;
+ 
+-		/* TODO: STMPE811 ADC at 0x41 */
++		stmpe811: adc@41 {
++			compatible = "st,stmpe811";
++			reg = <0x41>;
++			pinctrl-names = "default";
++			pinctrl-0 = <&stmpe811_pins>;
++			interrupt-parent = <&gpio2>;
++			interrupts = <4 IRQ_TYPE_LEVEL_LOW>; /* GPIO_36 */
++
++			/* vendor ADC setup: 80 clocks, 12 bit, internal reference, 6.5 MHz */
++			st,sample-time = <3>;
++			st,mod-12b = <1>;
++			st,ref-sel = <0>;
++			st,adc-freq = <3>;
++
++			/*
++			 * The vendor kernel uses channels 4-7: headset detection
++			 * (EAR_ADC_35), REMOTE_SENSE, charger type (ADC_CHECK_1)
++			 * and the accessory ID of the 30-pin connector.
++			 */
++			stmpe_adc: adc {
++				compatible = "st,stmpe-adc";
++				st,norequest-mask = <0x0f>;
++				#io-channel-cells = <1>;
++			};
++		};
+ 	};
+ 
+ 	i2c-gpio7 {
+@@ -479,6 +503,13 @@ OMAP4_IOPAD(0x09e, PIN_INPUT_PULLUP | MUX_MODE3)
+ 		>;
+ 	};
+ 
++	stmpe811_pins: pinmux-stmpe811-pins {
++		pinctrl-single,pins = <
++			OMAP4_IOPAD(0x058, PIN_INPUT_PULLUP | MUX_MODE3)
++			/* gpmc_ad12.gpio_36 - ADC_INT */
++		>;
++	};
++
+ 	i2c7_pins: pinmux-i2c7-pins {
+ 		pinctrl-single,pins = <
+ 			OMAP4_IOPAD(0x08a, PIN_INPUT_PULLUP | MUX_MODE3)
+-- 
+2.55.0
+

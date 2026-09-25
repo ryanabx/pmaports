@@ -1,4 +1,4 @@
-From 796478b3884bc4998a5779f52c0c4e4c896890de Mon Sep 17 00:00:00 2001
+From e7ec7c4efd16c9dbf421e0bfd704083e8ade9c21 Mon Sep 17 00:00:00 2001
 From: Ryan Brue <ryanbrue.dev@gmail.com>
 Date: Wed, 23 Sep 2026 20:36:52 -0500
 Subject: [PATCH] ARM: dts: ti: omap: samsung-espresso10: describe the battery
@@ -19,7 +19,7 @@ Assisted-by: LLM
  2 files changed, 20 insertions(+), 1 deletion(-)
 
 diff --git a/arch/arm/boot/dts/ti/omap/omap4-samsung-espresso-common.dtsi b/arch/arm/boot/dts/ti/omap/omap4-samsung-espresso-common.dtsi
-index 5a2656f42fef..3c05c8ea97d4 100644
+index 17ad4ef0fc1d..840837d1f8e0 100644
 --- a/arch/arm/boot/dts/ti/omap/omap4-samsung-espresso-common.dtsi
 +++ b/arch/arm/boot/dts/ti/omap/omap4-samsung-espresso-common.dtsi
 @@ -63,7 +63,7 @@ i2c-gpio7 {
@@ -32,7 +32,7 @@ index 5a2656f42fef..3c05c8ea97d4 100644
  			reg = <0x36>;
  			pinctrl-0 = <&fuel_alert_irq>;
 diff --git a/arch/arm/boot/dts/ti/omap/omap4-samsung-espresso10.dts b/arch/arm/boot/dts/ti/omap/omap4-samsung-espresso10.dts
-index c0266cf97b53..acf440c6a75b 100644
+index 558dc3c029e9..6f266d3a2a1f 100644
 --- a/arch/arm/boot/dts/ti/omap/omap4-samsung-espresso10.dts
 +++ b/arch/arm/boot/dts/ti/omap/omap4-samsung-espresso10.dts
 @@ -7,6 +7,19 @@ / {
@@ -53,9 +53,9 @@ index c0266cf97b53..acf440c6a75b 100644
 +	};
 +
  	i2c-gpio5 {
- 		/*
- 		 * On the 10.1" the charger bus is on GPIO 113 (SDA) and GPIO 110
-@@ -29,6 +42,7 @@ smb347: charger@6 {
+ 		smb347: charger@6 {
+ 			compatible = "summit,smb347";
+@@ -18,6 +31,7 @@ smb347: charger@6 {
  			summit,enable-charge-control = <SMB3XX_CHG_ENABLE_SW>;
  			summit,chip-temperature-threshold-celsius = <120>;
  			summit,usb-current-limit-microamp = <1800000>;
@@ -63,18 +63,15 @@ index c0266cf97b53..acf440c6a75b 100644
  		};
  	};
  
-@@ -111,6 +125,11 @@ rmi4-f11@11 {
+@@ -99,3 +113,8 @@ rmi4-f11@11 {
+ 		};
  	};
  };
- 
++
 +&fuel_gauge {
 +	power-supplies = <&smb347>;
 +	monitored-battery = <&battery>;
 +};
-+
- &omap4_pmx_core {
- 	i2c5_pins_espresso10: pinmux-i2c5-espresso10-pins {
- 		pinctrl-single,pins = <
 -- 
 2.55.0
 

@@ -1,4 +1,4 @@
-From 375e00e659e558e60f8786cb6ca3c1645126fc23 Mon Sep 17 00:00:00 2001
+From d9a2dab7ec389a945776f0491e02e1c5d098d349 Mon Sep 17 00:00:00 2001
 From: Ryan Brue <ryanbrue.dev@gmail.com>
 Date: Thu, 24 Sep 2026 14:38:18 -0500
 Subject: [PATCH] ARM: dts: ti: omap: samsung-espresso10: add the sensor mount
@@ -19,6 +19,10 @@ axis points up and the field's vertical part points down, as it does in
 the northern hemisphere, so the two agree.
 
 Describe them as mount matrices.
+
+Checked on a GT-P5113: with the matrices applied, face up reads
+z = +0.99 g, face down z = -0.98 g, upright in landscape y = +0.96 g,
+and in portrait with the left or right edge down x = +0.98 g or -0.98 g.
 
 Assisted-by: LLM
 ---

@@ -1,4 +1,4 @@
-From a48acbdbb6dba1f118ea88dfdceb8d92d116a860 Mon Sep 17 00:00:00 2001
+From f6a57f8d2afa7ede5393a062178bae6d479fc65f Mon Sep 17 00:00:00 2001
 From: Ryan Brue <ryanbrue.dev@gmail.com>
 Date: Wed, 23 Sep 2026 20:51:11 -0500
 Subject: [PATCH] ARM: dts: ti: omap: samsung-espresso10: size the splash
@@ -18,10 +18,10 @@ Assisted-by: LLM
  1 file changed, 5 insertions(+)
 
 diff --git a/arch/arm/boot/dts/ti/omap/omap4-samsung-espresso10.dts b/arch/arm/boot/dts/ti/omap/omap4-samsung-espresso10.dts
-index acf440c6a75b..91e152c6fade 100644
+index 6f266d3a2a1f..30b5750c0c1f 100644
 --- a/arch/arm/boot/dts/ti/omap/omap4-samsung-espresso10.dts
 +++ b/arch/arm/boot/dts/ti/omap/omap4-samsung-espresso10.dts
-@@ -125,6 +125,11 @@ rmi4-f11@11 {
+@@ -114,6 +114,11 @@ rmi4-f11@11 {
  	};
  };
  
