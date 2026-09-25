@@ -2,7 +2,7 @@
 maintainer="Mithil Bavishi <bavishimithil@gmail.com>"
 pkgname=linux-postmarketos-omap
 pkgver=7.1.5
-pkgrel=30
+pkgrel=31
 pkgdesc="Mainline kernel fork for OMAP devices"
 arch="armv7"
 url="https://kernel.org/"
@@ -83,6 +83,7 @@ source="
 	0034-ASoC-ti-add-a-machine-driver-for-the-Samsung-Galaxy.patch
 	0035-ARM-dts-ti-omap-espresso-common-add-the-WM1811-audio.patch
 	0036-ARM-dts-ti-omap-samsung-espresso10-add-the-STMPE811-.patch
+	0037-usb-phy-twl6030-balance-the-usb3v3-regulator-enables.patch
 "
 builddir="$srcdir/linux-$_kernver"
 replaces="linux-samsung-espresso3g linux-nokia-n900"
@@ -151,4 +152,5 @@ bc87b845f1c6dc89d1cdd5ab29ecb54969edd3d1f7545f7f51aa2b3d714972627758db9b4a4e8b59
 0496d89df735976c19d86527e4783d423e0914c5589c1a2ae88fdee689bedd6d57751813aa6ae138786e4ae118cb4004b5e2dc1f9ea5aa36ecf44b94a34f041d  0034-ASoC-ti-add-a-machine-driver-for-the-Samsung-Galaxy.patch
 30c4f353b125d59c0633543722aa80efa4dfa2ab70f620c3fb584c0ac2c0a0f6ad4ba146a754b423ac9fe78115fc3c1ed2de8a35eea29c312694cef8e0de40fe  0035-ARM-dts-ti-omap-espresso-common-add-the-WM1811-audio.patch
 2f23990370d2b8f3a7f040021475fc7a6fe7b5803e1f0f955a5b295f07bcba9511feafa70d85956d4b3af2048e11ffbe83811203341f27ac3e82d8b364f10bf8  0036-ARM-dts-ti-omap-samsung-espresso10-add-the-STMPE811-.patch
+7068d5edfe9a581136a4d117ad644b1103b1efd561c3bd91a6510b2d26e6ecdb5a15752ab1c4cc5fb1e4fb6c4c468ada94740a1dec2f36947cd038f1fefbcda8  0037-usb-phy-twl6030-balance-the-usb3v3-regulator-enables.patch
 "

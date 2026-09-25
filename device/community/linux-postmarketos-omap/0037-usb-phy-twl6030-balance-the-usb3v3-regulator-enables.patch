@@ -1,0 +1,90 @@
+From af87e64e44ee10a9454a69b89360cbe3c781f965 Mon Sep 17 00:00:00 2001
+From: Ryan Brue <ryanbrue.dev@gmail.com>
+Date: Fri, 25 Sep 2026 03:06:06 -0500
+Subject: [PATCH] usb: phy: twl6030: balance the usb3v3 regulator enables
+
+twl6030_usb_irq() enables the usb3v3 (LDOUSB) regulator every time it
+sees VBUS, and twl6030_usbotg_irq() every time it sees ID grounded, but
+VBUS going away disables it only once. The VBUS interrupt handler also
+runs from get_status_work one second after probe, so a board that boots
+with VBUS present and then gets a VBUS interrupt holds two enables, and
+the regulator never turns off again. twl6030_usb_remove() doesn't drop
+the enable it holds at all, so unbinding the driver with a cable
+attached warns:
+
+  WARNING: drivers/regulator/core.c:2657 at _regulator_put+0x6c/0x74
+  ...
+  regulator_put from twl6030_usb_remove+0x58/0x68
+
+and leaks the enable.
+
+Enable the regulator only when it isn't enabled by the driver yet
+(twl->asleep, which already tracks that for the disable), mark it
+enabled only if that worked, and disable it in remove.
+
+Assisted-by: LLM
+---
+ drivers/usb/phy/phy-twl6030-usb.c | 26 ++++++++++++++++----------
+ 1 file changed, 16 insertions(+), 10 deletions(-)
+
+diff --git a/drivers/usb/phy/phy-twl6030-usb.c b/drivers/usb/phy/phy-twl6030-usb.c
+index 8c09db750bfd..91ebec3279a7 100644
+--- a/drivers/usb/phy/phy-twl6030-usb.c
++++ b/drivers/usb/phy/phy-twl6030-usb.c
+@@ -202,6 +202,18 @@ static struct attribute *twl6030_attrs[] = {
+ };
+ ATTRIBUTE_GROUPS(twl6030);
+ 
++/* enable the USB LDO once for VBUS or ID; the interrupts can repeat */
++static void twl6030_usb_ldo_on(struct twl6030_usb *twl)
++{
++	if (twl->asleep)
++		return;
++
++	if (regulator_enable(twl->usb3v3))
++		dev_err(twl->dev, "Failed to enable usb3v3\n");
++	else
++		twl->asleep = 1;
++}
++
+ static irqreturn_t twl6030_usb_irq(int irq, void *_twl)
+ {
+ 	struct twl6030_usb *twl = _twl;
+@@ -215,11 +227,7 @@ static irqreturn_t twl6030_usb_irq(int irq, void *_twl)
+ 						CONTROLLER_STAT1);
+ 	if (!(hw_state & STS_USB_ID)) {
+ 		if (vbus_state & VBUS_DET) {
+-			ret = regulator_enable(twl->usb3v3);
+-			if (ret)
+-				dev_err(twl->dev, "Failed to enable usb3v3\n");
+-
+-			twl->asleep = 1;
++			twl6030_usb_ldo_on(twl);
+ 			status = MUSB_VBUS_VALID;
+ 			twl->linkstat = status;
+ 			ret = musb_mailbox(status);
+@@ -254,11 +262,7 @@ static irqreturn_t twl6030_usbotg_irq(int irq, void *_twl)
+ 	hw_state = twl6030_readb(twl, TWL6030_MODULE_ID0, STS_HW_CONDITIONS);
+ 
+ 	if (hw_state & STS_USB_ID) {
+-		ret = regulator_enable(twl->usb3v3);
+-		if (ret)
+-			dev_err(twl->dev, "Failed to enable usb3v3\n");
+-
+-		twl->asleep = 1;
++		twl6030_usb_ldo_on(twl);
+ 		twl6030_writeb(twl, TWL_MODULE_USB, 0x1, USB_ID_INT_EN_HI_CLR);
+ 		twl6030_writeb(twl, TWL_MODULE_USB, 0x10, USB_ID_INT_EN_HI_SET);
+ 		status = MUSB_ID_GROUND;
+@@ -419,6 +423,8 @@ static void twl6030_usb_remove(struct platform_device *pdev)
+ 			REG_INT_MSK_STS_C);
+ 	free_irq(twl->irq1, twl);
+ 	free_irq(twl->irq2, twl);
++	if (twl->asleep)
++		regulator_disable(twl->usb3v3);
+ 	regulator_put(twl->usb3v3);
+ 	cancel_work_sync(&twl->set_vbus_work);
+ }
+-- 
+2.55.0
+
