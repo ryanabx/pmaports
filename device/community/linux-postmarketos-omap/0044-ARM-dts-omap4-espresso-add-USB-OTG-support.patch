@@ -1,0 +1,134 @@
+From 83b7777eae2fefcb9b05ab8d97ebd308db778abd Mon Sep 17 00:00:00 2001
+From: Nuke <retuhmadam2010@proton.me>
+Date: Thu, 13 Aug 2026 18:42:03 +0400
+Subject: [PATCH 44/44] ARM: dts: omap4: espresso: add USB OTG support
+
+[rebased onto "espresso-common: add the STMPE811 ADC" and the espresso10
+Best Buy variant DT: the STMPE811 node and its ADC_INT pin group are
+already in espresso-common, so they are dropped here; the connector uses
+channel index 3 (= channel 7, ACCESSORY_ID) of that node as before]
+---
+ .../omap/omap4-samsung-espresso-common.dtsi   | 77 ++++++++++++++++++-
+ 1 file changed, 76 insertions(+), 1 deletion(-)
+
+diff --git a/arch/arm/boot/dts/ti/omap/omap4-samsung-espresso-common.dtsi b/arch/arm/boot/dts/ti/omap/omap4-samsung-espresso-common.dtsi
+index a70a964dc0c2..73befc4f1942 100644
+--- a/arch/arm/boot/dts/ti/omap/omap4-samsung-espresso-common.dtsi
++++ b/arch/arm/boot/dts/ti/omap/omap4-samsung-espresso-common.dtsi
+@@ -344,6 +344,35 @@ codec {
+ 			sound-dai = <&wm1811>;
+ 		};
+ 	};
++
++	/*
++	 * ACCESSORY_EN (GPIO_172) enables the external 5 V supply
++	 * for 30-pin accessories and USB VBUS.
++	 */
++	reg_otg_vbus: regulator-otg-vbus {
++		compatible = "regulator-fixed";
++		regulator-name = "otg_vbus";
++		regulator-min-microvolt = <5000000>;
++		regulator-max-microvolt = <5000000>;
++		gpio = <&gpio6 12 GPIO_ACTIVE_HIGH>; /* GPIO_172 */
++		enable-active-high;
++		pinctrl-names = "default";
++		pinctrl-0 = <&accessory_en_pin>;
++	};
++
++	/* STMPE811 ADC on a GPIO-driven I2C bus */
++
++	p30_connector: connector {
++		compatible = "samsung,p30-connector";
++		label = "p30";
++
++		detect-gpios = <&gpio1 31 GPIO_ACTIVE_LOW>; /* DOCK_INT */
++		io-channels = <&stmpe_adc 3>;
++		io-channel-names = "accessory-id";
++
++		pinctrl-names = "default";
++		pinctrl-0 = <&dock_int_pin &usb_sel_pins>;
++	};
+ };
+ 
+ &omap4_pmx_wkup {
+@@ -357,6 +386,14 @@ OMAP4_IOPAD(0x05C, PIN_INPUT | MUX_MODE3)
+ 			/* fref_clk4_out.gpio_wk8 - VOL_DN */
+ 		>;
+ 	};
++
++	dock_int_pin: pinmux_dock_int_pin {
++		pinctrl-single,pins = <
++			OMAP4_IOPAD(0x058, WAKEUP_EN | PIN_INPUT |
++				   MUX_MODE3)
++			/* fref_clk3_out.gpio_wk31 - DOCK_INT */
++		>;
++	};
+ };
+ 
+ &omap4_pmx_core {
+@@ -528,6 +565,24 @@ OMAP4_IOPAD(0x156, PIN_INPUT_PULLDOWN | MUX_MODE7)
+ 		>;
+ 	};
+ 
++	usb_sel_pins: pinmux-usb-sel-pins {
++		pinctrl-single,pins = <
++			OMAP4_IOPAD(0x088, PIN_OUTPUT | MUX_MODE3)
++			/* gpmc_nbe1.gpio_60 - USB_SEL2 */
++
++			OMAP4_IOPAD(0x15a, PIN_OUTPUT | MUX_MODE3)
++			/* mcspi4_cs0.gpio_154 - USB_SEL1 */
++		>;
++	};
++
++	accessory_en_pin: pinmux-accessory-en-pin {
++		pinctrl-single,pins = <
++			OMAP4_IOPAD(0x17e, PIN_OUTPUT |
++				   PIN_OFF_OUTPUT_LOW | MUX_MODE3)
++			/* kpd_col4.gpio_172 */
++		>;
++	};
++
+ 	lvds_pins: pinmux-lvds-pins {
+ 		pinctrl-single,pins = <
+ 			OMAP4_IOPAD(0X136, PIN_OUTPUT | MUX_MODE3)
+@@ -880,12 +935,14 @@ dpi_out: endpoint {
+ 
+ &twl_usb_comparator {
+ 	usb-supply = <&ldousb>;
++	vbus-supply = <&reg_otg_vbus>;
++	extcon = <&p30_connector>;
+ };
+ 
+ &usb_otg_hs {
+ 	interface-type = <1>;
+ 	mode = <3>;
+-	power = <50>;
++	power = <250>;
+ };
+ 
+ &mmc1 {
+@@ -978,3 +1035,21 @@ &mcbsp3 {
+ 	pinctrl-0 = <&mcbsp3_pins>;
+ 	status = "okay";
+ };
++
++&gpio2 {
++	usb_sel2_hog {
++		gpio-hog;
++		gpios = <28 GPIO_ACTIVE_HIGH>; /* GPIO60 */
++		output-low;
++		line-name = "USB_SEL2";
++	};
++};
++
++&gpio5 {
++	usb_sel1_hog {
++		gpio-hog;
++		gpios = <26 GPIO_ACTIVE_HIGH>; /* GPIO154 */
++		output-high;
++		line-name = "USB_SEL1";
++	};
++};
+-- 
+2.55.0
+

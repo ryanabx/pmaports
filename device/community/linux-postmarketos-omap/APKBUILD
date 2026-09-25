@@ -2,7 +2,7 @@
 maintainer="Mithil Bavishi <bavishimithil@gmail.com>"
 pkgname=linux-postmarketos-omap
 pkgver=7.1.5
-pkgrel=35
+pkgrel=36
 pkgdesc="Mainline kernel fork for OMAP devices"
 arch="armv7"
 url="https://kernel.org/"
@@ -85,6 +85,11 @@ source="
 	0037-usb-phy-twl6030-balance-the-usb3v3-regulator-enables.patch
 	0038-dt-bindings-arm-ti-omap-add-the-Galaxy-Tab-2-10.1-Best-Buy-variant.patch
 	0039-ARM-dts-ti-omap-add-the-Samsung-Galaxy-Tab-2-10.1-Best-Buy-variant.patch
+	0040-dt-bindings-extcon-add-Samsung-P30-connector.patch
+	0041-extcon-add-Samsung-P30-connector-driver.patch
+	0042-usb-musb-omap2430-handle-initial-ID-ground-transitio.patch
+	0043-usb-phy-twl6030-add-extcon-and-external-VBUS-support.patch
+	0044-ARM-dts-omap4-espresso-add-USB-OTG-support.patch
 "
 builddir="$srcdir/linux-$_kernver"
 replaces="linux-samsung-espresso3g linux-nokia-n900"
@@ -116,7 +121,7 @@ package() {
 
 sha512sums="
 17f95307b6e86a0794df146d97256ba4783b7a494f5eb43aafc14d64367541874cec7f6e8c2ea724eca149db18e4bd5880bf28a8c5e47ae8a769776bbd955af8  linux-7.1.5.tar.xz
-877e32c255d72792879ba00211eeaead987019ee422823217f07895d3c2dc52778cb06d0d6a660add36b44b423e751b8b3a853be2f3998c6845d799d1b80d5db  config-postmarketos-omap.armv7
+c5c445f1117d51f113ebadef28da8eff0fec346f7b5ecc84b7abd8607dfb8b9665340405553f8391a774e9659f1659eae2c6fa9b3dc47d45271c0b043c2fb84a  config-postmarketos-omap.armv7
 1a68e3a32ae1e56d325c0f759ee66d64d14f46a5d52e75ae008dfddac335beb3aa7acaf62abb95b6d5ce1557f0cf9b4c31ab78e110af178db1ac963bb377dbf0  0001-iio-rescale-revert-logic.patch
 11bcc2bdcd8862e56f23a763d393b1d5f62af82cfd6dd347b5786b9f299144950d5941579091fea144371bad1188f366d8cd5a26453fc852fd3e769df2bd21bc  0002-hsi-dma-fix.patch
 a17ddc7a41ce2a6be04a8ee0ffcfb8dbb0381d1ce7fac8336befd79bc388ce5d16b6ba3a4732a540a43add55c43b015a3b77205a007a058d4d6e3291234b5cc0  0003-Add-TWL6030-power-button-support-to-twl-pwrbutton.patch
@@ -155,4 +160,9 @@ bc87b845f1c6dc89d1cdd5ab29ecb54969edd3d1f7545f7f51aa2b3d714972627758db9b4a4e8b59
 7068d5edfe9a581136a4d117ad644b1103b1efd561c3bd91a6510b2d26e6ecdb5a15752ab1c4cc5fb1e4fb6c4c468ada94740a1dec2f36947cd038f1fefbcda8  0037-usb-phy-twl6030-balance-the-usb3v3-regulator-enables.patch
 570b5bfee59320c02ddeab18f7b581b0d1b58da0cf4cfb2114b65af7cdfc379ccc0b20c96d3dec09b352cab773e2e72f5d9e0f6e3b17ac4d1b90dd4c5397900d  0038-dt-bindings-arm-ti-omap-add-the-Galaxy-Tab-2-10.1-Best-Buy-variant.patch
 30cfaee668bc9c268a1342139e0112156b74258815e4458ba3fdd5247d5eb4d9386f9d147009363325aefbb00d4bd2bf6dfb1eac8b2ca7d7c436cff0d9117c04  0039-ARM-dts-ti-omap-add-the-Samsung-Galaxy-Tab-2-10.1-Best-Buy-variant.patch
+14669169ef5226072cfa4729a4bc924ddce5a96511cd5b494c9ebad3021ab2ace0e30e5cb570aa3179f973828a8905c08f28e703e1d77a3855495df3fdf68633  0040-dt-bindings-extcon-add-Samsung-P30-connector.patch
+be45a1e74a864b80b40e7e7ed63d1ef79f7e3d9115ef68ec39405dea2450246297dc52f4830c6cb5dcb93f164a6155591e5f49120ab26ccfc3021cb0be232b2c  0041-extcon-add-Samsung-P30-connector-driver.patch
+222fb382e6735e7303a0510e4873274f4f339f5a9ce50de9fbbf164b6bc618d1287531a5fa97ebb33560218c2876b1fb329e5f50ad4c0749e8475b4c53a1059c  0042-usb-musb-omap2430-handle-initial-ID-ground-transitio.patch
+06528a66e64a93ebe0c5c9f5ed264c31abda5e0498a11209e907f302c9119fabf57915ca2a2eddecfcd1a90748cf01771e5b2534e940aebbf075dd58d1ba773b  0043-usb-phy-twl6030-add-extcon-and-external-VBUS-support.patch
+59984f639e7cd4bd32193a283516537d54b468903a9f795de110d35d3c7358802ef9d2971fbbfc9b6674227e3b31f015dfe38d60104b492182eabf8b884c46cc  0044-ARM-dts-omap4-espresso-add-USB-OTG-support.patch
 "
