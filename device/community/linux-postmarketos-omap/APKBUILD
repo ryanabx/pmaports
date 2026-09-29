@@ -2,7 +2,7 @@
 maintainer="Mithil Bavishi <bavishimithil@gmail.com>"
 pkgname=linux-postmarketos-omap
 pkgver=7.1.5
-pkgrel=35
+pkgrel=36
 pkgdesc="Mainline kernel fork for OMAP devices"
 arch="armv7"
 url="https://kernel.org/"
@@ -154,5 +154,5 @@ bc87b845f1c6dc89d1cdd5ab29ecb54969edd3d1f7545f7f51aa2b3d714972627758db9b4a4e8b59
 43249c206fd9cd7530e35ee3ceac3c2ba1701f806dd3403106fdf35cfd385b963b515f860090b49d68b3b4cc123d661346fb62969b769c8867c30caa324fcbcb  0036-ARM-dts-ti-omap-espresso-common-add-the-STMPE811-ADC.patch
 7068d5edfe9a581136a4d117ad644b1103b1efd561c3bd91a6510b2d26e6ecdb5a15752ab1c4cc5fb1e4fb6c4c468ada94740a1dec2f36947cd038f1fefbcda8  0037-usb-phy-twl6030-balance-the-usb3v3-regulator-enables.patch
 570b5bfee59320c02ddeab18f7b581b0d1b58da0cf4cfb2114b65af7cdfc379ccc0b20c96d3dec09b352cab773e2e72f5d9e0f6e3b17ac4d1b90dd4c5397900d  0038-dt-bindings-arm-ti-omap-add-the-Galaxy-Tab-2-10.1-Best-Buy-variant.patch
-30cfaee668bc9c268a1342139e0112156b74258815e4458ba3fdd5247d5eb4d9386f9d147009363325aefbb00d4bd2bf6dfb1eac8b2ca7d7c436cff0d9117c04  0039-ARM-dts-ti-omap-add-the-Samsung-Galaxy-Tab-2-10.1-Best-Buy-variant.patch
+6a7a36ccefe1f010520091551a2adcd06045044a9b40ef6daf9fa82068aa3101d6be6b281b4827620c0ece2f52257761b7424b4447f73a181dddf22e368a06b2  0039-ARM-dts-ti-omap-add-the-Samsung-Galaxy-Tab-2-10.1-Best-Buy-variant.patch
 "

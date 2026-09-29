@@ -1,4 +1,4 @@
-From dda91f27f500482e8a479a47b01fbc519a830277 Mon Sep 17 00:00:00 2001
+From a30123c0360963dab1a5dd7a5c6c1a55f20d6849 Mon Sep 17 00:00:00 2001
 From: Ryan Brue <ryanbrue.dev@gmail.com>
 Date: Fri, 25 Sep 2026 17:23:24 -0500
 Subject: [PATCH] ARM: dts: ti: omap: add the Samsung Galaxy Tab 2 10.1 Best
@@ -18,16 +18,20 @@ A GT-P5113 (US) has this layout: GPIO 41 reads high, the SMB347 ACKs at
 0x41 on GPIO 137/134, and the bootloader leaves exactly those four pads
 as GPIO inputs with pull-up.
 
-Add a DT for the variant that overrides the two bus pin sets.
+Add a DT for the variant that overrides the two bus pin sets. The WiFi
+module is the same on both layouts, so point brcmfmac at the espresso10
+NVRAM file with brcm,board-type: otherwise the new root compatible makes
+it look for brcmfmac4330-sdio.samsung,espresso10-bby.txt, finds no NVRAM,
+and the chip never comes up ("HT Avail timeout").
 
 Tested on a GT-P5113: the charger probes and charges the battery, the
-STMPE811 probes and reads its channels.
+STMPE811 probes and reads its channels, WiFi scans.
 
 Assisted-by: LLM
 ---
  arch/arm/boot/dts/ti/omap/Makefile            |  1 +
- .../ti/omap/omap4-samsung-espresso10-bby.dts  | 45 +++++++++++++++++++
- 2 files changed, 46 insertions(+)
+ .../ti/omap/omap4-samsung-espresso10-bby.dts  | 50 +++++++++++++++++++
+ 2 files changed, 51 insertions(+)
  create mode 100644 arch/arm/boot/dts/ti/omap/omap4-samsung-espresso10-bby.dts
 
 diff --git a/arch/arm/boot/dts/ti/omap/Makefile b/arch/arm/boot/dts/ti/omap/Makefile
@@ -44,10 +48,10 @@ index 498c36ccb5ea..85e9de785dd4 100644
  
 diff --git a/arch/arm/boot/dts/ti/omap/omap4-samsung-espresso10-bby.dts b/arch/arm/boot/dts/ti/omap/omap4-samsung-espresso10-bby.dts
 new file mode 100644
-index 000000000000..6cd591401cb6
+index 000000000000..6f12e3e9c412
 --- /dev/null
 +++ b/arch/arm/boot/dts/ti/omap/omap4-samsung-espresso10-bby.dts
-@@ -0,0 +1,45 @@
+@@ -0,0 +1,50 @@
 +// SPDX-License-Identifier: (GPL-2.0 OR MIT)
 +/*
 + * Samsung Galaxy Tab 2 10.1, "Best Buy" board variant (the boards with the IR
@@ -72,6 +76,11 @@ index 000000000000..6cd591401cb6
 +		sda-gpios = <&gpio5 9 (GPIO_ACTIVE_HIGH | GPIO_OPEN_DRAIN)>; /* GPIO_137 */
 +		scl-gpios = <&gpio5 6 (GPIO_ACTIVE_HIGH | GPIO_OPEN_DRAIN)>; /* GPIO_134 */
 +	};
++};
++
++&brcmf {
++	/* Same WiFi module as the other layout: load the same NVRAM file */
++	brcm,board-type = "samsung,espresso10";
 +};
 +
 +&omap4_pmx_core {
