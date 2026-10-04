@@ -2,7 +2,7 @@
 maintainer="Ryan Brue <ryanbrue.dev@gmail.com>"
 pkgname=linux-postmarketos-mediatek-mt8173-suez
 pkgver=7.3.0_rc5
-pkgrel=1
+pkgrel=2
 pkgdesc="Mainline kernel fork for the Amazon Fire HD 10 (2017)"
 arch="aarch64"
 _carch="arm64"
@@ -22,7 +22,8 @@ license="GPL-2.0-only"
 #     27.71 MiB decompressed -> BOOTS
 #     28.84 MiB decompressed -> DOES NOT BOOT
 #
-# so the ceiling is somewhere in between. Both figures are real builds of this
+# so the ceiling is somewhere in between. The EL2 stage (below) adds 128 KiB
+# in front of the Image and counts against the same ceiling. Both figures are real builds of this
 # aport differing only in CONFIG_FUNCTION_TRACER, which costs +1.13 MiB; an
 # earlier "somewhere between 28 and 32 MiB" figure came from booting synthetic
 # payloads and is superseded. A stock config decompresses to 35.4 MiB and
@@ -97,11 +98,28 @@ _config="config-$_flavor.$arch"
 _author="ryanabx"
 _repository="linux"
 _branch="ryanabx/devices/amazon-suez"
-_commit="f3c230e7d55ae7fc714c86f9863592686070c9b0"
+_commit="c9d9c8a6cddddf127c81ea380a10306e1dafa255"
 source="
 	$pkgname-$_commit.tar.gz::https://github.com/$_author/$_repository/archive/$_commit.tar.gz
 	$_config
+	el2-stage.bin
 "
+
+# The EL2 stage. The device branch assumes PSCI 1.0 firmware, and this board's
+# BL31 is not that: its CPU_ON/CPU_OFF leave the CPU power domains alone, and
+# its SYSTEM_RESET, SYSTEM_OFF and CPU_SUSPEND never return. The stage is a
+# 128 KiB EL2 firmware that provides PSCI 1.0 in its place (the CPU power
+# domains, SYSTEM_RESET/OFF, SYSTEM_SUSPEND through the SPM) and hands the
+# kernel off at EL1. LK enters the kernel section at the load address, so the
+# stage goes first: /boot/vmlinuz = gzip(stage + Image), and boot-deploy
+# appends the DTB as usual. The board DTS reserves the stage's RAM
+# (firmware@40080000), and the stage turns the DT's psci method into hvc.
+#
+# el2-stage.bin is stage-padded.bin from Ryan Brue's suez-work,
+# scratch/el2-stage/ (stage.S, suspend.c, mtcmos.c; `sh build.sh`, a
+# deterministic build), at suez-work c211253, md5
+# dbdfc0ba97f3315daeb7f83e43a7abef. It is the binary that was tested on the
+# device; an LLVM build of the same source lays the data out differently.
 builddir="$srcdir/$_repository-$_commit"
 
 prepare() {
@@ -128,9 +146,23 @@ package() {
 
 	install -D "$builddir"/include/config/kernel.release \
 		"$pkgdir"/usr/share/kernel/$_flavor/kernel.release
+
+	# Put the EL2 stage in front of the Image (see el2-stage.bin above). The
+	# DT must reserve its RAM, or the kernel would overwrite it.
+	grep -q "firmware@40080000" \
+		"$builddir"/arch/arm64/boot/dts/mediatek/mt8173-amazon-suez.dts \
+		|| die "the board DTS does not reserve the EL2 stage's RAM"
+	# (wc, not stat: abuild symlinks sources into $srcdir)
+	[ "$(wc -c < "$srcdir"/el2-stage.bin)" -eq 131072 ] \
+		|| die "el2-stage.bin is not 128 KiB"
+	gzip -dc "$pkgdir"/boot/vmlinuz > "$srcdir"/Image.plain
+	cat "$srcdir"/el2-stage.bin "$srcdir"/Image.plain \
+		| gzip -9n > "$pkgdir"/boot/vmlinuz
+	rm -f "$srcdir"/Image.plain
 }
 
 sha512sums="
-5125ef0293e4c5a2c3a3a79bd9d4b33f4f69f2872bf82d6ae717145f97398a89627a8788628c427bbbefd51ccd3c9ea5bab65fc4792df61b32020dc248887ab7  linux-postmarketos-mediatek-mt8173-suez-f3c230e7d55ae7fc714c86f9863592686070c9b0.tar.gz
-8e0e8c8f1740d265850669e522709ad8f57197cfc853809b7af997d158d638b0596f5d5c10b1dfbfee430138a74fded62dfee565b71aae1823bf6ca76f5b72f4  config-postmarketos-mediatek-mt8173-suez.aarch64
+2c327e040dc76dc60197591426c50837c615d72e0cc755622cd619434577110df8cf77f6fc018e40fc29db741125a9b39623e598fade73b8c23cf517d840cea2  linux-postmarketos-mediatek-mt8173-suez-c9d9c8a6cddddf127c81ea380a10306e1dafa255.tar.gz
+1c77555d0731e84c2c081879f084af36564d6680ec61d16a8100eeaf8a707f309f3bac0b9caec5add543fed342eee690b52ddbe59bc6bb1ad467d89b598af142  config-postmarketos-mediatek-mt8173-suez.aarch64
+73a749289476ddfb4b5be8743dd22153e134637c55d9fee2d636d14805db29540603dca08495a93273153ee91c45bf64d448eda6d51e9dfc01df4ac9a3c99b3a  el2-stage.bin
 "
