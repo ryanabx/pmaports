@@ -1,0 +1,5 @@
+# Factory addresses for the MT6630's Wi-Fi and Bluetooth; see
+# /usr/sbin/suez-mt6630-addr. Bluetooth has to wait for the controller's
+# setup, which is longer than a udev RUN may take, so it gets a unit.
+ACTION=="add", SUBSYSTEM=="net", DRIVERS=="mt6630s", RUN+="/usr/sbin/suez-mt6630-addr wifi $name"
+ACTION=="add", SUBSYSTEM=="bluetooth", ENV{DEVTYPE}=="host", DRIVERS=="btmtksdio", TAG+="systemd", ENV{SYSTEMD_WANTS}+="suez-mt6630-bdaddr@$name.service"

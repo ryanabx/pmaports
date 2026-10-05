@@ -1,0 +1,9 @@
+[Unit]
+Description=Set the factory Bluetooth address of %i
+# The controller waits unconfigured until it has an address; see the script.
+BindsTo=sys-subsystem-bluetooth-devices-%i.device
+After=sys-subsystem-bluetooth-devices-%i.device
+
+[Service]
+Type=oneshot
+ExecStart=/usr/sbin/suez-mt6630-addr bt %i

@@ -1,0 +1,48 @@
+#!/bin/sh
+# Give the MT6630 its factory addresses. The bootloader leaves them in the
+# devicetree's /idme node, which the mainline drivers do not read, so Wi-Fi
+# comes up with a random address and Bluetooth stays unconfigured until it
+# is given one.
+#
+#   suez-mt6630-addr wifi <iface>     from the udev rule, interface still down
+#   suez-mt6630-addr bt <hciN>        from suez-mt6630-bdaddr@.service
+set -eu
+
+idme() {
+	v=$(tr -d '\0' < "/proc/device-tree/idme/$1/value")
+	echo "$v" | grep -qE '^[0-9A-Fa-f]{12}$' || {
+		echo "suez-mt6630-addr: no usable /idme/$1" >&2
+		exit 1
+	}
+	echo "$v" | sed 's/../&:/g; s/:$//'
+}
+
+case "${1:-}" in
+wifi)
+	ip link set dev "$2" address "$(idme mac_addr)"
+	;;
+bt)
+	addr=$(idme bt_mac_addr)
+	idx=${2#hci}
+	# mgmt refuses the address while the controller is still in setup
+	# (Invalid Index) and once it is powered (Rejected); in between it
+	# waits, unconfigured, for one. btmgmt exits 0 either way.
+	for _ in $(seq 1 30); do
+		if btmgmt --index "$idx" info 2>/dev/null |
+			grep -qi "addr $addr "; then
+			exit 0
+		fi
+		if btmgmt --index "$idx" public-addr "$addr" 2>&1 |
+			grep -q "complete"; then
+			exit 0
+		fi
+		sleep 1
+	done
+	echo "suez-mt6630-addr: $2 did not take $addr" >&2
+	exit 1
+	;;
+*)
+	echo "usage: $0 wifi <iface> | bt <hciN>" >&2
+	exit 2
+	;;
+esac
