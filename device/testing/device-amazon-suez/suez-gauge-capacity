@@ -1,0 +1,41 @@
+#!/bin/sh
+# Keep the fuel gauge's learned capacity across a reboot. The gauge measures
+# what the pack holds from a deep charge or discharge and reports it as
+# charge_full, but the PMIC has nowhere left to keep it, so every boot would
+# start again from the design capacity. The driver makes charge_full writable
+# for this, as cpcap-battery does.
+#
+# Run by udev for every add and change event of the battery. The first event
+# of a boot at which the gauge is ready restores the saved value. After that,
+# a value more than 1 % from the saved one is saved: the margin keeps the file
+# from following the small swings charge_full makes with temperature.
+set -eu
+
+bat=/sys/class/power_supply/mt6397-battery
+saved=/var/lib/suez-gauge/charge_full
+restored=/run/suez-gauge-restored
+
+cur=$(cat "$bat/charge_full")
+# 0 until the driver has built its profiles, just after it registers
+[ "$cur" -gt 0 ] || exit 0
+
+if [ ! -e "$restored" ]; then
+	touch "$restored"
+	if [ -s "$saved" ]; then
+		v=$(cat "$saved")
+		echo "$v" > "$bat/charge_full" ||
+			logger -t suez-gauge-capacity "could not restore $v"
+	fi
+	exit 0
+fi
+
+ref=$(cat "$saved" 2>/dev/null || cat "$bat/charge_full_design")
+diff=$((cur > ref ? cur - ref : ref - cur))
+[ $((diff * 100)) -gt "$ref" ] || exit 0
+
+mkdir -p "${saved%/*}"
+echo "$cur" > "$saved.tmp"
+mv "$saved.tmp" "$saved"
+# a deep discharge ends at the cut-off, possibly without a clean shutdown
+sync
+logger -t suez-gauge-capacity "saved $cur"
