@@ -1,7 +1,7 @@
 maintainer="Mithil Bavishi <bavishimithil@gmail.com>"
 pkgname=firmware-samsung-espresso
 pkgver=2
-pkgrel=0
+pkgrel=1
 pkgdesc="Samsung Galaxy Tab Firmware"
 url="https://github.com/TheMuppets/proprietary_vendor_samsung"
 arch="armv7"
@@ -18,6 +18,8 @@ _files="
 for _i in $_files; do
 	source="$source $_i::$_url/$_i";
 done
+_url_vendor="https://github.com/TheMuppets/proprietary_vendor_samsung/raw/$_commit/espresso-common/proprietary/system/vendor/firmware"
+source="$source BCM4330.hcd::$_url_vendor/BCM4330.hcd"
 
 package() {
 	install -Dm644 "$srcdir/nvram_net.txt" \
@@ -26,8 +28,12 @@ package() {
 		"$pkgdir"/usr/lib/firmware/postmarketos/brcm/"brcmfmac4330-sdio.samsung,espresso10.txt"
 	install -Dm644 "$srcdir/bcmdhd_sta.bin" \
 		"$pkgdir"/usr/lib/firmware/postmarketos/brcm/"brcmfmac4330-sdio.bin"
+	# Bluetooth patch RAM for the BCM4330B1 (hci_uart_bcm)
+	install -Dm644 "$srcdir/BCM4330.hcd" \
+		"$pkgdir"/usr/lib/firmware/postmarketos/brcm/BCM4330B1.hcd
 }
 sha512sums="
 bd2729c2cbc3c52e1abc5c6e0f4ba32b3b77711bc73c76aece591f8de642da69f0edb8620e422e102e0eaced8c9d76870ac63dfc7113e318ad8aa2633a32b10f  bcmdhd_sta.bin
 24c0eab68996c9f80453cf01c8059ec6672175668a13ebd91abcd33bf56afd94c7564d0f6e6d2b87d3a44171ca3dce895ffd13b61d29ae583b76635998e4042f  nvram_net.txt
+79af5b07c28ea687c7c967f258c098bd718c0c24dea718da6335fb15c54926a7e487f37229b4a1ee4f5d84a188a5ed36867aff1447ade5bdaba29b872a78ce95  BCM4330.hcd
 "
