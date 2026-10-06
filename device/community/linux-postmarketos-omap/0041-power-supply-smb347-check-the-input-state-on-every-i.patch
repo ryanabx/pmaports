@@ -1,0 +1,70 @@
+From d31c429c97ca61226151090b3d7f4690303708fe Mon Sep 17 00:00:00 2001
+From: Ryan Brue <ryanbrue.dev@gmail.com>
+Date: Tue, 6 Oct 2026 11:57:29 -0500
+Subject: [PATCH 41/42] power: supply: smb347: check the input state on every
+ interrupt
+
+The interrupt handler updates the online state only when IRQSTAT_E has a
+latched under voltage interrupt for USBIN or DCIN. On the Samsung Galaxy
+Tab 2 10.1, whose interrupt line is wired to the charger's INOK output,
+the handler runs on every connect and disconnect (checked by toggling
+the INOK polarity), but twice a USB disconnect went unnoticed: the USB
+supply stayed online for hours while the battery drained, and status
+read "Not charging" instead of "Discharging". By then the charger had
+reset its registers (CMD_B was back at its default), which it does when
+its input drops out, so the latched bit can't be relied on.
+
+The real-time status bits in the same register are correct whenever they
+are read. Update the online state on every interrupt, and keep counting
+the interrupt as handled when the latched bit was set, as before.
+
+Assisted-by: LLM
+---
+ drivers/power/supply/smb347-charger.c | 29 +++++++++++++++------------
+ 1 file changed, 16 insertions(+), 13 deletions(-)
+
+diff --git a/drivers/power/supply/smb347-charger.c b/drivers/power/supply/smb347-charger.c
+index 435c9afdf32f..5b1be0f8d4fd 100644
+--- a/drivers/power/supply/smb347-charger.c
++++ b/drivers/power/supply/smb347-charger.c
+@@ -986,21 +986,24 @@ static irqreturn_t smb347_interrupt(int irq, void *data)
+ 	}
+ 
+ 	/*
+-	 * If we got an under voltage interrupt it means that AC/USB input
+-	 * was connected or disconnected.
++	 * An under voltage interrupt means that AC/USB input was connected
++	 * or disconnected. Don't rely on its latched bit alone, though: when
++	 * the input drops out, the charger may reset its registers before we
++	 * get here. Compare the input state on every interrupt.
+ 	 */
+-	if (irqstat_e & (IRQSTAT_E_USBIN_UV_IRQ | IRQSTAT_E_DCIN_UV_IRQ)) {
+-		if (smb347_update_ps_status(smb) > 0) {
+-			if (smb->usb_online)
+-				smb347_usb_plugged(smb);
+-			smb347_start_stop_charging(smb);
+-			if (smb->use_mains)
+-				power_supply_changed(smb->mains);
+-			if (smb->use_usb)
+-				power_supply_changed(smb->usb);
+-		}
+-		handled = true;
++	ret = smb347_update_ps_status(smb);
++	if (ret > 0) {
++		if (smb->usb_online)
++			smb347_usb_plugged(smb);
++		smb347_start_stop_charging(smb);
++		if (smb->use_mains)
++			power_supply_changed(smb->mains);
++		if (smb->use_usb)
++			power_supply_changed(smb->usb);
+ 	}
++	if (ret > 0 ||
++	    (irqstat_e & (IRQSTAT_E_USBIN_UV_IRQ | IRQSTAT_E_DCIN_UV_IRQ)))
++		handled = true;
+ 
+ 	return handled ? IRQ_HANDLED : IRQ_NONE;
+ }
+-- 
+2.55.0
+

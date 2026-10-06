@@ -2,7 +2,7 @@
 maintainer="Mithil Bavishi <bavishimithil@gmail.com>"
 pkgname=linux-postmarketos-omap
 pkgver=7.1.5
-pkgrel=36
+pkgrel=37
 pkgdesc="Mainline kernel fork for OMAP devices"
 arch="armv7"
 url="https://kernel.org/"
@@ -85,6 +85,9 @@ source="
 	0037-usb-phy-twl6030-balance-the-usb3v3-regulator-enables.patch
 	0038-dt-bindings-arm-ti-omap-add-the-Galaxy-Tab-2-10.1-Best-Buy-variant.patch
 	0039-ARM-dts-ti-omap-add-the-Samsung-Galaxy-Tab-2-10.1-Best-Buy-variant.patch
+	0040-power-supply-smb347-don-t-cache-the-command-register.patch
+	0041-power-supply-smb347-check-the-input-state-on-every-i.patch
+	0042-power-supply-smb347-program-the-charger-again-when-i.patch
 "
 builddir="$srcdir/linux-$_kernver"
 replaces="linux-samsung-espresso3g linux-nokia-n900"
@@ -155,4 +158,7 @@ bc87b845f1c6dc89d1cdd5ab29ecb54969edd3d1f7545f7f51aa2b3d714972627758db9b4a4e8b59
 7068d5edfe9a581136a4d117ad644b1103b1efd561c3bd91a6510b2d26e6ecdb5a15752ab1c4cc5fb1e4fb6c4c468ada94740a1dec2f36947cd038f1fefbcda8  0037-usb-phy-twl6030-balance-the-usb3v3-regulator-enables.patch
 570b5bfee59320c02ddeab18f7b581b0d1b58da0cf4cfb2114b65af7cdfc379ccc0b20c96d3dec09b352cab773e2e72f5d9e0f6e3b17ac4d1b90dd4c5397900d  0038-dt-bindings-arm-ti-omap-add-the-Galaxy-Tab-2-10.1-Best-Buy-variant.patch
 6a7a36ccefe1f010520091551a2adcd06045044a9b40ef6daf9fa82068aa3101d6be6b281b4827620c0ece2f52257761b7424b4447f73a181dddf22e368a06b2  0039-ARM-dts-ti-omap-add-the-Samsung-Galaxy-Tab-2-10.1-Best-Buy-variant.patch
+90c805b1f305e34292b308783e04cede79435f9e468b2640719894e4e44c476933c86526257328362ed24325eda7b4977674309eb1afa57277c09076eebb6be0  0040-power-supply-smb347-don-t-cache-the-command-register.patch
+e051e025264df446068cdb1477f7fc619a6799680856267aad8a7eb897814e05782aa13c7fedd3aadb0cbef288b848e84f227e249442c893e7442d375c1cb7d5  0041-power-supply-smb347-check-the-input-state-on-every-i.patch
+e7d7fa91dd21d9a3c903f6471493d3ea2acbab3ff6c178b0b910f5d07f24636442144a6804e9e4010eae03a1c2c2923f92b7c5414d0e3cd65504534818c86d3c  0042-power-supply-smb347-program-the-charger-again-when-i.patch
 "

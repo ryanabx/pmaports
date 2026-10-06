@@ -1,0 +1,52 @@
+From cb654e5623f0ea5b618a2b747d7c855111bc8fe4 Mon Sep 17 00:00:00 2001
+From: Ryan Brue <ryanbrue.dev@gmail.com>
+Date: Tue, 6 Oct 2026 11:56:39 -0500
+Subject: [PATCH 40/42] power: supply: smb347: don't cache the command
+ registers
+
+The command registers (CMD_A, CMD_B, CMD_C) hold the charger's runtime
+state: charge enable, the write enable for the configuration registers,
+OTG, and the USB5/1/HC input mode. The charger resets them by itself, at
+power-on reset and, as seen on the Samsung Galaxy Tab 2 10.1, when its
+input power drops out: after a USB disconnect or a sag of the input,
+CMD_B reads 0 (USB1 mode, 100 mA input) while the regmap cache still
+holds the old value.
+
+Since the switch to the generic regmap cache, these registers are
+cached, so regmap_update_bits() compares against the stale value and
+skips the write. On the tablet, writing input_current_limit then has no
+effect: the chip stays in USB1 mode (STAT_E, and so the property, reports
+100 mA), and with a system load of about 0.5 A the battery drains while
+the charger is online. The same goes for charge enable (CMD_A) after
+such a reset.
+
+Mark the command registers volatile, so that updates read the hardware.
+
+Fixes: 17e7bc532cd5 ("power: supply: smb347-charger: Utilize generic regmap caching")
+Assisted-by: LLM
+---
+ drivers/power/supply/smb347-charger.c | 8 ++++++++
+ 1 file changed, 8 insertions(+)
+
+diff --git a/drivers/power/supply/smb347-charger.c b/drivers/power/supply/smb347-charger.c
+index b3d47ec2ced8..435c9afdf32f 100644
+--- a/drivers/power/supply/smb347-charger.c
++++ b/drivers/power/supply/smb347-charger.c
+@@ -1356,6 +1356,14 @@ static int smb347_property_is_writeable(struct power_supply *psy,
+ static bool smb347_volatile_reg(struct device *dev, unsigned int reg)
+ {
+ 	switch (reg) {
++	/*
++	 * The charger resets the command registers by itself: at power-on
++	 * reset, and on some boards when its input power goes away. A cached
++	 * copy would then make regmap skip writes that are still needed.
++	 */
++	case CMD_A:
++	case CMD_B:
++	case CMD_C:
+ 	case IRQSTAT_A:
+ 	case IRQSTAT_C:
+ 	case IRQSTAT_D:
+-- 
+2.55.0
+
