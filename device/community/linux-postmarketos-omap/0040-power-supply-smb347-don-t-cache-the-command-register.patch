@@ -1,8 +1,7 @@
-From cb654e5623f0ea5b618a2b747d7c855111bc8fe4 Mon Sep 17 00:00:00 2001
+From d3024aab88db22f40e49fd513cf89432009dc2e5 Mon Sep 17 00:00:00 2001
 From: Ryan Brue <ryanbrue.dev@gmail.com>
 Date: Tue, 6 Oct 2026 11:56:39 -0500
-Subject: [PATCH 40/42] power: supply: smb347: don't cache the command
- registers
+Subject: [PATCH] power: supply: smb347: don't cache the command registers
 
 The command registers (CMD_A, CMD_B, CMD_C) hold the charger's runtime
 state: charge enable, the write enable for the configuration registers,
@@ -29,10 +28,10 @@ Assisted-by: LLM
  1 file changed, 8 insertions(+)
 
 diff --git a/drivers/power/supply/smb347-charger.c b/drivers/power/supply/smb347-charger.c
-index b3d47ec2ced8..435c9afdf32f 100644
+index 298b0bcd63bc..aea28175cf8a 100644
 --- a/drivers/power/supply/smb347-charger.c
 +++ b/drivers/power/supply/smb347-charger.c
-@@ -1356,6 +1356,14 @@ static int smb347_property_is_writeable(struct power_supply *psy,
+@@ -1191,6 +1191,14 @@ static enum power_supply_property smb347_properties[] = {
  static bool smb347_volatile_reg(struct device *dev, unsigned int reg)
  {
  	switch (reg) {

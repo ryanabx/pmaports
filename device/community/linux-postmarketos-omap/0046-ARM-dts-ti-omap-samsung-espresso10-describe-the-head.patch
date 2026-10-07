@@ -1,8 +1,8 @@
-From 789c5f9fcf8506e0b5ff3da7ae29252d2b111823 Mon Sep 17 00:00:00 2001
+From 6d2ccbc5c173a8aa3e64272d936e704e55761d40 Mon Sep 17 00:00:00 2001
 From: Ryan Brue <ryanbrue.dev@gmail.com>
 Date: Fri, 25 Sep 2026 17:23:51 -0500
-Subject: [PATCH 45/45] WIP: ARM: dts: ti: omap: samsung-espresso10: describe
- the headset jack
+Subject: [PATCH] ARM: dts: ti: omap: samsung-espresso10: describe the headset
+ jack
 
 The jack switch is on GPIO 0 (sim_io, DET_3.5) and the headset keys on
 GPIO 4 (sim_pwrctrl, EAR_SEND_END), both active low. The bootloader
@@ -23,12 +23,10 @@ with the vendor's espresso10 thresholds (4-pole from 1020 mV, keys from
 0, 145 and 335 mV), except that 4-pole ends at 2700 mV instead of
 2800 mV: the unloaded line reads about 2770 mV on this board.
 
-Measured on a GT-P5113 with the cell powered (by hand): DET_3_5 reads 1
+Measured on a GT-P5113 with the cell powered: DET_3_5 reads 1
 with the jack empty and 0 with a headset in, EAR_SEND_END reads 0 while
 the key is held (with the mic bias on); the mic line reads 2777 mV empty,
 2087 mV with the headset, 2 mV with the key held.
-
-WIP until the series is cleaned up for sending.
 
 Assisted-by: LLM
 ---

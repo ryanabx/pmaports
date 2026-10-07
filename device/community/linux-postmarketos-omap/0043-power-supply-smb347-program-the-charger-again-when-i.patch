@@ -1,8 +1,8 @@
-From 56b76426863dffc79fdd3781edfd802811a82e41 Mon Sep 17 00:00:00 2001
+From aba7a440faee114a2a1a82b2c5decadd302498b8 Mon Sep 17 00:00:00 2001
 From: Ryan Brue <ryanbrue.dev@gmail.com>
 Date: Tue, 6 Oct 2026 11:59:19 -0500
-Subject: [PATCH 42/42] power: supply: smb347: program the charger again when
- its input returns
+Subject: [PATCH] power: supply: smb347: program the charger again when its
+ input returns
 
 The charger reloads its configuration registers from non-volatile memory
 at power-on reset. On the Samsung Galaxy Tab 2 10.1 this also happens
@@ -33,10 +33,10 @@ Assisted-by: LLM
  1 file changed, 127 insertions(+), 46 deletions(-)
 
 diff --git a/drivers/power/supply/smb347-charger.c b/drivers/power/supply/smb347-charger.c
-index 5b1be0f8d4fd..d1b2ddeea27d 100644
+index eae0873d129e..08b1e8b242d5 100644
 --- a/drivers/power/supply/smb347-charger.c
 +++ b/drivers/power/supply/smb347-charger.c
-@@ -794,18 +794,6 @@ static int smb347_set_writable(struct smb347_charger *smb, bool writable,
+@@ -809,18 +809,6 @@ static int smb347_set_writable(struct smb347_charger *smb, bool writable,
  	return ret;
  }
  
@@ -55,7 +55,7 @@ index 5b1be0f8d4fd..d1b2ddeea27d 100644
  static int smb347_hw_init(struct smb347_charger *smb)
  {
  	unsigned int val;
-@@ -906,11 +894,117 @@ static int smb347_hw_init(struct smb347_charger *smb)
+@@ -921,11 +909,117 @@ static int smb347_hw_init(struct smb347_charger *smb)
  	return ret;
  }
  
@@ -174,7 +174,7 @@ index 5b1be0f8d4fd..d1b2ddeea27d 100644
  	int ret;
  
  	/* SMB347 it needs at least 20ms for setting IRQSTAT_E_*IN_UV_IRQ */
-@@ -992,18 +1086,30 @@ static irqreturn_t smb347_interrupt(int irq, void *data)
+@@ -1007,18 +1101,30 @@ static irqreturn_t smb347_interrupt(int irq, void *data)
  	 * get here. Compare the input state on every interrupt.
  	 */
  	ret = smb347_update_ps_status(smb);
@@ -211,7 +211,7 @@ index 5b1be0f8d4fd..d1b2ddeea27d 100644
  
  	return handled ? IRQ_HANDLED : IRQ_NONE;
  }
-@@ -1019,27 +1125,8 @@ static int smb347_irq_set(struct smb347_charger *smb, bool enable)
+@@ -1034,27 +1140,8 @@ static int smb347_irq_set(struct smb347_charger *smb, bool enable)
  	if (ret < 0)
  		return ret;
  
@@ -240,7 +240,7 @@ index 5b1be0f8d4fd..d1b2ddeea27d 100644
  	smb347_set_writable(smb, false, true);
  	return ret;
  }
-@@ -1072,13 +1159,7 @@ static int smb347_irq_init(struct smb347_charger *smb,
+@@ -1087,13 +1174,7 @@ static int smb347_irq_init(struct smb347_charger *smb,
  	if (ret < 0)
  		return ret;
  

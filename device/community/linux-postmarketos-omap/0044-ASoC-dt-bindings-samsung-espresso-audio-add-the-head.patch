@@ -1,0 +1,80 @@
+From 7daec2101228d2ef9014b4074c276a9096468068 Mon Sep 17 00:00:00 2001
+From: Ryan Brue <ryanbrue.dev@gmail.com>
+Date: Wed, 7 Oct 2026 00:27:52 -0500
+Subject: [PATCH] ASoC: dt-bindings: samsung,espresso-audio: add the headset
+ jack
+
+The Samsung Galaxy Tab 2 detects the headphone jack with a switch on a
+GPIO and headset keys with a second one. The voltage of the headset
+microphone line, read with an ADC while its bias is on, tells a 4-pole
+headset from headphones and which key is pressed.
+
+Describe the two GPIOs, the ADC channel and the voltage thresholds, with
+the names the Samsung Midas binding uses for the same scheme (the
+thresholds are in mV there too, despite the property names).
+
+Assisted-by: LLM
+---
+ .../sound/samsung,espresso-audio.yaml         | 39 +++++++++++++++++++
+ 1 file changed, 39 insertions(+)
+
+diff --git a/Documentation/devicetree/bindings/sound/samsung,espresso-audio.yaml b/Documentation/devicetree/bindings/sound/samsung,espresso-audio.yaml
+index 15da4e0fa0b3..a2c3634d1a21 100644
+--- a/Documentation/devicetree/bindings/sound/samsung,espresso-audio.yaml
++++ b/Documentation/devicetree/bindings/sound/samsung,espresso-audio.yaml
+@@ -56,6 +56,37 @@ properties:
+   headset-mic-bias-supply:
+     description: Supply for the mic bias of the headset microphone
+ 
++  headset-detect-gpios:
++    maxItems: 1
++    description: GPIO of the headphone jack's insertion switch (DET_3_5)
++
++  headset-key-gpios:
++    maxItems: 1
++    description: GPIO for headset key presses (EAR_SEND_END)
++
++  io-channels:
++    maxItems: 1
++    description:
++      ADC channel that reads the headset microphone line, for telling 4-pole
++      headsets from headphones and the headset keys apart
++
++  io-channel-names:
++    const: headset-detect
++
++  samsung,headset-4pole-threshold-microvolt:
++    minItems: 2
++    maxItems: 2
++    description:
++      Minimum and maximum ADC value of a 4-pole headset (with microphone);
++      outside of this range headphones are assumed.
++
++  samsung,headset-button-threshold-microvolt:
++    minItems: 3
++    maxItems: 3
++    description:
++      Minimum (inclusive) ADC values of the headset keys, in order "Media",
++      "Volume Up" and "Volume Down".
++
+ required:
+   - compatible
+   - model
+@@ -63,6 +94,14 @@ required:
+   - codec
+   - audio-routing
+ 
++dependencies:
++  headset-detect-gpios:
++    - headset-key-gpios
++    - io-channels
++    - io-channel-names
++    - samsung,headset-4pole-threshold-microvolt
++    - samsung,headset-button-threshold-microvolt
++
+ unevaluatedProperties: false
+ 
+ examples:
+-- 
+2.55.0
+

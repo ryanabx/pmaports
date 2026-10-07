@@ -1,8 +1,7 @@
-From d0c43e1650dad9af7b8e14b5fc1fcd2d0e5f2a5b Mon Sep 17 00:00:00 2001
+From e71048a281ea1e36e8c3f3ab931c6868bc8d86a0 Mon Sep 17 00:00:00 2001
 From: Ryan Brue <ryanbrue.dev@gmail.com>
-Date: Fri, 25 Sep 2026 02:49:44 -0500
-Subject: [PATCH 44/45] WIP: ASoC: ti: samsung-espresso: add headset jack
- detection
+Date: Wed, 7 Oct 2026 00:28:10 -0500
+Subject: [PATCH] ASoC: ti: samsung-espresso: add headset jack detection
 
 The Galaxy Tab 2 detects the headphone jack with a switch on a GPIO
 (DET_3_5) and headset keys with a second one (EAR_SEND_END). Which of
@@ -12,94 +11,34 @@ while the headset mic bias is on: an STMPE811 channel on the 10.1".
 
 Add optional jack detection as in the Midas driver: headset-detect-gpios,
 headset-key-gpios, the "headset-detect" IIO channel and the 4-pole and
-key thresholds (in mV, as on Midas despite the property names), and the
-binding for them.
+key thresholds (in mV, as on Midas). The keys are reported as KEY_MEDIA,
+KEY_VOLUMEUP and KEY_VOLUMEDOWN.
 
 Unlike on Midas, the key line here is a comparator on the microphone
 line and only works with the bias on: with the bias off it reads
-"pressed". So keep the bias on while a 4-pole headset is plugged in
-(as the vendor kernel does), and turn it off for headphones and on
-removal. The line also takes about 100 ms to settle after the bias comes
-on (20 ms gave half the final voltage), so read it until it is stable.
-And while a plug is still going in, the jack switch already closes but
-the microphone contact doesn't touch yet: the line then sits at its
-unloaded level (about 2770 mV, as with the jack empty) for a few hundred
-ms before dropping to the headset's level (about 2080 mV). Keep reading
-while it reads above the 4-pole window, for up to 2 s.
-On removal, release a key that was still reported as pressed, and ignore
-the key line once the jack switch reads empty.
+"pressed". So keep the bias on while a 4-pole headset is plugged in (as
+the vendor kernel does), and turn it off for headphones and on removal.
+On removal, also release a key that was still reported as pressed, and
+ignore the key line once the jack switch reads empty.
 
-Tested on a GT-P5113 with earbuds (4-pole, one key): insertion, removal
-and KEY_MEDIA presses; with the bias turned off after detection (as on
-Midas) the key got stuck, and a slow insertion was classified on the
-unloaded plateau.
+The line takes about 100 ms to settle after the bias comes on, so read
+it until it is stable. And while a plug is still going in, the jack
+switch already closes but the microphone contact doesn't touch yet: the
+line then sits at its unloaded level (about 2770 mV here, as with the
+jack empty) for up to a second before it drops to the headset's level
+(about 2080 mV). Keep reading while it is above the 4-pole window, for
+up to 2 s.
 
-WIP: the binding is still in this commit.
+Tested on a GT-P5113 with earbuds (4-pole, one key): insertion (fast,
+and slow with the unloaded plateau), removal, and KEY_MEDIA presses.
+Volume keys untested (no such headset at hand).
 
 Assisted-by: LLM
 ---
- .../sound/samsung,espresso-audio.yaml         |  39 +++
- sound/soc/ti/Kconfig                          |   2 +-
- sound/soc/ti/samsung-espresso.c               | 278 +++++++++++++++++-
- 3 files changed, 316 insertions(+), 3 deletions(-)
+ sound/soc/ti/Kconfig            |   2 +-
+ sound/soc/ti/samsung-espresso.c | 278 +++++++++++++++++++++++++++++++-
+ 2 files changed, 277 insertions(+), 3 deletions(-)
 
-diff --git a/Documentation/devicetree/bindings/sound/samsung,espresso-audio.yaml b/Documentation/devicetree/bindings/sound/samsung,espresso-audio.yaml
-index 15da4e0fa0b3..a2c3634d1a21 100644
---- a/Documentation/devicetree/bindings/sound/samsung,espresso-audio.yaml
-+++ b/Documentation/devicetree/bindings/sound/samsung,espresso-audio.yaml
-@@ -56,6 +56,37 @@ properties:
-   headset-mic-bias-supply:
-     description: Supply for the mic bias of the headset microphone
- 
-+  headset-detect-gpios:
-+    maxItems: 1
-+    description: GPIO of the headphone jack's insertion switch (DET_3_5)
-+
-+  headset-key-gpios:
-+    maxItems: 1
-+    description: GPIO for headset key presses (EAR_SEND_END)
-+
-+  io-channels:
-+    maxItems: 1
-+    description:
-+      ADC channel that reads the headset microphone line, for telling 4-pole
-+      headsets from headphones and the headset keys apart
-+
-+  io-channel-names:
-+    const: headset-detect
-+
-+  samsung,headset-4pole-threshold-microvolt:
-+    minItems: 2
-+    maxItems: 2
-+    description:
-+      Minimum and maximum ADC value of a 4-pole headset (with microphone);
-+      outside of this range headphones are assumed.
-+
-+  samsung,headset-button-threshold-microvolt:
-+    minItems: 3
-+    maxItems: 3
-+    description:
-+      Minimum (inclusive) ADC values of the headset keys, in order "Media",
-+      "Volume Up" and "Volume Down".
-+
- required:
-   - compatible
-   - model
-@@ -63,6 +94,14 @@ required:
-   - codec
-   - audio-routing
- 
-+dependencies:
-+  headset-detect-gpios:
-+    - headset-key-gpios
-+    - io-channels
-+    - io-channel-names
-+    - samsung,headset-4pole-threshold-microvolt
-+    - samsung,headset-button-threshold-microvolt
-+
- unevaluatedProperties: false
- 
- examples:
 diff --git a/sound/soc/ti/Kconfig b/sound/soc/ti/Kconfig
 index fb6b0067ca2c..4e7087cd212d 100644
 --- a/sound/soc/ti/Kconfig
