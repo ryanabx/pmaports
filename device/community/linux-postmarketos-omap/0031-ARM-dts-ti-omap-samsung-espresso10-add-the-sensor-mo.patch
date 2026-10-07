@@ -1,4 +1,4 @@
-From d9a2dab7ec389a945776f0491e02e1c5d098d349 Mon Sep 17 00:00:00 2001
+From bc515e529bd20fd11bc448fb3b611bfddf893b42 Mon Sep 17 00:00:00 2001
 From: Ryan Brue <ryanbrue.dev@gmail.com>
 Date: Thu, 24 Sep 2026 14:38:18 -0500
 Subject: [PATCH] ARM: dts: ti: omap: samsung-espresso10: add the sensor mount

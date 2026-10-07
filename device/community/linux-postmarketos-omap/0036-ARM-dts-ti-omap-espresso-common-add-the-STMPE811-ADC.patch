@@ -1,4 +1,4 @@
-From 64ec803c3fff28078ec8b3ebf936acc92af627bf Mon Sep 17 00:00:00 2001
+From 6ae85667bb929b2b0f7a84c565d2e73b97c3c78b Mon Sep 17 00:00:00 2001
 From: Ryan Brue <ryanbrue.dev@gmail.com>
 Date: Fri, 25 Sep 2026 17:21:30 -0500
 Subject: [PATCH] ARM: dts: ti: omap: espresso-common: add the STMPE811 ADC

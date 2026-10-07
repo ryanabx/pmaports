@@ -1,4 +1,4 @@
-From 4756014850f08e9c68f59d374364bd6abeec9f1d Mon Sep 17 00:00:00 2001
+From e34359c77ea9b8befae984a1bb53ac9667cdace6 Mon Sep 17 00:00:00 2001
 From: Ryan Brue <ryanbrue.dev@gmail.com>
 Date: Thu, 24 Sep 2026 13:21:02 -0500
 Subject: [PATCH] dt-bindings: power: reset: add Samsung Galaxy Tab 2 reboot

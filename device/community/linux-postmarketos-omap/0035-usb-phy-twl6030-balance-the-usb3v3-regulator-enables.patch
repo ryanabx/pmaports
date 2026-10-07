@@ -1,4 +1,4 @@
-From af87e64e44ee10a9454a69b89360cbe3c781f965 Mon Sep 17 00:00:00 2001
+From 237ce0f55bdb59f47d63b8fcc9b0654e49be15c0 Mon Sep 17 00:00:00 2001
 From: Ryan Brue <ryanbrue.dev@gmail.com>
 Date: Fri, 25 Sep 2026 03:06:06 -0500
 Subject: [PATCH] usb: phy: twl6030: balance the usb3v3 regulator enables

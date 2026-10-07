@@ -1,4 +1,4 @@
-From e5a80280fe6c77bdb7e1f6a2ac8ac0add1272e0f Mon Sep 17 00:00:00 2001
+From 7d0f34758ccfba9446f8bfbf494d0f0f3be11122 Mon Sep 17 00:00:00 2001
 From: Ryan Brue <ryanbrue.dev@gmail.com>
 Date: Wed, 23 Sep 2026 22:05:37 -0500
 Subject: [PATCH] ARM: dts: ti: omap: espresso-common: add ramoops
@@ -13,25 +13,27 @@ the whole record. Use ECC, as the vendor RAM console does.
 
 Assisted-by: LLM
 ---
- .../ti/omap/omap4-samsung-espresso-common.dtsi    | 15 +++++++++++++++
- 1 file changed, 15 insertions(+)
+ .../ti/omap/omap4-samsung-espresso-common.dtsi  | 17 +++++++++++++++++
+ 1 file changed, 17 insertions(+)
 
 diff --git a/arch/arm/boot/dts/ti/omap/omap4-samsung-espresso-common.dtsi b/arch/arm/boot/dts/ti/omap/omap4-samsung-espresso-common.dtsi
-index e7d3d7f7ae82..255491cb28ba 100644
+index ba494cd0865f..e23cc415c456 100644
 --- a/arch/arm/boot/dts/ti/omap/omap4-samsung-espresso-common.dtsi
 +++ b/arch/arm/boot/dts/ti/omap/omap4-samsung-espresso-common.dtsi
-@@ -16,6 +16,21 @@ reserved-memory {
+@@ -16,6 +16,23 @@ reserved-memory {
  		#size-cells = <1>;
  		ranges;
  
 +		/*
 +		 * Where the vendor kernel keeps its RAM console. Unbuffered, so
 +		 * that a panic's last writes reach the DDR before the reset, and
-+		 * with ECC like the vendor console.
++		 * with ECC like the vendor console. Not in the linear map, so
++		 * that the uncached mapping is the only one.
 +		 */
 +		ramoops@a0000000 {
 +			compatible = "ramoops";
 +			reg = <0xa0000000 0x200000>;
++			no-map;
 +			record-size = <0x20000>;
 +			console-size = <0x40000>;
 +			pmsg-size = <0x20000>;

@@ -1,4 +1,4 @@
-From fd6db0627592705de696aadd458bdd24e0081711 Mon Sep 17 00:00:00 2001
+From fc34d0782318b148546c9c4472dd5b51b4a92c53 Mon Sep 17 00:00:00 2001
 From: Ryan Brue <ryanbrue.dev@gmail.com>
 Date: Thu, 24 Sep 2026 11:23:05 -0500
 Subject: [PATCH] ARM: OMAP4: PM: move the L2X0 save area out of the
@@ -15,9 +15,10 @@ re-enables the L2 cache with them.
 Bootloaders use the same words for the reboot reason. The Samsung Galaxy
 Tab 2 bootloader takes its boot mode (normal, recovery, download) from
 0xff8, as the vendor kernel writes it on restart; the vendor kernel keeps
-its own scratch pad at 0xd20-0xd40. With a syscon-reboot-mode node on
-0xff8, the mode is written from the reboot notifier, and the CPUs keep
-entering idle during the rest of the restart. The next OSWR wakeup then
+its own scratch pad at 0xd20-0xd40. When a reboot-mode driver writes the
+mode to 0xff8 from the reboot notifier (syscon-reboot-mode, or the
+Samsung one this is a prerequisite for), the CPUs keep entering idle
+during the rest of the restart. The next OSWR wakeup then
 programs the mode (0x1 or 0x20) as AUXCTRL and the L2 cache loses the
 dirty lines of the context that cpu_suspend() saved on the stack. On the
 tablet most reboots end in an oops right after cpu_resume, for example
@@ -32,7 +33,7 @@ These offsets are not hardware registers, and only OMAP4 has the PL310,
 so move the four L2X0 words back to where they were before f98d5fe8079c,
 0xd14-0xd20. Nothing else uses that part of bank 1.
 
-Tested on a Samsung Galaxy Tab 2 10.1 (GT-P5100, OMAP4430 HS).
+Tested on a Samsung Galaxy Tab 2 10.1 (GT-P5113, OMAP4430 HS).
 
 Assisted-by: LLM
 ---

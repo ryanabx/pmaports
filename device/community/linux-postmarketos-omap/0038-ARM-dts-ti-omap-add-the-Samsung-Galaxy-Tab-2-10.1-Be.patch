@@ -1,4 +1,4 @@
-From a30123c0360963dab1a5dd7a5c6c1a55f20d6849 Mon Sep 17 00:00:00 2001
+From 52c3b0c49488097db5ade935ae0acce07bbe67e0 Mon Sep 17 00:00:00 2001
 From: Ryan Brue <ryanbrue.dev@gmail.com>
 Date: Fri, 25 Sep 2026 17:23:24 -0500
 Subject: [PATCH] ARM: dts: ti: omap: add the Samsung Galaxy Tab 2 10.1 Best

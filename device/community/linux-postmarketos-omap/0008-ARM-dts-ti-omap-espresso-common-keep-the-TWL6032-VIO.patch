@@ -1,4 +1,4 @@
-From beff9e3319eb0e66c59c9b97dfae48d6a78399ec Mon Sep 17 00:00:00 2001
+From c83c9c55cfb5f394d99d37cf9c1a0cd9203b8afd Mon Sep 17 00:00:00 2001
 From: Ryan Brue <ryanbrue.dev@gmail.com>
 Date: Wed, 23 Sep 2026 13:37:32 -0500
 Subject: [PATCH] ARM: dts: ti: omap: espresso-common: keep the TWL6032 VIO
@@ -18,11 +18,11 @@ the reset, the alarm is still pending after recovery, so the kernel
 never got as far as rtc-twl's probe (which disables the alarm
 interrupt).
 
-On a GT-P51xx, turning VIO back on (CFG_STATE <- ON) just before a plain
+On a GT-P5113, turning VIO back on (CFG_STATE <- ON) just before a plain
 "systemctl reboot" makes every reboot come back, whether the board was
 last cold- or warm-booted; with VIO left off, every reboot hangs.
-Turning LDO2 and LDOLN back on, the other two regulators the late cleanup
-disables, isn't needed.
+Turning LDO2 and LDOLN back on, the other two regulators the late
+cleanup disables, isn't needed.
 
 Keep VIO always on.
 

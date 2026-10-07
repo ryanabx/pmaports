@@ -1,4 +1,4 @@
-From 14709d2ddadb61f4d72f19b2ac4d66624321925b Mon Sep 17 00:00:00 2001
+From 8e100ab83fd4a9fbdd4442fac26be2138a6a80f0 Mon Sep 17 00:00:00 2001
 From: Ryan Brue <ryanbrue.dev@gmail.com>
 Date: Thu, 24 Sep 2026 14:36:15 -0500
 Subject: [PATCH] ASoC: ti: add a machine driver for the Samsung Galaxy Tab 2

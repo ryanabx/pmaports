@@ -1,4 +1,4 @@
-From 5e39d19d46970facbbd870198be5df31f9ea8db5 Mon Sep 17 00:00:00 2001
+From e3d93f68c5fd0cfb23796f5b77875c83af4f3b1f Mon Sep 17 00:00:00 2001
 From: Ryan Brue <ryanbrue.dev@gmail.com>
 Date: Wed, 23 Sep 2026 14:32:18 -0500
 Subject: [PATCH] bus: ti-sysc: populate simple-mfd child nodes too

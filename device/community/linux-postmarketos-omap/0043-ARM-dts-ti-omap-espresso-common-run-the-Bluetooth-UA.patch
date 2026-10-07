@@ -1,8 +1,8 @@
 From 625620786b672208d9eeb10436d57754428fa3e0 Mon Sep 17 00:00:00 2001
 From: Ryan Brue <ryanbrue.dev@gmail.com>
 Date: Wed, 7 Oct 2026 12:52:08 -0500
-Subject: [PATCH 48/48] ARM: dts: ti: omap: espresso-common: run the Bluetooth
- UART at 3 Mbaud
+Subject: [PATCH] ARM: dts: ti: omap: espresso-common: run the Bluetooth UART
+ at 3 Mbaud
 
 Without max-speed, hci_bcm keeps the BCM4330 at its 115200 baud boot
 rate, about 90 kbit/s of payload: too slow for A2DP audio (SBC at its

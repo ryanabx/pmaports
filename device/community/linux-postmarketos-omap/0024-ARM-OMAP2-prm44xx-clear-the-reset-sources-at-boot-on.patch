@@ -1,4 +1,4 @@
-From d89887c6caf0633ea339ac5356e3ad103e0eed65 Mon Sep 17 00:00:00 2001
+From 4fb4527ea6a955c0541c3b24290a9835cbf678d4 Mon Sep 17 00:00:00 2001
 From: Ryan Brue <ryanbrue.dev@gmail.com>
 Date: Thu, 24 Sep 2026 00:35:46 -0500
 Subject: [PATCH] ARM: OMAP2+: prm44xx: clear the reset sources at boot on
@@ -13,7 +13,7 @@ visible in the same way until the next power cycle.
 
 The bootloader of the Samsung Galaxy Tab 2 (espresso) reads PRM_RSTST to
 tell a reboot from a power-on. With GLOBAL_COLD_RST set it takes its
-power-on path and ignores the reboot mode that syscon-reboot-mode leaves
+power-on path and ignores the reboot mode that is left
 in the SAR RAM: a normal reboot with USB connected comes back in the
 bootloader's charger mode, not as a reboot. The vendor kernel, like TI's
 kernels for OMAP4, reads PRM_RSTST at boot, logs it and writes the value
@@ -25,7 +25,7 @@ saved value, so it still describes the reset that started this boot.
 Leave the other SoCs that share this code as they are; their bootloaders
 haven't been checked, and PRM_RSTST is not at the same offset on AM43xx.
 
-Tested on a Samsung Galaxy Tab 2 10.1 (GT-P5100, OMAP4430).
+Tested on a Samsung Galaxy Tab 2 10.1 (GT-P5113, OMAP4430).
 
 Assisted-by: LLM
 ---

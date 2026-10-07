@@ -1,4 +1,4 @@
-From 0d6bfbae5ec57826e29a8722624ac36a1d81d72c Mon Sep 17 00:00:00 2001
+From 720a47bc5d46554a2ded8791f28db66969a5ed2d Mon Sep 17 00:00:00 2001
 From: Ryan Brue <ryanbrue.dev@gmail.com>
 Date: Thu, 24 Sep 2026 00:39:25 -0500
 Subject: [PATCH] ARM: dts: ti: omap: samsung-espresso10: add the BH1721 light

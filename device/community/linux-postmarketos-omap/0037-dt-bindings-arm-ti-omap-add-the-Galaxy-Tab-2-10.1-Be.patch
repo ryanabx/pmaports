@@ -1,4 +1,4 @@
-From f73934f91521bd05687424ca7c82ea23ff04fe45 Mon Sep 17 00:00:00 2001
+From 3a9bc22dd809be8f6dc82f333ddf030d17d0b602 Mon Sep 17 00:00:00 2001
 From: Ryan Brue <ryanbrue.dev@gmail.com>
 Date: Fri, 25 Sep 2026 17:22:22 -0500
 Subject: [PATCH] dt-bindings: arm: ti: omap: add the Galaxy Tab 2 10.1 Best

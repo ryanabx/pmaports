@@ -1,4 +1,4 @@
-From 88d431214ce73e58a629cd3920b2b14f6a493bb2 Mon Sep 17 00:00:00 2001
+From 10fbdc331268f9ef4b6ee58caeff9dd639363fa4 Mon Sep 17 00:00:00 2001
 From: Ryan Brue <ryanbrue.dev@gmail.com>
 Date: Thu, 24 Sep 2026 14:43:09 -0500
 Subject: [PATCH] power: supply: core: count each power-supplies entry only

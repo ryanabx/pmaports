@@ -1,4 +1,4 @@
-From cac7ed430a011242e75bf0d8a37df9121da6d61b Mon Sep 17 00:00:00 2001
+From 7a994a6d665dea9b40e9920b5d9a5885daa8ebc1 Mon Sep 17 00:00:00 2001
 From: Ryan Brue <ryanbrue.dev@gmail.com>
 Date: Thu, 24 Sep 2026 14:43:09 -0500
 Subject: [PATCH] power: supply: core: copy the supplier names for

@@ -1,4 +1,4 @@
-From f6a57f8d2afa7ede5393a062178bae6d479fc65f Mon Sep 17 00:00:00 2001
+From 71dc57cf373d3e09afa72a805a02a4689dd04956 Mon Sep 17 00:00:00 2001
 From: Ryan Brue <ryanbrue.dev@gmail.com>
 Date: Wed, 23 Sep 2026 20:51:11 -0500
 Subject: [PATCH] ARM: dts: ti: omap: samsung-espresso10: size the splash

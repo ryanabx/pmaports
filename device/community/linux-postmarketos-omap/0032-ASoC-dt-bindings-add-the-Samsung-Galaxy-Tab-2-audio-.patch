@@ -1,4 +1,4 @@
-From b84baf58ea2fa0dbb00812cf6e921fdcf74896e3 Mon Sep 17 00:00:00 2001
+From 906a99601a1355e831aa77af4b59a3d421ded27a Mon Sep 17 00:00:00 2001
 From: Ryan Brue <ryanbrue.dev@gmail.com>
 Date: Thu, 24 Sep 2026 14:36:15 -0500
 Subject: [PATCH] ASoC: dt-bindings: add the Samsung Galaxy Tab 2 audio complex

@@ -1,8 +1,7 @@
 From a6f09ef1ee17004491a04d4029f106be7854b0c1 Mon Sep 17 00:00:00 2001
 From: Ryan Brue <ryanbrue.dev@gmail.com>
 Date: Wed, 7 Oct 2026 12:51:46 -0500
-Subject: [PATCH 47/48] ASoC: wm8994: release the MCLK that was enabled for
- AIFnCLK
+Subject: [PATCH] ASoC: wm8994: release the MCLK that was enabled for AIFnCLK
 
 aif_mclk_set() enables the AIFnCLK source clock (MCLK1 or MCLK2) when
 AIFnCLK powers up and disables it when AIFnCLK powers down, and both

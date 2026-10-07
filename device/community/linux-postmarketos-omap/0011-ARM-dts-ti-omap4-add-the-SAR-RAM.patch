@@ -1,4 +1,4 @@
-From 8836d76e25a0e4190f0476d2a5d52e90ccf06fc2 Mon Sep 17 00:00:00 2001
+From 024a95e48aeb8ff0d12b0df933709d6ecc598fdf Mon Sep 17 00:00:00 2001
 From: Ryan Brue <ryanbrue.dev@gmail.com>
 Date: Wed, 23 Sep 2026 14:32:18 -0500
 Subject: [PATCH] ARM: dts: ti: omap4: add the SAR RAM

@@ -1,4 +1,4 @@
-From 5e4198e292bf51155c64280fcebde12799efa76d Mon Sep 17 00:00:00 2001
+From 785b82504452907739348dcfcf497225a0d122d6 Mon Sep 17 00:00:00 2001
 From: Ryan Brue <ryanbrue.dev@gmail.com>
 Date: Thu, 24 Sep 2026 14:36:15 -0500
 Subject: [PATCH] ARM: dts: ti: omap: espresso-common: add the WM1811 audio

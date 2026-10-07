@@ -1,4 +1,4 @@
-From e7ec7c4efd16c9dbf421e0bfd704083e8ade9c21 Mon Sep 17 00:00:00 2001
+From b7dec1a27747e0dcfd76876e2bc5834959c1fb30 Mon Sep 17 00:00:00 2001
 From: Ryan Brue <ryanbrue.dev@gmail.com>
 Date: Wed, 23 Sep 2026 20:36:52 -0500
 Subject: [PATCH] ARM: dts: ti: omap: samsung-espresso10: describe the battery

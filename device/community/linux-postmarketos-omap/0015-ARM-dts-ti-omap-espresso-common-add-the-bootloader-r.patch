@@ -1,0 +1,50 @@
+From f630364dcfa67831c2b798b19da6de612bbae61e Mon Sep 17 00:00:00 2001
+From: Ryan Brue <ryanbrue.dev@gmail.com>
+Date: Wed, 23 Sep 2026 14:32:18 -0500
+Subject: [PATCH] ARM: dts: ti: omap: espresso-common: add the bootloader
+ reboot modes
+
+The Samsung bootloader of the Galaxy Tab 2 takes its boot mode from the
+word at SAR RAM offset 0xff8, and the vendor kernel writes it from a
+reboot notifier: 0x1 normal, 0x2 recovery, 0x20 download (Odin) mode.
+The bootloader uses the flag only if the word at 0xff4 holds the tag
+the vendor kernel writes with it. Without them, "reboot download" can't
+reach download mode, and a plain reboot with USB power present comes up
+through the bootloader's charger path.
+
+Describe the modes with a samsung,espresso-reboot-mode node on the SAR
+RAM, which writes both words, and enable the SAR RAM target module.
+
+Tested on a Galaxy Tab 2 10.1 (GT-P5113): download and normal.
+Recovery is taken from the vendor kernel and not tested.
+
+Assisted-by: LLM
+---
+ .../dts/ti/omap/omap4-samsung-espresso-common.dtsi | 14 ++++++++++++++
+ 1 file changed, 14 insertions(+)
+
+diff --git a/arch/arm/boot/dts/ti/omap/omap4-samsung-espresso-common.dtsi b/arch/arm/boot/dts/ti/omap/omap4-samsung-espresso-common.dtsi
+index 1c10db85788f..17ad4ef0fc1d 100644
+--- a/arch/arm/boot/dts/ti/omap/omap4-samsung-espresso-common.dtsi
++++ b/arch/arm/boot/dts/ti/omap/omap4-samsung-espresso-common.dtsi
+@@ -751,3 +751,17 @@ bluetooth {
+ 		interrupt-names = "host-wakeup";
+ 	};
+ };
++
++&sar_target {
++	status = "okay";
++};
++
++&sar_ram {
++	/* The Samsung bootloader takes its boot mode from the end of SAR bank 1 */
++	reboot-mode {
++		compatible = "samsung,espresso-reboot-mode";
++		mode-normal = <0x1>;
++		mode-recovery = <0x2>;
++		mode-download = <0x20>;
++	};
++};
+-- 
+2.55.0
+

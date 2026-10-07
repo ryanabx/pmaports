@@ -1,4 +1,4 @@
-From 223ded631fedf5f924e09aa5198a57e9d0d46567 Mon Sep 17 00:00:00 2001
+From ba26e25f80da47a9949fdd2f07e04dca0171face Mon Sep 17 00:00:00 2001
 From: Ryan Brue <ryanbrue.dev@gmail.com>
 Date: Thu, 24 Sep 2026 14:41:10 -0500
 Subject: [PATCH] ARM: dts: ti: omap: espresso-common: disable the keypad

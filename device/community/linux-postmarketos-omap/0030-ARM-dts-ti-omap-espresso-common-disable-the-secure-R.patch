@@ -1,4 +1,4 @@
-From dd7b82a171771b133e36254ca90f73686128e1ba Mon Sep 17 00:00:00 2001
+From e58f2167bd80d98a829fed824a023c1d54f32067 Mon Sep 17 00:00:00 2001
 From: Ryan Brue <ryanbrue.dev@gmail.com>
 Date: Thu, 24 Sep 2026 14:41:10 -0500
 Subject: [PATCH] ARM: dts: ti: omap: espresso-common: disable the secure RNG
