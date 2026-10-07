@@ -3,7 +3,7 @@ maintainer="Mithil Bavishi <bavishimithil@gmail.com>"
 pkgname=device-samsung-espresso10
 pkgdesc="Samsung Galaxy Tab 2 (10.1 inch)"
 pkgver=9
-pkgrel=2
+pkgrel=3
 url="https://postmarketos.org"
 license="MIT"
 arch="armv7"
@@ -53,5 +53,5 @@ kernel_bby() {
 sha512sums="
 666767723df359780d667d333fde25d911a432450243632161c9996e91b624246d01234fa2cbbfd7ff597d574591e01354b84541645e3c85810cad17cae8d0a4  deviceinfo
 f4239fd72916aafb963b5c4d873ae8c59d6e5dba74c250147000d2403a77fff9f4620bd0bd5f725c4071d72fda8cdc0187c250f1967f2ff3136f6369426b948d  GalaxyTab2.conf
-e7210cbe5a5c0e86160bb4f7fb81079f36cf01270c04b3f80d991db8543830f7b4c3870018b48f6f4a844907698c925dd0de2844ed9da9d2538aea385a5b3eb0  HiFi.conf
+facd622872c89b0e8266320e49845ce0a91caae06514ed17d766cc17abddda9f6e687b34bf36cb46643756e08f44d596631e56a1a5f7eb55b31a4d4fad2368aa  HiFi.conf
 "
