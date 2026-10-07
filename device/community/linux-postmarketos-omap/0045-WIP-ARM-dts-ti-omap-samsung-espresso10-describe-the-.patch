@@ -1,0 +1,100 @@
+From d505e13d1916c51eb33d7ef653d535b988e90b5d Mon Sep 17 00:00:00 2001
+From: Ryan Brue <ryanbrue.dev@gmail.com>
+Date: Fri, 25 Sep 2026 17:23:51 -0500
+Subject: [PATCH 45/45] WIP: ARM: dts: ti: omap: samsung-espresso10: describe
+ the headset jack
+
+The jack switch is on GPIO 0 (sim_io, DET_3.5) and the headset keys on
+GPIO 4 (sim_pwrctrl, EAR_SEND_END), both active low. The bootloader
+leaves both pads in their SIM functions (mode 0, and sim_pwrctrl with its
+input disabled), so mux them as GPIO inputs without pulls, as the vendor
+kernel does: the lines are only weakly driven, and the pad pulls win
+over them.
+
+These pads are in the USIM I/O cell, which the bootloader also leaves
+powered down (CONTROL_USIMIO USIM_PWRDNZ clear), and then GPIO 0 reads
+low whatever is plugged in. Set the bit with a pinctrl-single node on
+CONTROL_USIMIO, as omap3-gta04 does for its CONTROL_DEVCONF bits; the
+vendor kernel sets it in its pad mux code. CONTROL_PBIASLITE, which the
+vendor kernel also touches, makes no difference here.
+
+The microphone line is read on channel 4 of the STMPE811 (EAR_ADC_35),
+with the vendor's espresso10 thresholds: 4-pole between 1020 and
+2800 mV, keys from 0, 145 and 335 mV.
+
+Measured on a GT-P5113 with the cell powered (by hand): DET_3_5 reads 1
+with the jack empty and 0 with a headset in, EAR_SEND_END reads 0 while
+the key is held (with the mic bias on); the mic line reads 2777 mV empty,
+2087 mV with the headset, 2 mV with the key held.
+
+WIP until the jack driver has been tested with this.
+
+Assisted-by: LLM
+---
+ .../dts/ti/omap/omap4-samsung-espresso10.dts  | 46 +++++++++++++++++++
+ 1 file changed, 46 insertions(+)
+
+diff --git a/arch/arm/boot/dts/ti/omap/omap4-samsung-espresso10.dts b/arch/arm/boot/dts/ti/omap/omap4-samsung-espresso10.dts
+index fc65d610654a..dec38fd008e3 100644
+--- a/arch/arm/boot/dts/ti/omap/omap4-samsung-espresso10.dts
++++ b/arch/arm/boot/dts/ti/omap/omap4-samsung-espresso10.dts
+@@ -35,6 +35,41 @@ smb347: charger@6 {
+ 		};
+ 	};
+ 
++	/*
++	 * The jack GPIOs are in the USIM I/O cell, which the bootloader leaves
++	 * powered down: set USIM_PWRDNZ in CONTROL_USIMIO, as the vendor kernel
++	 * does.
++	 */
++	pinmux@4a31e600 {
++		compatible = "pinctrl-single";
++		reg = <0x4a31e600 4>;	/* CONTROL_USIMIO */
++		#address-cells = <1>;
++		#size-cells = <0>;
++		pinctrl-single,bit-per-mux;
++		pinctrl-single,register-width = <32>;
++		pinctrl-single,function-mask = <0x1>;
++		#pinctrl-cells = <2>;
++		pinctrl-names = "default";
++		pinctrl-0 = <&usim_io_pins>;
++
++		usim_io_pins: usim-io-pins {
++			/*                   offset bits mask */
++			pinctrl-single,bits = <0x00 0x10000000 0x10000000>;
++		};
++	};
++
++	sound {
++		/* Thresholds (mV) from the vendor's espresso10 jack zones */
++		pinctrl-names = "default";
++		pinctrl-0 = <&jack_pins>;
++		headset-detect-gpios = <&gpio1 0 GPIO_ACTIVE_LOW>; /* DET_3_5 */
++		headset-key-gpios = <&gpio1 4 GPIO_ACTIVE_LOW>; /* EAR_SEND_END */
++		io-channels = <&stmpe_adc 0>; /* channel 4 */
++		io-channel-names = "headset-detect";
++		samsung,headset-4pole-threshold-microvolt = <1020 2800>;
++		samsung,headset-button-threshold-microvolt = <0 145 335>;
++	};
++
+ 	backlight: backlight {
+ 		compatible = "pwm-backlight";
+ 		pinctrl-names = "default";
+@@ -156,3 +191,14 @@ OMAP4_IOPAD(0x052, PIN_OUTPUT | MUX_MODE3)
+ 		>;
+ 	};
+ };
++
++&omap4_pmx_wkup {
++	jack_pins: pinmux-jack-pins {
++		pinctrl-single,pins = <
++			OMAP4_IOPAD(0x040, PIN_INPUT | MUX_MODE3)
++			/* sim_io.gpio_wk0 - DET_3.5 */
++			OMAP4_IOPAD(0x048, PIN_INPUT | MUX_MODE3)
++			/* sim_pwrctrl.gpio_wk4 - EAR_SEND_END */
++		>;
++	};
++};
+-- 
+2.55.0
+

@@ -1,0 +1,422 @@
+From 84483996cf833f9a624fd61a7381f8ade774a7d8 Mon Sep 17 00:00:00 2001
+From: Ryan Brue <ryanbrue.dev@gmail.com>
+Date: Fri, 25 Sep 2026 02:49:44 -0500
+Subject: [PATCH 44/45] WIP: ASoC: ti: samsung-espresso: add headset jack
+ detection
+
+The Galaxy Tab 2 detects the headphone jack with a switch on a GPIO
+(DET_3_5) and headset keys with a second one (EAR_SEND_END). Which of
+headphones or a 4-pole headset is plugged in, and which key is pressed,
+comes from the voltage of the headset microphone line, read with an ADC
+while the headset mic bias is on: an STMPE811 channel on the 10.1".
+
+Add optional jack detection as in the Midas driver: headset-detect-gpios,
+headset-key-gpios, the "headset-detect" IIO channel and the 4-pole and
+key thresholds (in mV, as on Midas despite the property names), and the
+binding for them.
+
+Unlike on Midas, the key line here is a comparator on the microphone
+line and only works with the bias on: with the bias off it reads
+"pressed". So keep the bias on while a 4-pole headset is plugged in
+(as the vendor kernel does), and turn it off for headphones and on
+removal. The line also takes about 100 ms to settle after the bias comes
+on (20 ms gave half the final voltage), so read it until it is stable.
+On removal, release a key that was still reported as pressed, and ignore
+the key line once the jack switch reads empty.
+
+WIP: first test (GT-P5113, earbuds with one key): insertion and removal
+were reported, but with the bias turned off after detection a stuck
+volume-down key; this version is untested.
+
+Assisted-by: LLM
+---
+ .../sound/samsung,espresso-audio.yaml         |  39 +++
+ sound/soc/ti/Kconfig                          |   2 +-
+ sound/soc/ti/samsung-espresso.c               | 272 +++++++++++++++++-
+ 3 files changed, 310 insertions(+), 3 deletions(-)
+
+diff --git a/Documentation/devicetree/bindings/sound/samsung,espresso-audio.yaml b/Documentation/devicetree/bindings/sound/samsung,espresso-audio.yaml
+index 15da4e0fa0b3..a2c3634d1a21 100644
+--- a/Documentation/devicetree/bindings/sound/samsung,espresso-audio.yaml
++++ b/Documentation/devicetree/bindings/sound/samsung,espresso-audio.yaml
+@@ -56,6 +56,37 @@ properties:
+   headset-mic-bias-supply:
+     description: Supply for the mic bias of the headset microphone
+ 
++  headset-detect-gpios:
++    maxItems: 1
++    description: GPIO of the headphone jack's insertion switch (DET_3_5)
++
++  headset-key-gpios:
++    maxItems: 1
++    description: GPIO for headset key presses (EAR_SEND_END)
++
++  io-channels:
++    maxItems: 1
++    description:
++      ADC channel that reads the headset microphone line, for telling 4-pole
++      headsets from headphones and the headset keys apart
++
++  io-channel-names:
++    const: headset-detect
++
++  samsung,headset-4pole-threshold-microvolt:
++    minItems: 2
++    maxItems: 2
++    description:
++      Minimum and maximum ADC value of a 4-pole headset (with microphone);
++      outside of this range headphones are assumed.
++
++  samsung,headset-button-threshold-microvolt:
++    minItems: 3
++    maxItems: 3
++    description:
++      Minimum (inclusive) ADC values of the headset keys, in order "Media",
++      "Volume Up" and "Volume Down".
++
+ required:
+   - compatible
+   - model
+@@ -63,6 +94,14 @@ required:
+   - codec
+   - audio-routing
+ 
++dependencies:
++  headset-detect-gpios:
++    - headset-key-gpios
++    - io-channels
++    - io-channel-names
++    - samsung,headset-4pole-threshold-microvolt
++    - samsung,headset-button-threshold-microvolt
++
+ unevaluatedProperties: false
+ 
+ examples:
+diff --git a/sound/soc/ti/Kconfig b/sound/soc/ti/Kconfig
+index fb6b0067ca2c..4e7087cd212d 100644
+--- a/sound/soc/ti/Kconfig
++++ b/sound/soc/ti/Kconfig
+@@ -126,7 +126,7 @@ config SND_SOC_OMAP_ABE_TWL6040
+ config SND_SOC_OMAP_SAMSUNG_ESPRESSO
+ 	tristate "SoC Audio support for the Samsung Galaxy Tab 2 (espresso)"
+ 	depends on ARCH_OMAP4 || COMPILE_TEST
+-	depends on I2C && COMMON_CLK
++	depends on I2C && COMMON_CLK && IIO
+ 	select SND_SOC_OMAP_MCBSP
+ 	select MFD_WM8994
+ 	select SND_SOC_WM8994
+diff --git a/sound/soc/ti/samsung-espresso.c b/sound/soc/ti/samsung-espresso.c
+index 9c00da0dfab9..b8dbe0afcfba 100644
+--- a/sound/soc/ti/samsung-espresso.c
++++ b/sound/soc/ti/samsung-espresso.c
+@@ -7,10 +7,17 @@
+  */
+ 
+ #include <linux/clk.h>
++#include <linux/delay.h>
++#include <linux/gpio/consumer.h>
++#include <linux/iio/consumer.h>
++#include <linux/input-event-codes.h>
++#include <linux/limits.h>
++#include <linux/math.h>
+ #include <linux/mod_devicetable.h>
+ #include <linux/module.h>
+ #include <linux/of.h>
+ #include <linux/platform_device.h>
++#include <sound/jack.h>
+ #include <sound/pcm_params.h>
+ #include <sound/soc.h>
+ #include <sound/soc-dapm.h>
+@@ -25,8 +32,151 @@ struct espresso_priv {
+ 	unsigned int fll1_rate;
+ 	bool mclk1_enabled;
+ 	bool aif1clk_forced;
++
++	struct gpio_desc *gpio_headset_detect;
++	struct gpio_desc *gpio_headset_key;
++	struct iio_channel *adc_headset_detect;
++	struct snd_soc_jack headset_jack;
++	/* 3-pole, 4-pole, 3-pole by ADC value; "Media", "Volume Up/Down" keys */
++	struct snd_soc_jack_zone headset_jack_zones[3];
++	struct snd_soc_jack_zone headset_key_zones[3];
++	struct snd_soc_jack_gpio headset_gpios[2];
++	bool headset_bias_on;
++};
++
++static struct snd_soc_jack_pin espresso_headset_jack_pins[] = {
++	{
++		.pin = "HP",
++		.mask = SND_JACK_HEADPHONE,
++	},
++	{
++		.pin = "Headset Mic",
++		.mask = SND_JACK_MICROPHONE,
++	},
+ };
+ 
++/*
++ * Like Midas: the jack switch is on a GPIO, and the voltage of the headset
++ * microphone line, read with an ADC while its bias is on, tells a 4-pole
++ * headset from headphones and which headset key is pressed.
++ */
++#define ESPRESSO_HEADSET_KEYS	(SND_JACK_BTN_0 | SND_JACK_BTN_1 | SND_JACK_BTN_2)
++
++/*
++ * The key line (EAR_SEND_END) only works with the microphone bias on, so the
++ * bias stays on while a 4-pole headset is plugged in.
++ */
++static int espresso_headset_bias(struct snd_soc_component *codec, bool on)
++{
++	struct snd_soc_dapm_context *dapm = snd_soc_component_to_dapm(codec);
++	struct espresso_priv *priv = snd_soc_card_get_drvdata(codec->card);
++	int ret;
++
++	if (priv->headset_bias_on == on)
++		return 0;
++
++	if (on)
++		ret = snd_soc_dapm_force_enable_pin(dapm, "headset-mic-bias");
++	else
++		ret = snd_soc_dapm_disable_pin(dapm, "headset-mic-bias");
++	if (ret < 0)
++		return ret;
++
++	snd_soc_dapm_sync(dapm);
++	priv->headset_bias_on = on;
++
++	return 0;
++}
++
++/* Read the microphone line once it has settled after the bias came on */
++static int espresso_headset_read_settled(struct espresso_priv *priv, int *adc)
++{
++	int i, prev = INT_MIN, ret;
++
++	/* about 100 ms after the bias comes on; a few readings when it was on */
++	for (i = 0; i < 25; i++) {
++		msleep(20);
++		ret = iio_read_channel_processed(priv->adc_headset_detect, adc);
++		if (ret < 0)
++			return ret;
++		if (abs(*adc - prev) < 20)
++			return 0;
++		prev = *adc;
++	}
++
++	return 0;
++}
++
++static int espresso_headset_jack_check(void *data)
++{
++	struct snd_soc_component *codec = data;
++	struct espresso_priv *priv = snd_soc_card_get_drvdata(codec->card);
++	int adc, ret;
++	int jack_type;
++
++	if (!gpiod_get_value_cansleep(priv->gpio_headset_detect)) {
++		/* unplugged: release a key that was held, drop the bias */
++		snd_soc_jack_report(&priv->headset_jack, 0, ESPRESSO_HEADSET_KEYS);
++		espresso_headset_bias(codec, false);
++		return 0;
++	}
++
++	/* the ADC reads the microphone line only with its bias on */
++	ret = espresso_headset_bias(codec, true);
++	if (ret < 0) {
++		dev_err(codec->card->dev,
++			"Failed to enable the headset mic bias (%d), assuming headphones\n",
++			ret);
++		return SND_JACK_HEADPHONE;
++	}
++
++	ret = espresso_headset_read_settled(priv, &adc);
++	if (ret < 0) {
++		dev_err(codec->card->dev,
++			"Failed to read the ADC (%d), assuming headphones\n", ret);
++		jack_type = SND_JACK_HEADPHONE;
++	} else {
++		dev_dbg(codec->card->dev, "headset detect ADC: %d mV\n", adc);
++		jack_type = snd_soc_jack_get_type(&priv->headset_jack, adc);
++	}
++
++	if (!(jack_type & SND_JACK_MICROPHONE))
++		espresso_headset_bias(codec, false);
++
++	return jack_type;
++}
++
++static int espresso_headset_key_check(void *data)
++{
++	struct snd_soc_component *codec = data;
++	struct espresso_priv *priv = snd_soc_card_get_drvdata(codec->card);
++	int adc, i, ret;
++
++	if (!gpiod_get_value_cansleep(priv->gpio_headset_key))
++		return 0;
++
++	/* only a 4-pole headset has keys; ignore the line while unplugging */
++	if (!(priv->headset_jack.status & SND_JACK_MICROPHONE) ||
++	    !priv->headset_bias_on ||
++	    !gpiod_get_value_cansleep(priv->gpio_headset_detect))
++		return 0;
++
++	ret = iio_read_channel_processed(priv->adc_headset_detect, &adc);
++	if (ret < 0) {
++		dev_err(codec->card->dev,
++			"Failed to read the ADC (%d), can't tell the key\n", ret);
++		return 0;
++	}
++	dev_dbg(codec->card->dev, "headset key ADC: %d mV\n", adc);
++
++	for (i = 0; i < ARRAY_SIZE(priv->headset_key_zones); i++)
++		if (adc >= priv->headset_key_zones[i].min_mv &&
++		    adc <= priv->headset_key_zones[i].max_mv)
++			return priv->headset_key_zones[i].jack_type;
++
++	return 0;
++}
++
+ static int espresso_start_fll1(struct snd_soc_pcm_runtime *rtd,
+ 			       unsigned int rate)
+ {
+@@ -259,10 +409,124 @@ static int espresso_late_probe(struct snd_soc_card *card)
+ 	/* Use MCLK1 as SYSCLK for boot */
+ 	ret = snd_soc_dai_set_sysclk(aif1_dai, WM8994_SYSCLK_MCLK1,
+ 				     priv->mclk1_rate, SND_SOC_CLOCK_IN);
+-	if (ret < 0)
++	if (ret < 0) {
+ 		dev_err(aif1_dai->dev, "Failed to switch to MCLK1: %d\n", ret);
++		return ret;
++	}
+ 
+-	return ret;
++	if (!priv->gpio_headset_detect)
++		return 0;
++
++	ret = snd_soc_card_jack_new_pins(card, "Headset",
++					 SND_JACK_HEADSET | SND_JACK_BTN_0 |
++					 SND_JACK_BTN_1 | SND_JACK_BTN_2,
++					 &priv->headset_jack,
++					 espresso_headset_jack_pins,
++					 ARRAY_SIZE(espresso_headset_jack_pins));
++	if (ret)
++		return ret;
++
++	ret = snd_soc_jack_add_zones(&priv->headset_jack,
++				     ARRAY_SIZE(priv->headset_jack_zones),
++				     priv->headset_jack_zones);
++	if (ret)
++		return ret;
++
++	snd_jack_set_key(priv->headset_jack.jack, SND_JACK_BTN_0, KEY_MEDIA);
++	snd_jack_set_key(priv->headset_jack.jack, SND_JACK_BTN_1, KEY_VOLUMEUP);
++	snd_jack_set_key(priv->headset_jack.jack, SND_JACK_BTN_2,
++			 KEY_VOLUMEDOWN);
++
++	priv->headset_gpios[0] = (struct snd_soc_jack_gpio) {
++		.name = "Headset Jack",
++		.report = SND_JACK_HEADSET,
++		.debounce_time = 150,
++		.jack_status_check = espresso_headset_jack_check,
++		.data = aif1_dai->component,
++		.desc = priv->gpio_headset_detect,
++	};
++	priv->headset_gpios[1] = (struct snd_soc_jack_gpio) {
++		.name = "Headset Key",
++		.report = ESPRESSO_HEADSET_KEYS,
++		.debounce_time = 30,
++		.jack_status_check = espresso_headset_key_check,
++		.data = aif1_dai->component,
++		.desc = priv->gpio_headset_key,
++	};
++
++	return snd_soc_jack_add_gpios(&priv->headset_jack,
++				      ARRAY_SIZE(priv->headset_gpios),
++				      priv->headset_gpios);
++}
++
++static int espresso_parse_jack(struct device *dev, struct espresso_priv *priv)
++{
++	struct device_node *np = dev->of_node;
++	enum iio_chan_type type;
++	u32 fourpole[2], buttons[3];
++	int ret, i;
++
++	priv->gpio_headset_detect =
++		devm_gpiod_get_optional(dev, "headset-detect", GPIOD_IN);
++	if (IS_ERR(priv->gpio_headset_detect))
++		return dev_err_probe(dev, PTR_ERR(priv->gpio_headset_detect),
++				     "Failed to get the headset detect GPIO\n");
++	if (!priv->gpio_headset_detect)
++		return 0;
++
++	priv->gpio_headset_key = devm_gpiod_get(dev, "headset-key", GPIOD_IN);
++	if (IS_ERR(priv->gpio_headset_key))
++		return dev_err_probe(dev, PTR_ERR(priv->gpio_headset_key),
++				     "Failed to get the headset key GPIO\n");
++
++	priv->adc_headset_detect = devm_iio_channel_get(dev, "headset-detect");
++	if (IS_ERR(priv->adc_headset_detect))
++		return dev_err_probe(dev, PTR_ERR(priv->adc_headset_detect),
++				     "Failed to get the headset detect ADC\n");
++
++	ret = iio_get_channel_type(priv->adc_headset_detect, &type);
++	if (ret)
++		return dev_err_probe(dev, ret, "Failed to get the ADC type\n");
++	if (type != IIO_VOLTAGE)
++		return dev_err_probe(dev, -EINVAL,
++				     "The headset detect ADC is not a voltage\n");
++
++	/* in mV despite the property names, as on Midas */
++	ret = of_property_read_u32_array(np, "samsung,headset-4pole-threshold-microvolt",
++					 fourpole, ARRAY_SIZE(fourpole));
++	if (ret || fourpole[0] > fourpole[1])
++		return dev_err_probe(dev, -EINVAL,
++				     "Invalid 4-pole detection thresholds\n");
++
++	ret = of_property_read_u32_array(np, "samsung,headset-button-threshold-microvolt",
++					 buttons, ARRAY_SIZE(buttons));
++	if (ret || buttons[0] > buttons[1] || buttons[1] > buttons[2])
++		return dev_err_probe(dev, -EINVAL,
++				     "Invalid headset key thresholds\n");
++
++	priv->headset_jack_zones[0] = (struct snd_soc_jack_zone) {
++		.max_mv = fourpole[0],
++		.jack_type = SND_JACK_HEADPHONE,
++	};
++	priv->headset_jack_zones[1] = (struct snd_soc_jack_zone) {
++		.min_mv = fourpole[0] + 1,
++		.max_mv = fourpole[1],
++		.jack_type = SND_JACK_HEADSET,
++	};
++	priv->headset_jack_zones[2] = (struct snd_soc_jack_zone) {
++		.min_mv = fourpole[1] + 1,
++		.max_mv = UINT_MAX,
++		.jack_type = SND_JACK_HEADPHONE,
++	};
++
++	for (i = 0; i < ARRAY_SIZE(buttons); i++) {
++		priv->headset_key_zones[i].min_mv = buttons[i];
++		priv->headset_key_zones[i].max_mv =
++			i < ARRAY_SIZE(buttons) - 1 ? buttons[i + 1] - 1 : UINT_MAX;
++		priv->headset_key_zones[i].jack_type = SND_JACK_BTN_0 >> i;
++	}
++
++	return 0;
+ }
+ 
+ SND_SOC_DAILINK_DEFS(wm1811_hifi,
+@@ -323,6 +587,10 @@ static int espresso_probe(struct platform_device *pdev)
+ 	if (ret < 0)
+ 		return dev_err_probe(dev, ret, "Card name is not specified\n");
+ 
++	ret = espresso_parse_jack(dev, priv);
++	if (ret)
++		return ret;
++
+ 	ret = snd_soc_of_parse_audio_routing(card, "audio-routing");
+ 	if (ret < 0)
+ 		return dev_err_probe(dev, ret,
+-- 
+2.55.0
+

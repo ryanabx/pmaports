@@ -2,7 +2,7 @@
 maintainer="Mithil Bavishi <bavishimithil@gmail.com>"
 pkgname=linux-postmarketos-omap
 pkgver=7.1.5
-pkgrel=38
+pkgrel=40
 pkgdesc="Mainline kernel fork for OMAP devices"
 arch="armv7"
 url="https://kernel.org/"
@@ -89,6 +89,8 @@ source="
 	0041-power-supply-smb347-check-the-input-state-on-every-i.patch
 	0042-power-supply-smb347-program-the-charger-again-when-i.patch
 	0043-power-supply-smb347-take-the-USB-input-mode-from-CMD.patch
+	0044-WIP-ASoC-ti-samsung-espresso-add-headset-jack-detect.patch
+	0045-WIP-ARM-dts-ti-omap-samsung-espresso10-describe-the-.patch
 "
 builddir="$srcdir/linux-$_kernver"
 replaces="linux-samsung-espresso3g linux-nokia-n900"
@@ -163,4 +165,6 @@ bc87b845f1c6dc89d1cdd5ab29ecb54969edd3d1f7545f7f51aa2b3d714972627758db9b4a4e8b59
 e051e025264df446068cdb1477f7fc619a6799680856267aad8a7eb897814e05782aa13c7fedd3aadb0cbef288b848e84f227e249442c893e7442d375c1cb7d5  0041-power-supply-smb347-check-the-input-state-on-every-i.patch
 e7d7fa91dd21d9a3c903f6471493d3ea2acbab3ff6c178b0b910f5d07f24636442144a6804e9e4010eae03a1c2c2923f92b7c5414d0e3cd65504534818c86d3c  0042-power-supply-smb347-program-the-charger-again-when-i.patch
 49aa5a931993b239e91a5eb669d24ef22485bc8f3114e7dd5154a843d10ae9a483a7f9921eb9357167d2d5f53c64c4ec685b317a6ce81c59518dfbe8d6655da7  0043-power-supply-smb347-take-the-USB-input-mode-from-CMD.patch
+5336926809f4930dbb08f87204dcbf05d3943e23e2ac38c73c0fe2bb66c0fd3ee948503478c8691a552aab4a1465cc486c61c1e50dcd72d219c3693fa3f102ac  0044-WIP-ASoC-ti-samsung-espresso-add-headset-jack-detect.patch
+6554da56d999ca18eb40087f0dd55220628eacb853b8635d189c485bd4e52369008e87362f07e92d3acccda83c029a17c54783eb71f4680f62142e0f62959810  0045-WIP-ARM-dts-ti-omap-samsung-espresso10-describe-the-.patch
 "
