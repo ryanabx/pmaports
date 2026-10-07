@@ -2,7 +2,7 @@
 maintainer="Mithil Bavishi <bavishimithil@gmail.com>"
 pkgname=linux-postmarketos-omap
 pkgver=7.1.5
-pkgrel=48
+pkgrel=49
 pkgdesc="Mainline kernel fork for OMAP devices"
 arch="armv7"
 url="https://kernel.org/"
@@ -93,6 +93,7 @@ source="
 	0044-ARM-dts-ti-omap-espresso-common-route-Bluetooth-SCO-.patch
 	0045-power-supply-max17042_battery-report-the-battery-s-d.patch
 	0046-wifi-brcmfmac-p2p-add-the-P2P-device-without-the-fir.patch
+	0047-ARM-dts-ti-omap-espresso-common-keep-the-WLAN-powere.patch
 "
 builddir="$srcdir/linux-$_kernver"
 replaces="linux-samsung-espresso3g linux-nokia-n900"
@@ -171,4 +172,5 @@ d57843b2ae4a4dae03e11cf48ba1e7b6dd16bf2893cec2922bed34f15e4d179a70c61005c6e84082
 de6c9570cd7fafa26f81676cd92030463ffd418bfb56dae7ba65deb6e0d4b06e135bad4df1c794119dfe20ebd8208c1a1ace1215f6f1d58bb12bd4fb3406b639  0044-ARM-dts-ti-omap-espresso-common-route-Bluetooth-SCO-.patch
 39555597a3e712e089e0ddb79ed3236f04342e9ad8f2739cbf9d015bd400874661cebdba3a0abd79405a402f4d460d64e008a58208c1f93cbc93c7228261a725  0045-power-supply-max17042_battery-report-the-battery-s-d.patch
 71dd52a5b1fafe7c3f53505ffd783ac62d54e9e6fac7cbe9586aa4b941183557223e3ed1c302e05dd1edcef54e821ae326a2dec003e05d43441c2ba71e74c105  0046-wifi-brcmfmac-p2p-add-the-P2P-device-without-the-fir.patch
+52990bc22a2e6b21008582591cf1754591b5b53ca33fd76527eb7e025bd7d8681fef902f0238484d4e4749e181664783fe7d5b9daf8cfafe5b0d8a4ba4aacdf8  0047-ARM-dts-ti-omap-espresso-common-keep-the-WLAN-powere.patch
 "

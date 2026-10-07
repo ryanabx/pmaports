@@ -1,0 +1,42 @@
+From 92ec77a385f189cb65bae3c94641cb7318a56094 Mon Sep 17 00:00:00 2001
+From: Ryan Brue <ryanbrue.dev@gmail.com>
+Date: Wed, 7 Oct 2026 17:16:56 -0500
+Subject: [PATCH] ARM: dts: ti: omap: espresso-common: keep the WLAN powered in
+ suspend
+
+brcmfmac keeps the BCM4330 powered across system suspend and needs the
+SDIO host to allow that (MMC_PM_KEEP_POWER). Without
+keep-power-in-suspend on mmc5, suspend logs
+
+  brcmfmac: brcmf_ops_sdio_suspend: Failed to set pm_flags 1
+
+the MMC core powers the card down anyway, and after resume the driver
+talks to a chip that lost its firmware:
+
+  brcmfmac: brcmf_sdio_htclk: HT Avail request error: -110
+
+endlessly, with Wi-Fi gone until a reboot.
+
+Let the host keep the card powered in suspend.
+
+Fixes: f768d54723d1 ("ARM: dts: ti: omap: espresso-common: Add common device tree for Samsung Galaxy Tab 2 series")
+Assisted-by: LLM
+---
+ arch/arm/boot/dts/ti/omap/omap4-samsung-espresso-common.dtsi | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/arch/arm/boot/dts/ti/omap/omap4-samsung-espresso-common.dtsi b/arch/arm/boot/dts/ti/omap/omap4-samsung-espresso-common.dtsi
+index 28c54f1b5738..47220a2d9889 100644
+--- a/arch/arm/boot/dts/ti/omap/omap4-samsung-espresso-common.dtsi
++++ b/arch/arm/boot/dts/ti/omap/omap4-samsung-espresso-common.dtsi
+@@ -921,6 +921,7 @@ &mmc5 {
+ 	#size-cells = <0>;
+ 
+ 	non-removable;
++	keep-power-in-suspend;
+ 	bus-width = <4>;
+ 	vmmc-supply = <&reg_espresso_wlan>;
+ 	mmc-pwrseq = <&wlan_pwrseq>;
+-- 
+2.55.0
+
