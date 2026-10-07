@@ -1,0 +1,89 @@
+From a6f09ef1ee17004491a04d4029f106be7854b0c1 Mon Sep 17 00:00:00 2001
+From: Ryan Brue <ryanbrue.dev@gmail.com>
+Date: Wed, 7 Oct 2026 12:51:46 -0500
+Subject: [PATCH 47/48] ASoC: wm8994: release the MCLK that was enabled for
+ AIFnCLK
+
+aif_mclk_set() enables the AIFnCLK source clock (MCLK1 or MCLK2) when
+AIFnCLK powers up and disables it when AIFnCLK powers down, and both
+times it picks the clock from the current AIFnCLK_SRC field. If the
+source changes while AIFnCLK is powered, e.g. when a machine driver
+switches SYSCLK from FLL1 to MCLK1 as the bias level drops, power-down
+disables a clock that power-up never enabled and leaves the other one
+enabled.
+
+On the Samsung Galaxy Tab 2 (WM1811, whose machine driver holds MCLK1
+while the codec is biased and switches SYSCLK to MCLK1 when it stops
+FLL1) this shows up as "clock-codec-mclk1 already disabled" and
+"already unprepared" warnings when streams stop, after the codec had
+released a reference it didn't hold.
+
+Remember the clock enabled at power-up and release that one.
+
+Fixes: 001b83d395ab ("ASoC: wm8994: Add support for MCLKn clock gating")
+Assisted-by: LLM
+---
+ sound/soc/codecs/wm8994.c | 25 ++++++++++++++++---------
+ sound/soc/codecs/wm8994.h |  2 ++
+ 2 files changed, 18 insertions(+), 9 deletions(-)
+
+diff --git a/sound/soc/codecs/wm8994.c b/sound/soc/codecs/wm8994.c
+index 8bf58a6a8af7..a1a91b8300fe 100644
+--- a/sound/soc/codecs/wm8994.c
++++ b/sound/soc/codecs/wm8994.c
+@@ -1059,6 +1059,17 @@ static int aif_mclk_set(struct snd_soc_component *component, int aif, bool enabl
+ 	unsigned int offset, val, clk_idx;
+ 	int ret;
+ 
++	/*
++	 * Release the clock enabled when AIFnCLK powered up: the source may
++	 * have been switched since (e.g. from FLL1 to MCLK1 by the machine
++	 * driver), and dropping a reference never taken unbalances it.
++	 */
++	if (!enable) {
++		clk_disable_unprepare(wm8994->aifclk_mclk[aif]);
++		wm8994->aifclk_mclk[aif] = NULL;
++		return 0;
++	}
++
+ 	if (aif)
+ 		offset = 4;
+ 	else
+@@ -1078,16 +1089,12 @@ static int aif_mclk_set(struct snd_soc_component *component, int aif, bool enabl
+ 		return 0;
+ 	}
+ 
+-	if (enable) {
+-		ret = clk_prepare_enable(wm8994->mclk[clk_idx].clk);
+-		if (ret < 0) {
+-			dev_err(component->dev,	"Failed to enable MCLK%d\n",
+-				clk_idx);
+-			return ret;
+-		}
+-	} else {
+-		clk_disable_unprepare(wm8994->mclk[clk_idx].clk);
++	ret = clk_prepare_enable(wm8994->mclk[clk_idx].clk);
++	if (ret < 0) {
++		dev_err(component->dev,	"Failed to enable MCLK%d\n", clk_idx);
++		return ret;
+ 	}
++	wm8994->aifclk_mclk[aif] = wm8994->mclk[clk_idx].clk;
+ 
+ 	return 0;
+ }
+diff --git a/sound/soc/codecs/wm8994.h b/sound/soc/codecs/wm8994.h
+index b28398aa9e48..c75343d6b61c 100644
+--- a/sound/soc/codecs/wm8994.h
++++ b/sound/soc/codecs/wm8994.h
+@@ -81,6 +81,8 @@ struct wm8994_priv {
+ 	struct wm_hubs_data hubs;
+ 	struct wm8994 *wm8994;
+ 	struct clk_bulk_data mclk[WM8994_NUM_MCLK];
++	/* MCLK enabled for AIF1CLK/AIF2CLK, released when it powers down */
++	struct clk *aifclk_mclk[2];
+ 	int sysclk[2];
+ 	int sysclk_rate[2];
+ 	int mclk_rate[2];
+-- 
+2.55.0
+

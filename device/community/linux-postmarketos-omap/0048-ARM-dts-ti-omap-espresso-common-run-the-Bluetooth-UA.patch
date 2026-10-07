@@ -1,0 +1,33 @@
+From 625620786b672208d9eeb10436d57754428fa3e0 Mon Sep 17 00:00:00 2001
+From: Ryan Brue <ryanbrue.dev@gmail.com>
+Date: Wed, 7 Oct 2026 12:52:08 -0500
+Subject: [PATCH 48/48] ARM: dts: ti: omap: espresso-common: run the Bluetooth
+ UART at 3 Mbaud
+
+Without max-speed, hci_bcm keeps the BCM4330 at its 115200 baud boot
+rate, about 90 kbit/s of payload: too slow for A2DP audio (SBC at its
+default quality needs about 330 kbit/s). The UART has RTS/CTS muxed;
+3 Mbaud is an exact divisor of the 48 MHz UART clock and what other
+OMAP boards with Bluetooth UARTs use.
+
+Fixes: f768d54723d1 ("ARM: dts: ti: omap: espresso-common: Add common device tree for Samsung Galaxy Tab 2 series")
+Assisted-by: LLM
+---
+ arch/arm/boot/dts/ti/omap/omap4-samsung-espresso-common.dtsi | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/arch/arm/boot/dts/ti/omap/omap4-samsung-espresso-common.dtsi b/arch/arm/boot/dts/ti/omap/omap4-samsung-espresso-common.dtsi
+index a70a964dc0c2..9ee7828453d8 100644
+--- a/arch/arm/boot/dts/ti/omap/omap4-samsung-espresso-common.dtsi
++++ b/arch/arm/boot/dts/ti/omap/omap4-samsung-espresso-common.dtsi
+@@ -949,6 +949,7 @@ bluetooth {
+ 		compatible = "brcm,bcm4330-bt";
+ 		pinctrl-names = "default";
+ 		pinctrl-0 = <&bluetooth_pins>;
++		max-speed = <3000000>;
+ 		shutdown-gpios = <&gpio4 7 GPIO_ACTIVE_HIGH>;
+ 		reset-gpios = <&gpio3 18 GPIO_ACTIVE_LOW>;
+ 		device-wakeup-gpios = <&gpio3 29 GPIO_ACTIVE_HIGH>;
+-- 
+2.55.0
+
