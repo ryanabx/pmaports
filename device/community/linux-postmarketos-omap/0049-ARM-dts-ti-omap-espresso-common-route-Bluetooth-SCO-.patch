@@ -1,0 +1,38 @@
+From 85e91d808dbe1e97d2406edd32f88f6fcadf1288 Mon Sep 17 00:00:00 2001
+From: Ryan Brue <ryanbrue.dev@gmail.com>
+Date: Wed, 7 Oct 2026 13:24:09 -0500
+Subject: [PATCH] ARM: dts: ti: omap: espresso-common: route Bluetooth SCO over
+ the UART
+
+The BCM4330 comes up with SCO routed to its PCM interface (Read SCO PCM
+Int Param: routing 0, 256 kbit/s, short frame, slave, slave), the
+Android setup with call audio going straight to the codec. A Linux
+Bluetooth stack in the host, such as PipeWire's HFP support, gets no
+SCO data then: the headset microphone records digital silence.
+
+Route SCO over the transport instead, keeping the other PCM parameters
+at the values the controller reports. Tested on a GT-P5113 with JBL
+earbuds: with the routing switched (by hand, then through this
+property) the HFP source records the microphone.
+
+Assisted-by: LLM
+---
+ arch/arm/boot/dts/ti/omap/omap4-samsung-espresso-common.dtsi | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/arch/arm/boot/dts/ti/omap/omap4-samsung-espresso-common.dtsi b/arch/arm/boot/dts/ti/omap/omap4-samsung-espresso-common.dtsi
+index 9ee7828453d8..28c54f1b5738 100644
+--- a/arch/arm/boot/dts/ti/omap/omap4-samsung-espresso-common.dtsi
++++ b/arch/arm/boot/dts/ti/omap/omap4-samsung-espresso-common.dtsi
+@@ -950,6 +950,8 @@ bluetooth {
+ 		pinctrl-names = "default";
+ 		pinctrl-0 = <&bluetooth_pins>;
+ 		max-speed = <3000000>;
++		/* SCO over the UART (for HFP in the host), not to the PCM pins */
++		brcm,bt-pcm-int-params = [01 01 00 00 00];
+ 		shutdown-gpios = <&gpio4 7 GPIO_ACTIVE_HIGH>;
+ 		reset-gpios = <&gpio3 18 GPIO_ACTIVE_LOW>;
+ 		device-wakeup-gpios = <&gpio3 29 GPIO_ACTIVE_HIGH>;
+-- 
+2.55.0
+
