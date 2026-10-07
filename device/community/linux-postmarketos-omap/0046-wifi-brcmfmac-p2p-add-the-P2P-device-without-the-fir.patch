@@ -1,0 +1,89 @@
+From 624a7b433139a9f4c9ea4ea0c0922d1eda668de5 Mon Sep 17 00:00:00 2001
+From: Ryan Brue <ryanbrue.dev@gmail.com>
+Date: Wed, 7 Oct 2026 16:54:27 -0500
+Subject: [PATCH] wifi: brcmfmac: p2p: add the P2P device without the
+ firmware's IF event
+
+brcmf_p2p_create_p2pdev() enables P2P discovery and waits for the
+BRCMF_E_IF_ADD event of the discovery bsscfg. The BCM4330 firmware
+5.99.14 (Samsung Galaxy Tab 2) creates that bsscfg ("p2p_dev" reports
+index 1 afterwards) but never sends the event, so creating the P2P
+device always fails:
+
+  brcmf_p2p_create_p2pdev: timeout occurred
+  brcmf_cfg80211_add_iface: add iface p2p-dev-wlan0 type 10 failed: err=-5
+
+and discovery stays enabled in the firmware without a host interface,
+which then floods the log with "brcmf_fweh_call_event_handler: no
+interface object" for the P2P probe request events (72) of that bsscfg.
+
+When the event doesn't come, look the bsscfg index up with "p2p_dev"
+and add the interface the way the event handler would. If that fails
+too, disable discovery again before giving up.
+
+Assisted-by: LLM
+---
+ .../broadcom/brcm80211/brcmfmac/p2p.c         | 39 ++++++++++++++++++-
+ 1 file changed, 38 insertions(+), 1 deletion(-)
+
+diff --git a/drivers/net/wireless/broadcom/brcm80211/brcmfmac/p2p.c b/drivers/net/wireless/broadcom/brcm80211/brcmfmac/p2p.c
+index 813cc15d8b87..e219c68daa46 100644
+--- a/drivers/net/wireless/broadcom/brcm80211/brcmfmac/p2p.c
++++ b/drivers/net/wireless/broadcom/brcm80211/brcmfmac/p2p.c
+@@ -2163,6 +2163,41 @@ static int brcmf_p2p_release_p2p_if(struct brcmf_cfg80211_vif *vif)
+ 	return brcmf_fil_iovar_data_set(ifp, "p2p_ifdel", addr, ETH_ALEN);
+ }
+ 
++/**
++ * brcmf_p2p_add_p2pdev_noevent() - add the P2P_DEVICE interface without event.
++ *
++ * @p2p: P2P specific data.
++ * @vif: virtual interface object waiting for the interface.
++ *
++ * Some older firmware (e.g. BCM4330 5.99.14) sets up the P2P discovery bsscfg
++ * but never sends the BRCMF_E_IF_ADD event for it. Look up its index and add
++ * the interface as brcmf_fweh_handle_if_event() would have done.
++ */
++static int brcmf_p2p_add_p2pdev_noevent(struct brcmf_p2p_info *p2p,
++					struct brcmf_cfg80211_vif *vif)
++{
++	struct brcmf_if *pri_ifp = p2p->bss_idx[P2PAPI_BSSCFG_PRIMARY].vif->ifp;
++	struct brcmf_pub *drvr = p2p->cfg->pub;
++	struct brcmf_if *ifp;
++	u32 bsscfgidx;
++	int err;
++
++	err = brcmf_fil_iovar_int_get(pri_ifp, "p2p_dev", &bsscfgidx);
++	if (err < 0)
++		return err;
++	if (!bsscfgidx || bsscfgidx >= BRCMF_MAX_IFS || drvr->iflist[bsscfgidx])
++		return -EIO;
++
++	ifp = brcmf_add_if(drvr, bsscfgidx, 0, true, "p2p-dev", p2p->dev_addr);
++	if (IS_ERR(ifp))
++		return PTR_ERR(ifp);
++
++	ifp->vif = vif;
++	vif->ifp = ifp;
++	brcmf_dbg(INFO, "no IF event, P2P device on bsscfg %u\n", bsscfgidx);
++	return 0;
++}
++
+ /**
+  * brcmf_p2p_create_p2pdev() - create a P2P_DEVICE virtual interface.
+  *
+@@ -2219,8 +2254,10 @@ static struct wireless_dev *brcmf_p2p_create_p2pdev(struct brcmf_p2p_info *p2p,
+ 					    BRCMF_VIF_EVENT_TIMEOUT);
+ 	brcmf_cfg80211_arm_vif_event(p2p->cfg, NULL);
+ 	brcmf_fweh_p2pdev_setup(pri_ifp, false);
+-	if (!err) {
++	if (!err && brcmf_p2p_add_p2pdev_noevent(p2p, p2p_vif)) {
+ 		bphy_err(drvr, "timeout occurred\n");
++		/* don't leave the discovery bsscfg behind without an interface */
++		brcmf_fil_iovar_int_set(pri_ifp, "p2p_disc", 0);
+ 		err = -EIO;
+ 		goto fail;
+ 	}
+-- 
+2.55.0
+
