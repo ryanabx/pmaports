@@ -1,0 +1,72 @@
+From 4c3a6317647d39295bef0e379af18d20b813199c Mon Sep 17 00:00:00 2001
+From: Ryan Brue <ryan.brue@enovationcontrols.com>
+Date: Wed, 7 Oct 2026 14:16:03 -0500
+Subject: [PATCH] supplicant: offer WPA-PSK-SHA256 only if the interface
+ supports BIP
+
+For a "wpa-psk" profile, NetworkManager adds WPA-PSK-SHA256 to key_mgmt
+whenever wpa_supplicant was built with PMF support, regardless of the
+interface. wpa_supplicant then intersects that with the AP's AKMs and
+prefers WPA-PSK-SHA256 over WPA-PSK, so on a WPA2-PSK network with
+optional PMF (AKMs 00-0F-AC:2 and 00-0F-AC:6, MFPC=1; the default of
+OpenWrt and many routers) it associates with AKM 6, even when the
+driver can't do PMF and the setting is pmf=disable.
+
+Some drivers can't connect with that AKM at all. brcmfmac on a BCM4330
+(Samsung Galaxy Tab 2, firmware 5.99.14 without 802.11w support: no
+"mfp" iovar, no BIP cipher) maps AKM 6 to WPA2_AUTH_PSK_SHA256, which
+the firmware doesn't know. Its join scan finds no matching BSS and every
+attempt fails with status 16, until NM gives up asking for "secrets".
+The same profile with key_mgmt=WPA-PSK connects at once.
+
+NM already knows whether the interface can do PMF: the BIP capability
+comes from the interface's GroupMgmt list (empty when the driver has no
+BIP cipher), and SAE in transition mode is already gated on it. Do the
+same for WPA-PSK-SHA256, except when PMF is required, where the profile
+can't work without it anyway.
+
+Assisted-by: LLM
+---
+ src/core/supplicant/nm-supplicant-config.c         | 11 ++++++++++-
+ src/core/supplicant/tests/test-supplicant-config.c |  3 ++-
+ 2 files changed, 12 insertions(+), 2 deletions(-)
+
+diff --git a/src/core/supplicant/nm-supplicant-config.c b/src/core/supplicant/nm-supplicant-config.c
+index ee26474..c98defa 100644
+--- a/src/core/supplicant/nm-supplicant-config.c
++++ b/src/core/supplicant/nm-supplicant-config.c
+@@ -1050,7 +1050,16 @@ nm_supplicant_config_add_setting_wireless_security(NMSupplicantConfig
+     } else if (nm_streq(key_mgmt, "wpa-psk")) {
+         if (pmf != NM_SETTING_WIRELESS_SECURITY_PMF_REQUIRED)
+             g_string_append(key_mgmt_conf, "WPA-PSK");
+-        if (!quirk_no_ap_wpa_psk_sha256 && _get_capability(priv, NM_SUPPL_CAP_TYPE_PMF))
++        /* WPA-PSK-SHA256 (AKM 00-0F-AC:6) is the AKM of PMF-capable networks.
++         * Only offer it if the interface can actually do PMF (BIP), unless
++         * PMF is required: wpa_supplicant prefers it over WPA-PSK whenever
++         * the AP offers both, and some drivers can't associate with it.
++         * For example, brcmfmac with firmware that lacks 802.11w support
++         * (BCM4330) fails every join to a WPA2-PSK AP with optional PMF.
++         */
++        if (!quirk_no_ap_wpa_psk_sha256 && _get_capability(priv, NM_SUPPL_CAP_TYPE_PMF)
++            && (pmf == NM_SETTING_WIRELESS_SECURITY_PMF_REQUIRED
++                || _get_capability(priv, NM_SUPPL_CAP_TYPE_BIP)))
+             g_string_append(key_mgmt_conf, " WPA-PSK-SHA256");
+         if (!is_ap && _get_capability(priv, NM_SUPPL_CAP_TYPE_FT))
+             g_string_append(key_mgmt_conf, " FT-PSK");
+diff --git a/src/core/supplicant/tests/test-supplicant-config.c b/src/core/supplicant/tests/test-supplicant-config.c
+index d934ba1..91ec398 100644
+--- a/src/core/supplicant/tests/test-supplicant-config.c
++++ b/src/core/supplicant/tests/test-supplicant-config.c
+@@ -427,7 +427,8 @@ test_wifi_wpa_psk(const char                  *detail,
+         build_supplicant_config(connection,
+                                 1500,
+                                 0,
+-                                NM_SUPPL_CAP_MASK_T_PMF_YES | NM_SUPPL_CAP_MASK_T_FILS_YES);
++                                NM_SUPPL_CAP_MASK_T_PMF_YES | NM_SUPPL_CAP_MASK_T_FILS_YES
++                                    | NM_SUPPL_CAP_MASK_T_BIP_YES);
+ 
+     g_test_assert_expected_messages();
+     g_assert(config_dict);
+-- 
+2.55.0
+

@@ -4,7 +4,7 @@ maintainer="Achill Gilgenast <achill@achill.org>"
 pkgname=networkmanager
 _pkgver=1.58.0
 pkgver=9999$_pkgver
-pkgrel=1
+pkgrel=2
 pkgdesc="Network Management daemon"
 url="https://wiki.gnome.org/Projects/NetworkManager"
 # armhf: pmb#2618
@@ -84,6 +84,7 @@ source="$pkgname-$_pkgver.tar.gz::https://github.com/NetworkManager/NetworkManag
 	$pkgname.rules
 	0001-hack-wifi-Disable-WPA-PSK-SHA256-for-brcmfmac-in-AP-.patch
 	2469.patch
+	0002-supplicant-offer-WPA-PSK-SHA256-only-if-the-interfac.patch
 	"
 builddir="$srcdir/NetworkManager-$_pkgver"
 
@@ -250,4 +251,5 @@ sha512sums="
 9820ed2ead0af689644842de57657bb10330a1eaff0e85b21ae9913f55e399e47d8b41b0a12956f30de80272b4424c6e55f33acbc88e156879003a260bf576f6  networkmanager.rules
 d1d23a2409f325814b2e361b886217efc0140af152723dfc5d049b1b6880ccc104d5c117d52fed6d0d87f46a1d477376592ba58531d383d9590cdf6af0b2b5f9  0001-hack-wifi-Disable-WPA-PSK-SHA256-for-brcmfmac-in-AP-.patch
 cea8057ffec270eb25a37f00c142c76f69da062a8ab5fb40691ed14f85056c0d0b4a45adf900ddac25b518cb7e2a60c5c990c5860d9a8743d02713eee6facf28  2469.patch
+7f46eb6a23f38024f6eadfe8f972dc6591072decedfc284235f74d0f1cd27266b36190f357913dfb3be969a371cf27083ebc7d1b27a737c7a689527c8deb2a81  0002-supplicant-offer-WPA-PSK-SHA256-only-if-the-interfac.patch
 "
