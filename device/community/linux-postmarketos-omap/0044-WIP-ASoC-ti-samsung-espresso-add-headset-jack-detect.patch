@@ -1,4 +1,4 @@
-From 84483996cf833f9a624fd61a7381f8ade774a7d8 Mon Sep 17 00:00:00 2001
+From d0c43e1650dad9af7b8e14b5fc1fcd2d0e5f2a5b Mon Sep 17 00:00:00 2001
 From: Ryan Brue <ryanbrue.dev@gmail.com>
 Date: Fri, 25 Sep 2026 02:49:44 -0500
 Subject: [PATCH 44/45] WIP: ASoC: ti: samsung-espresso: add headset jack
@@ -21,19 +21,27 @@ line and only works with the bias on: with the bias off it reads
 (as the vendor kernel does), and turn it off for headphones and on
 removal. The line also takes about 100 ms to settle after the bias comes
 on (20 ms gave half the final voltage), so read it until it is stable.
+And while a plug is still going in, the jack switch already closes but
+the microphone contact doesn't touch yet: the line then sits at its
+unloaded level (about 2770 mV, as with the jack empty) for a few hundred
+ms before dropping to the headset's level (about 2080 mV). Keep reading
+while it reads above the 4-pole window, for up to 2 s.
 On removal, release a key that was still reported as pressed, and ignore
 the key line once the jack switch reads empty.
 
-WIP: first test (GT-P5113, earbuds with one key): insertion and removal
-were reported, but with the bias turned off after detection a stuck
-volume-down key; this version is untested.
+Tested on a GT-P5113 with earbuds (4-pole, one key): insertion, removal
+and KEY_MEDIA presses; with the bias turned off after detection (as on
+Midas) the key got stuck, and a slow insertion was classified on the
+unloaded plateau.
+
+WIP: the binding is still in this commit.
 
 Assisted-by: LLM
 ---
  .../sound/samsung,espresso-audio.yaml         |  39 +++
  sound/soc/ti/Kconfig                          |   2 +-
- sound/soc/ti/samsung-espresso.c               | 272 +++++++++++++++++-
- 3 files changed, 310 insertions(+), 3 deletions(-)
+ sound/soc/ti/samsung-espresso.c               | 278 +++++++++++++++++-
+ 3 files changed, 316 insertions(+), 3 deletions(-)
 
 diff --git a/Documentation/devicetree/bindings/sound/samsung,espresso-audio.yaml b/Documentation/devicetree/bindings/sound/samsung,espresso-audio.yaml
 index 15da4e0fa0b3..a2c3634d1a21 100644
@@ -106,7 +114,7 @@ index fb6b0067ca2c..4e7087cd212d 100644
  	select MFD_WM8994
  	select SND_SOC_WM8994
 diff --git a/sound/soc/ti/samsung-espresso.c b/sound/soc/ti/samsung-espresso.c
-index 9c00da0dfab9..b8dbe0afcfba 100644
+index 9c00da0dfab9..327d790b202d 100644
 --- a/sound/soc/ti/samsung-espresso.c
 +++ b/sound/soc/ti/samsung-espresso.c
 @@ -7,10 +7,17 @@
@@ -127,7 +135,7 @@ index 9c00da0dfab9..b8dbe0afcfba 100644
  #include <sound/pcm_params.h>
  #include <sound/soc.h>
  #include <sound/soc-dapm.h>
-@@ -25,8 +32,151 @@ struct espresso_priv {
+@@ -25,8 +32,157 @@ struct espresso_priv {
  	unsigned int fll1_rate;
  	bool mclk1_enabled;
  	bool aif1clk_forced;
@@ -187,20 +195,26 @@ index 9c00da0dfab9..b8dbe0afcfba 100644
 +	return 0;
 +}
 +
-+/* Read the microphone line once it has settled after the bias came on */
++/*
++ * Read the microphone line once it has settled. After the bias comes on it
++ * rises for about 100 ms. While a plug is still going in, the jack switch
++ * already reads "inserted" but the microphone contact isn't touching yet:
++ * the line then sits at its unloaded level, above the 4-pole window, until
++ * the plug is home. Keep reading while it does, for up to 2 s.
++ */
 +static int espresso_headset_read_settled(struct espresso_priv *priv, int *adc)
 +{
-+	int i, prev = INT_MIN, ret;
++	int i, stable = 0, prev = INT_MIN, ret;
 +
-+	/* about 100 ms after the bias comes on; a few readings when it was on */
-+	for (i = 0; i < 25; i++) {
++	for (i = 0; i < 100; i++) {
 +		msleep(20);
 +		ret = iio_read_channel_processed(priv->adc_headset_detect, adc);
 +		if (ret < 0)
 +			return ret;
-+		if (abs(*adc - prev) < 20)
-+			return 0;
++		stable = abs(*adc - prev) < 20 ? stable + 1 : 0;
 +		prev = *adc;
++		if (stable >= 4 && *adc <= priv->headset_jack_zones[1].max_mv)
++			return 0;
 +	}
 +
 +	return 0;
@@ -279,7 +293,7 @@ index 9c00da0dfab9..b8dbe0afcfba 100644
  static int espresso_start_fll1(struct snd_soc_pcm_runtime *rtd,
  			       unsigned int rate)
  {
-@@ -259,10 +409,124 @@ static int espresso_late_probe(struct snd_soc_card *card)
+@@ -259,10 +415,124 @@ static int espresso_late_probe(struct snd_soc_card *card)
  	/* Use MCLK1 as SYSCLK for boot */
  	ret = snd_soc_dai_set_sysclk(aif1_dai, WM8994_SYSCLK_MCLK1,
  				     priv->mclk1_rate, SND_SOC_CLOCK_IN);
@@ -406,7 +420,7 @@ index 9c00da0dfab9..b8dbe0afcfba 100644
  }
  
  SND_SOC_DAILINK_DEFS(wm1811_hifi,
-@@ -323,6 +587,10 @@ static int espresso_probe(struct platform_device *pdev)
+@@ -323,6 +593,10 @@ static int espresso_probe(struct platform_device *pdev)
  	if (ret < 0)
  		return dev_err_probe(dev, ret, "Card name is not specified\n");
  
