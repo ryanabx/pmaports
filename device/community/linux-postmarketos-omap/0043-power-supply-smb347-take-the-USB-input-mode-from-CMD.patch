@@ -1,0 +1,55 @@
+From 76c3741986e2432cc855c17a6d5354b4387b9b24 Mon Sep 17 00:00:00 2001
+From: Ryan Brue <ryanbrue.dev@gmail.com>
+Date: Tue, 6 Oct 2026 22:22:16 -0500
+Subject: [PATCH] power: supply: smb347: take the USB input mode from CMD_B
+ when setting the limit
+
+Register CFG_PIN bit 4 (CFG_PIN_EN_CTRL) also hands the choice of the
+USB5/1/HC input mode to the USB5/1/HC pins, and then CMD_B is ignored.
+The Nexus 7 vendor driver clears it ("i2c register control") before it
+selects high-current mode.
+
+On the Samsung Galaxy Tab 2 10.1 the bootloader leaves it clear, but the
+charger sets it again whenever it reloads its configuration, which it
+does when its input power drops out (CFG_PIN reads 0x78 at that moment,
+0x1c once the driver has programmed it again). After a USB replug,
+writing input_current_limit then left the charger at 500 mA (STAT_E in
+USB5 mode with CMD_B in high-current mode).
+
+Clear the bit when selecting the mode through CMD_B, unless charging is
+pin controlled, which needs the bit set.
+
+Assisted-by: LLM
+---
+ drivers/power/supply/smb347-charger.c | 15 +++++++++++++++
+ 1 file changed, 15 insertions(+)
+
+diff --git a/drivers/power/supply/smb347-charger.c b/drivers/power/supply/smb347-charger.c
+index d1b2ddeea27d..08b1e8b242d5 100644
+--- a/drivers/power/supply/smb347-charger.c
++++ b/drivers/power/supply/smb347-charger.c
+@@ -560,6 +560,21 @@ static int smb347_set_usb_input_limit(struct smb347_charger *smb,
+ 	if (ret < 0)
+ 		return ret;
+ 
++	/*
++	 * CFG_PIN_EN_CTRL also makes the USB5/1/HC pins select the mode, and
++	 * then CMD_B is ignored. It is set at power-on reset, and by us for
++	 * pin control of charging; take the mode from CMD_B otherwise.
++	 */
++	switch (smb->enable_control) {
++	case SMB3XX_CHG_ENABLE_PIN_ACTIVE_LOW:
++	case SMB3XX_CHG_ENABLE_PIN_ACTIVE_HIGH:
++		break;
++	default:
++		ret = regmap_clear_bits(smb->regmap, CFG_PIN, CFG_PIN_EN_CTRL);
++		if (ret < 0)
++			return ret;
++	}
++
+ 	return regmap_update_bits(smb->regmap, CMD_B,
+ 				  CMD_B_HC_MODE | CMD_B_USB5, cmd_b);
+ }
+-- 
+2.55.0
+
