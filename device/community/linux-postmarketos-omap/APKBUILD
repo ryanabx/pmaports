@@ -2,7 +2,7 @@
 maintainer="Mithil Bavishi <bavishimithil@gmail.com>"
 pkgname=linux-postmarketos-omap
 pkgver=7.1.5
-pkgrel=45
+pkgrel=46
 pkgdesc="Mainline kernel fork for OMAP devices"
 arch="armv7"
 url="https://kernel.org/"
@@ -91,6 +91,7 @@ source="
 	0042-ASoC-wm8994-release-the-MCLK-that-was-enabled-for-AI.patch
 	0043-ARM-dts-ti-omap-espresso-common-run-the-Bluetooth-UA.patch
 	0044-ARM-dts-ti-omap-espresso-common-route-Bluetooth-SCO-.patch
+	0045-power-supply-max17042_battery-report-the-battery-s-d.patch
 "
 builddir="$srcdir/linux-$_kernver"
 replaces="linux-samsung-espresso3g linux-nokia-n900"
@@ -167,4 +168,5 @@ d57843b2ae4a4dae03e11cf48ba1e7b6dd16bf2893cec2922bed34f15e4d179a70c61005c6e84082
 482f72ed7a755500651b58eb8957a6ed0a60356a0451a8b850f926b48f435dfac4d9cb03896efb8b4e2fe203b637e394cf631ed87198864d187cecd132f26586  0042-ASoC-wm8994-release-the-MCLK-that-was-enabled-for-AI.patch
 7970815670c82a363e7af7a1a39ad3868ffb811af5dfee8960bfd2c266e76540d5fbd9f31bc4eec9731fe7513d15c610cb05331b7854ce0df5d1b1fd97c7a6b2  0043-ARM-dts-ti-omap-espresso-common-run-the-Bluetooth-UA.patch
 de6c9570cd7fafa26f81676cd92030463ffd418bfb56dae7ba65deb6e0d4b06e135bad4df1c794119dfe20ebd8208c1a1ace1215f6f1d58bb12bd4fb3406b639  0044-ARM-dts-ti-omap-espresso-common-route-Bluetooth-SCO-.patch
+39555597a3e712e089e0ddb79ed3236f04342e9ad8f2739cbf9d015bd400874661cebdba3a0abd79405a402f4d460d64e008a58208c1f93cbc93c7228261a725  0045-power-supply-max17042_battery-report-the-battery-s-d.patch
 "
