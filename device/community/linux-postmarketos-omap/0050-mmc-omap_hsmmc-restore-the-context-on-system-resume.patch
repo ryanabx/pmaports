@@ -1,0 +1,45 @@
+From 3fa1a43c4f24e97c438cfafa66612700c0bf339f Mon Sep 17 00:00:00 2001
+From: Ryan Brue <ryanbrue.dev@gmail.com>
+Date: Wed, 7 Oct 2026 20:07:45 -0500
+Subject: [PATCH] mmc: omap_hsmmc: restore the context on system resume
+
+A host whose SDIO card is kept powered across system suspend stays
+runtime active, so omap_hsmmc_runtime_resume() and its
+omap_hsmmc_context_restore() don't run on resume. The module is idled by
+ti-sysc in the noirq phase anyway, and on OMAP4 its power domain (L4PER)
+can lose logic in suspend to RAM. After resume the controller then runs
+with reset registers and the first SDIO command never completes: on a
+Samsung Galaxy Tab 2 10.1 (BCM4330 on mmc5 with keep-power-in-suspend)
+resume hangs in brcmfmac's resume callback until the watchdog resets
+the board.
+
+Restore the context in the system resume callback as well;
+omap_hsmmc_context_restore() only acts when the registers differ from
+the saved ones.
+
+Assisted-by: LLM
+---
+ drivers/mmc/host/omap_hsmmc.c | 7 +++++++
+ 1 file changed, 7 insertions(+)
+
+diff --git a/drivers/mmc/host/omap_hsmmc.c b/drivers/mmc/host/omap_hsmmc.c
+index de5a3b70107d..183c37025908 100644
+--- a/drivers/mmc/host/omap_hsmmc.c
++++ b/drivers/mmc/host/omap_hsmmc.c
+@@ -2023,6 +2023,13 @@ static int omap_hsmmc_resume(struct device *dev)
+ 
+ 	pm_runtime_get_sync(host->dev);
+ 
++	/*
++	 * A host that stayed runtime active across suspend (e.g. for an SDIO
++	 * card kept powered) didn't go through runtime resume, but its module
++	 * may have been idled by the bus driver and lost its context.
++	 */
++	omap_hsmmc_context_restore(host);
++
+ 	clk_prepare_enable(host->dbclk);
+ 
+ 	if (!(host->mmc->pm_flags & MMC_PM_KEEP_POWER))
+-- 
+2.55.0
+

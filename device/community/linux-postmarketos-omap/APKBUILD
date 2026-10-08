@@ -2,7 +2,7 @@
 maintainer="Mithil Bavishi <bavishimithil@gmail.com>"
 pkgname=linux-postmarketos-omap
 pkgver=7.1.5
-pkgrel=52
+pkgrel=53
 pkgdesc="Mainline kernel fork for OMAP devices"
 arch="armv7"
 url="https://kernel.org/"
@@ -96,6 +96,7 @@ source="
 	0047-ARM-dts-ti-omap-espresso-common-keep-the-WLAN-powere.patch
 	0048-ARM-dts-ti-omap-espresso-common-let-the-TWL6032-inte.patch
 	0049-mfd-twl6030-irq-let-the-chained-interrupts-request-w.patch
+	0050-mmc-omap_hsmmc-restore-the-context-on-system-resume.patch
 "
 builddir="$srcdir/linux-$_kernver"
 replaces="linux-samsung-espresso3g linux-nokia-n900"
@@ -177,4 +178,5 @@ de6c9570cd7fafa26f81676cd92030463ffd418bfb56dae7ba65deb6e0d4b06e135bad4df1c79411
 52990bc22a2e6b21008582591cf1754591b5b53ca33fd76527eb7e025bd7d8681fef902f0238484d4e4749e181664783fe7d5b9daf8cfafe5b0d8a4ba4aacdf8  0047-ARM-dts-ti-omap-espresso-common-keep-the-WLAN-powere.patch
 222c49036a8bdd7a0969bc819c1ddddec2865c58db70f3df7cae5de1f5b88b1038d67e92fbd5aa56619869da2d8045e658a9058d41161e9172969d66c1efa620  0048-ARM-dts-ti-omap-espresso-common-let-the-TWL6032-inte.patch
 eca94aa1fe7bbe7fa0a863d1a9cbb926b474b6fcd7c42b3d3cc5b929a6595ca9c546e173062a92f5de61f007956ce48bf0b2f4203429adbf9838a89650ef48cb  0049-mfd-twl6030-irq-let-the-chained-interrupts-request-w.patch
+5d791ec61fe4ce4a36a040b6a7a77366734bc780596e534ce34af281068ac392f4d01002eed5570b4ed266e371977a42e9a21ae4d4dca71deff16e7ffc7843bb  0050-mmc-omap_hsmmc-restore-the-context-on-system-resume.patch
 "
