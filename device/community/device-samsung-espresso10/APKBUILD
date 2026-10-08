@@ -3,7 +3,7 @@ maintainer="Mithil Bavishi <bavishimithil@gmail.com>"
 pkgname=device-samsung-espresso10
 pkgdesc="Samsung Galaxy Tab 2 (10.1 inch)"
 pkgver=9
-pkgrel=3
+pkgrel=4
 url="https://postmarketos.org"
 license="MIT"
 arch="armv7"
@@ -22,6 +22,7 @@ subpackages="
 	"
 source="
 	deviceinfo
+	61-sensor-espresso10.hwdb
 	ucm/GalaxyTab2.conf
 	ucm/HiFi.conf
 	"
@@ -36,6 +37,10 @@ package() {
 	# ALSA UCM configs
 	install -Dm644 "$srcdir"/GalaxyTab2.conf "$srcdir"/HiFi.conf \
 		-t "$pkgdir"/usr/share/alsa/ucm2/conf.d/GalaxyTab2
+
+	# accelerometer orientation for iio-sensor-proxy
+	install -Dm644 "$srcdir"/61-sensor-espresso10.hwdb \
+		-t "$pkgdir"/usr/lib/udev/hwdb.d
 }
 
 kernel_standard() {
@@ -52,6 +57,7 @@ kernel_bby() {
 
 sha512sums="
 666767723df359780d667d333fde25d911a432450243632161c9996e91b624246d01234fa2cbbfd7ff597d574591e01354b84541645e3c85810cad17cae8d0a4  deviceinfo
+faff831c674e3e452d14be3a640af4381670ea9320842b822b6304c3a5db487e9c6ab65dd25ca0b3357d7f60f85bc4507e18b4f404a70ec2c3da62b88e2a3538  61-sensor-espresso10.hwdb
 f4239fd72916aafb963b5c4d873ae8c59d6e5dba74c250147000d2403a77fff9f4620bd0bd5f725c4071d72fda8cdc0187c250f1967f2ff3136f6369426b948d  GalaxyTab2.conf
 facd622872c89b0e8266320e49845ce0a91caae06514ed17d766cc17abddda9f6e687b34bf36cb46643756e08f44d596631e56a1a5f7eb55b31a4d4fad2368aa  HiFi.conf
 "

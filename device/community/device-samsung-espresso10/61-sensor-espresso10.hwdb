@@ -1,0 +1,8 @@
+# iio-sensor-proxy computes the orientation from the direction of gravity
+# (upright = negative y, left edge up = positive x), the opposite of the
+# kernel's mount-matrix.txt convention that the device tree follows for x
+# and y. Negate x and y of the device tree's BMA254 matrix for userspace,
+# like device-samsung-p4note (iio-sensor-proxy issue #375). z stays: face
+# up is positive z for both.
+sensor:modalias:of:*Cbosch,bma254*
+ ACCEL_MOUNT_MATRIX=1, 0, 0; 0, -1, 0; 0, 0, -1
