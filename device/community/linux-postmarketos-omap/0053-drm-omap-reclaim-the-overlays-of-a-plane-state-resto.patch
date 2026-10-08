@@ -1,0 +1,81 @@
+From 524fdced975b3e51fbcb4c21f2e3dfd3ccd46f8a Mon Sep 17 00:00:00 2001
+From: Ryan Brue <ryanbrue.dev@gmail.com>
+Date: Wed, 7 Oct 2026 20:58:49 -0500
+Subject: [PATCH] drm/omap: reclaim the overlays of a plane state restored on
+ resume
+
+drm_atomic_helper_suspend() disables all planes, which releases their
+hardware overlays from the global overlay map. drm_atomic_helper_resume()
+then commits the duplicated pre-suspend plane states, which still point
+to those overlays, but the overlay map is a private object and not part
+of the duplicated state. omap_plane_atomic_check() sees an overlay with
+the right caps and keeps it without claiming it again, so the map keeps
+it marked as free while the plane uses it. The next suspend then warns
+when releasing it:
+
+  WARNING: drivers/gpu/drm/omapdrm/omap_overlay.c:123 at omap_plane_atomic_check+0x1f4/0x44c
+   omap_plane_atomic_check from drm_atomic_helper_check_planes
+   ...
+   drm_atomic_helper_disable_all from drm_atomic_helper_suspend
+
+(on a Samsung Galaxy Tab 2 10.1, on every suspend but the first one after
+boot), and another plane could be given the same overlay.
+
+Before using the overlays of a plane state, claim them in the overlay map
+if they are free there, or drop them if another plane has them, so that
+new ones are assigned.
+
+Fixes: 2e54ff0e5430 ("drm/omap: dynamically assign hw overlays to planes")
+Assisted-by: LLM
+---
+ drivers/gpu/drm/omapdrm/omap_plane.c | 27 +++++++++++++++++++++++++++
+ 1 file changed, 27 insertions(+)
+
+diff --git a/drivers/gpu/drm/omapdrm/omap_plane.c b/drivers/gpu/drm/omapdrm/omap_plane.c
+index c024cdbbd87a..d6e1cc59d3dd 100644
+--- a/drivers/gpu/drm/omapdrm/omap_plane.c
++++ b/drivers/gpu/drm/omapdrm/omap_plane.c
+@@ -198,6 +198,21 @@ static void omap_plane_atomic_disable(struct drm_plane *plane,
+ 
+ #define FRAC_16_16(mult, div)    (((mult) << 16) / (div))
+ 
++static void omap_plane_reclaim_overlay(struct omap_global_state *global_state,
++				       struct drm_plane *plane,
++				       struct omap_hw_overlay **overlay)
++{
++	struct drm_plane **overlay_map = global_state->hwoverlay_to_plane;
++
++	if (!*overlay || overlay_map[(*overlay)->idx] == plane)
++		return;
++
++	if (!overlay_map[(*overlay)->idx])
++		overlay_map[(*overlay)->idx] = plane;
++	else
++		*overlay = NULL;
++}
++
+ static int omap_plane_atomic_check(struct drm_plane *plane,
+ 				   struct drm_atomic_commit *state)
+ {
+@@ -250,6 +265,18 @@ static int omap_plane_atomic_check(struct drm_plane *plane,
+ 	DBG("%s: visible %d -> %d", plane->name,
+ 	    old_plane_state->visible, new_plane_state->visible);
+ 
++	/*
++	 * A plane state restored by drm_atomic_helper_resume() still points to
++	 * the overlays it had before suspend, but the global overlay map is a
++	 * private object, not part of that state, and the suspend commit
++	 * released them. Claim them again, or drop them if another plane got
++	 * them meanwhile so that new ones are assigned below.
++	 */
++	omap_plane_reclaim_overlay(omap_overlay_global_state, plane,
++				   &omap_state->overlay);
++	omap_plane_reclaim_overlay(omap_overlay_global_state, plane,
++				   &omap_state->r_overlay);
++
+ 	if (!new_plane_state->visible) {
+ 		omap_overlay_release(state, omap_state->overlay);
+ 		omap_overlay_release(state, omap_state->r_overlay);
+-- 
+2.55.0
+

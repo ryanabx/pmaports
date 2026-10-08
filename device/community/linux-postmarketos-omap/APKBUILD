@@ -2,7 +2,7 @@
 maintainer="Mithil Bavishi <bavishimithil@gmail.com>"
 pkgname=linux-postmarketos-omap
 pkgver=7.1.5
-pkgrel=55
+pkgrel=56
 pkgdesc="Mainline kernel fork for OMAP devices"
 arch="armv7"
 url="https://kernel.org/"
@@ -99,6 +99,7 @@ source="
 	0050-mmc-omap_hsmmc-restore-the-context-on-system-resume.patch
 	0051-clocksource-drivers-timer-ti-dm-suspend-runtime-acti.patch
 	0052-ARM-dts-ti-omap-samsung-espresso10-power-the-touchsc.patch
+	0053-drm-omap-reclaim-the-overlays-of-a-plane-state-resto.patch
 "
 builddir="$srcdir/linux-$_kernver"
 replaces="linux-samsung-espresso3g linux-nokia-n900"
@@ -183,4 +184,5 @@ eca94aa1fe7bbe7fa0a863d1a9cbb926b474b6fcd7c42b3d3cc5b929a6595ca9c546e173062a92f5
 5d791ec61fe4ce4a36a040b6a7a77366734bc780596e534ce34af281068ac392f4d01002eed5570b4ed266e371977a42e9a21ae4d4dca71deff16e7ffc7843bb  0050-mmc-omap_hsmmc-restore-the-context-on-system-resume.patch
 2c9bf40d7ddd4e65b11bbd406b0eb999a4017454f535427b115f43b535a0ef573771f2f712a2a4e423c134c3847cc65ed2dc120b481f127ab097ee01a0183e07  0051-clocksource-drivers-timer-ti-dm-suspend-runtime-acti.patch
 27f5661d7ead55b50e8478c6718d6ad33f74294a9ac4d56f266426d727acd5b768da0de95c22a0f7aaa5d34c30a640ec972127f4a1f26d4270aabf94e9ed6200  0052-ARM-dts-ti-omap-samsung-espresso10-power-the-touchsc.patch
+3fc782fe13653b4d23f3acd7408163cca14199105c8fc381b8ba5f9f55738351389eb27a3da9450174b1566eae0f4192a296f7f7b1b15aa2dbab9c148e3281c0  0053-drm-omap-reclaim-the-overlays-of-a-plane-state-resto.patch
 "
