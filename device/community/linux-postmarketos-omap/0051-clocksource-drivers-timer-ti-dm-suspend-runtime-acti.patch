@@ -1,0 +1,46 @@
+From b35bbef24cf278472047cbfe149a9e2dd64bc5bc Mon Sep 17 00:00:00 2001
+From: Ryan Brue <ryanbrue.dev@gmail.com>
+Date: Wed, 7 Oct 2026 20:15:56 -0500
+Subject: [PATCH] clocksource/drivers/timer-ti-dm: suspend runtime-active
+ timers for system sleep
+
+A timer that is runtime active when system suspend starts stays active:
+the PM core holds a runtime PM reference across system sleep, so even a
+user that stops the timer in its own suspend callback (pwm-omap-dmtimer
+via pwm-backlight) doesn't get it runtime suspended. ti-sysc then idles
+the module in the noirq phase, and the CPU PM notifier, which still sees
+timer->enabled, saves the context of a module without clocks. On a
+Samsung Galaxy Tab 2 10.1 (backlight PWM on timer10) every suspend to
+RAM with the backlight on dies with
+
+  Unhandled fault: imprecise external abort (0x1406)
+  PC is at omap_timer_save_context+0x6c/0x130
+   omap_timer_context_notifier from notifier_call_chain
+   ...
+   cpu_pm_notify_robust from syscore_suspend
+
+Force the timers into runtime suspend in the late system sleep phase,
+which saves their context and clears timer->enabled before the module
+is idled, and resume them again afterwards.
+
+Assisted-by: LLM
+---
+ drivers/clocksource/timer-ti-dm.c | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/drivers/clocksource/timer-ti-dm.c b/drivers/clocksource/timer-ti-dm.c
+index 6787acac9a43..56e443bc63d6 100644
+--- a/drivers/clocksource/timer-ti-dm.c
++++ b/drivers/clocksource/timer-ti-dm.c
+@@ -1198,6 +1198,8 @@ static int __maybe_unused omap_dm_timer_runtime_resume(struct device *dev)
+ }
+ 
+ static const struct dev_pm_ops omap_dm_timer_pm_ops = {
++	SET_LATE_SYSTEM_SLEEP_PM_OPS(pm_runtime_force_suspend,
++				     pm_runtime_force_resume)
+ 	SET_RUNTIME_PM_OPS(omap_dm_timer_runtime_suspend,
+ 			   omap_dm_timer_runtime_resume, NULL)
+ };
+-- 
+2.55.0
+
