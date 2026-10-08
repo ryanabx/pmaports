@@ -1,0 +1,57 @@
+From 8b9ff60cd5037cfb89cd9b0e854c63d40a3291c1 Mon Sep 17 00:00:00 2001
+From: Ryan Brue <ryanbrue.dev@gmail.com>
+Date: Wed, 7 Oct 2026 20:23:18 -0500
+Subject: [PATCH] ARM: dts: ti: omap: samsung-espresso10: power the touchscreen
+ down in suspend
+
+The rmi4 driver puts the Synaptics controller into sensor sleep on
+suspend. This DS4 R3.0 then stops answering on I2C altogether, so resume
+fails ("rmi4_f01: Failed to restore normal operation: -110") and the
+touchscreen is gone until the next boot. Writing the sleep mode by hand
+does the same; only a power cycle brings the controller back.
+
+The controller's supply is the GPIO-switched touch_ldo_en regulator,
+which was always on and not even assigned to it (the 1.8 V LDO6 was its
+only supply). Make it the vdd supply with LDO6 as vio, and let it switch
+off on the 10.1", so that the driver power cycles the controller across
+suspend and reconfigures it after the reset.
+
+Fixes: f768d54723d1 ("ARM: dts: ti: omap: espresso-common: Add common device tree for Samsung Galaxy Tab 2 series")
+Assisted-by: LLM
+---
+ .../boot/dts/ti/omap/omap4-samsung-espresso10.dts    | 12 ++++++++++--
+ 1 file changed, 10 insertions(+), 2 deletions(-)
+
+diff --git a/arch/arm/boot/dts/ti/omap/omap4-samsung-espresso10.dts b/arch/arm/boot/dts/ti/omap/omap4-samsung-espresso10.dts
+index 8c53bd2fc5cb..429af30a8d79 100644
+--- a/arch/arm/boot/dts/ti/omap/omap4-samsung-espresso10.dts
++++ b/arch/arm/boot/dts/ti/omap/omap4-samsung-espresso10.dts
+@@ -121,6 +121,14 @@ panel_in: endpoint {
+ 	};
+ };
+ 
++/*
++ * The touch controller loses its I2C interface in sensor sleep, which the rmi4
++ * driver enters on suspend; only a power cycle brings it back.
++ */
++&reg_touch_ldo_en {
++	/delete-property/ regulator-always-on;
++};
++
+ &i2c3 {
+ 	touchscreen@20 {
+ 		compatible = "syna,rmi4-i2c";
+@@ -134,8 +142,8 @@ touchscreen@20 {
+ 		pinctrl-names = "default";
+ 		pinctrl-0 = <&touch_pins>;
+ 
+-		//avdd-supply = <&reg_touch_ldo_en>;
+-		vdd-supply = <&ldo6>;
++		vdd-supply = <&reg_touch_ldo_en>;
++		vio-supply = <&ldo6>;
+ 
+ 		syna,reset-delay-ms = <200>;
+ 		syna,startup-delay-ms = <200>;
+-- 
+2.55.0
+
