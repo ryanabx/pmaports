@@ -1,0 +1,41 @@
+From b3d3d7aa6df45e5630871e35ed2e9c3f7755b7e5 Mon Sep 17 00:00:00 2001
+From: Ryan Brue <ryanbrue.dev@gmail.com>
+Date: Wed, 7 Oct 2026 19:57:41 -0500
+Subject: [PATCH] mfd: twl6030-irq: let the chained interrupts request wakeup
+ again
+
+twl6030_irq_set_wake() counts the wakeup-enabled TWL6030 interrupts, and
+the PM notifier makes the TWL6030 interrupt line a wakeup source when
+that count is non-zero. But the irq_chip is a copy of dummy_irq_chip,
+which has had IRQCHIP_SKIP_SET_WAKE since commit 10a50f1ab5f0
+("genirq: Set IRQCHIP_SKIP_SET_WAKE flag for dummy_irq_chip"), so the core
+never calls twl6030_irq_set_wake(): the count stays 0, the parent
+interrupt is never enabled for wakeup, and nothing behind the PMIC can
+wake the system. On a Samsung Galaxy Tab 2 10.1 (OMAP4430 + TWL6032) an
+RTC alarm armed with /sys/class/rtc/rtc0/wakealarm fires (it is counted
+after resume) but the tablet sleeps on until the power key is pressed.
+
+Clear the flag on the copy.
+
+Fixes: 10a50f1ab5f0 ("genirq: Set IRQCHIP_SKIP_SET_WAKE flag for dummy_irq_chip")
+Assisted-by: LLM
+---
+ drivers/mfd/twl6030-irq.c | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/drivers/mfd/twl6030-irq.c b/drivers/mfd/twl6030-irq.c
+index 0ca00f618d4d..efa28416c2c3 100644
+--- a/drivers/mfd/twl6030-irq.c
++++ b/drivers/mfd/twl6030-irq.c
+@@ -331,6 +331,8 @@ int twl6030_init_irq(struct device *dev, int irq_num)
+ 	twl6030_irq->irq_chip.name = "twl6030";
+ 	twl6030_irq->irq_chip.irq_set_type = NULL;
+ 	twl6030_irq->irq_chip.irq_set_wake = twl6030_irq_set_wake;
++	/* dummy_irq_chip skips irq_set_wake, but the PIH needs to know */
++	twl6030_irq->irq_chip.flags &= ~IRQCHIP_SKIP_SET_WAKE;
+ 
+ 	twl6030_irq->pm_nb.notifier_call = twl6030_irq_pm_notifier;
+ 	atomic_set(&twl6030_irq->wakeirqs, 0);
+-- 
+2.55.0
+
