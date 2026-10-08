@@ -1,0 +1,36 @@
+From e4cf227acbead8b8fbd5533b3266d2daefb2cb2b Mon Sep 17 00:00:00 2001
+From: Ryan Brue <ryanbrue.dev@gmail.com>
+Date: Wed, 7 Oct 2026 18:49:31 -0500
+Subject: [PATCH] ARM: dts: ti: omap: espresso-common: let the TWL6032
+ interrupt wake the SoC
+
+The TWL6032 interrupt (sys_nirq1, GIC SPI 7) has interrupt-parent = <&gic>,
+so it bypasses the OMAP4 wakeup generator: nothing behind the PMIC can
+wake the tablet from suspend to RAM. On a Galaxy Tab 2 10.1 an RTC alarm
+fires (the rtc0 interrupt is counted after resume) but the tablet sleeps
+on until the gpio-keys power key is pressed.
+
+Drop the override so that the interrupt goes through the wakeup
+generator, like on the other OMAP4 boards with a TWL6030/6032.
+
+Fixes: f768d54723d1 ("ARM: dts: ti: omap: espresso-common: Add common device tree for Samsung Galaxy Tab 2 series")
+Assisted-by: LLM
+---
+ arch/arm/boot/dts/ti/omap/omap4-samsung-espresso-common.dtsi | 1 -
+ 1 file changed, 1 deletion(-)
+
+diff --git a/arch/arm/boot/dts/ti/omap/omap4-samsung-espresso-common.dtsi b/arch/arm/boot/dts/ti/omap/omap4-samsung-espresso-common.dtsi
+index 47220a2d9889..b3f174581f3d 100644
+--- a/arch/arm/boot/dts/ti/omap/omap4-samsung-espresso-common.dtsi
++++ b/arch/arm/boot/dts/ti/omap/omap4-samsung-espresso-common.dtsi
+@@ -719,7 +719,6 @@ &twl6030_wkup_pins
+ 
+ 		/* SPI = 0, IRQ# = 7, 4 = active high level-sensitive */
+ 		interrupts = <GIC_SPI 7 IRQ_TYPE_LEVEL_HIGH>; /* IRQ_SYS_1N cascaded to gic */
+-		interrupt-parent = <&gic>;
+ 		system-power-controller;
+ 	};
+ 
+-- 
+2.55.0
+
