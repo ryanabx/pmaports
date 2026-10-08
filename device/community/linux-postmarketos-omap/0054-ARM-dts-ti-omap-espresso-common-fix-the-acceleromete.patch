@@ -1,0 +1,64 @@
+From ac7ef5df86131f46d4b92a82c4c4c0099e7edcfe Mon Sep 17 00:00:00 2001
+From: Ryan Brue <ryanbrue.dev@gmail.com>
+Date: Thu, 8 Oct 2026 15:04:41 -0500
+Subject: [PATCH] ARM: dts: ti: omap: espresso-common: fix the accelerometer
+ interrupts
+
+The BMA254 never raises an interrupt, so its data-ready trigger delivers
+no samples and the IIO buffer stays empty (iio-sensor-proxy: "Buffer
+'/dev/iio:device0' did not have data within 0.5s"), which leaves screen
+rotation without input.
+
+Two things are wrong. The pads of both interrupt lines are left in
+their ABE DMIC function (abe_dmic_din2/din3, mode 0), so the GPIO
+module never sees them. And the lines are listed in the wrong order:
+the vendor pin names are ACC_INT on GPIO_122 and ACC_INT2 on GPIO_121,
+and with the pads muxed as GPIOs, GPIO_122 is the one that pulses at
+the output data rate. The binding takes the first interrupt as INT1.
+
+Mux both pads as GPIO inputs, list INT1 (GPIO_122) first, and use
+IRQ_TYPE_EDGE_RISING as the binding asks.
+
+Fixes: f768d54723d1 ("ARM: dts: ti: omap: espresso-common: Add common device tree for Samsung Galaxy Tab 2 series")
+Assisted-by: LLM
+---
+ .../ti/omap/omap4-samsung-espresso-common.dtsi    | 15 +++++++++++++--
+ 1 file changed, 13 insertions(+), 2 deletions(-)
+
+diff --git a/arch/arm/boot/dts/ti/omap/omap4-samsung-espresso-common.dtsi b/arch/arm/boot/dts/ti/omap/omap4-samsung-espresso-common.dtsi
+index b3f174581f3d..9655becd25ed 100644
+--- a/arch/arm/boot/dts/ti/omap/omap4-samsung-espresso-common.dtsi
++++ b/arch/arm/boot/dts/ti/omap/omap4-samsung-espresso-common.dtsi
+@@ -360,6 +360,15 @@ OMAP4_IOPAD(0x05C, PIN_INPUT | MUX_MODE3)
+ };
+ 
+ &omap4_pmx_core {
++	accel_irq_pins: pinmux-accel-irq-pins {
++		pinctrl-single,pins = <
++			OMAP4_IOPAD(0x114, PIN_INPUT | MUX_MODE3)
++			/* abe_dmic_din2.gpio_121 - ACC_INT2 */
++			OMAP4_IOPAD(0x116, PIN_INPUT | MUX_MODE3)
++			/* abe_dmic_din3.gpio_122 - ACC_INT */
++		>;
++	};
++
+ 	backlight_pins: pinmux-backlight-pins {
+ 		pinctrl-single,pins = <
+ 			OMAP4_IOPAD(0X0D8, PIN_OUTPUT | PIN_OFF_OUTPUT_LOW | MUX_MODE3)
+@@ -838,9 +847,11 @@ accelerometer@18 {
+ 		reg = <0x18>;
+ 		vdd-supply = <&ldo4>;
+ 		vddio-supply = <&ldo5>;
++		pinctrl-names = "default";
++		pinctrl-0 = <&accel_irq_pins>;
+ 		interrupt-parent = <&gpio4>;
+-		interrupts = <25 (IRQ_TYPE_LEVEL_HIGH | IRQ_TYPE_EDGE_RISING)>,
+-			<26 (IRQ_TYPE_LEVEL_HIGH | IRQ_TYPE_EDGE_RISING)>;
++		interrupts = <26 IRQ_TYPE_EDGE_RISING>,	/* INT1, GPIO_122 */
++			     <25 IRQ_TYPE_EDGE_RISING>;	/* INT2, GPIO_121 */
+ 	};
+ 
+ 	magnetometer@2e {
+-- 
+2.55.0
+
