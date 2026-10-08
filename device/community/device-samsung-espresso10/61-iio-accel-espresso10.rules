@@ -1,0 +1,4 @@
+# The BMA254 defaults to 125 Hz; screen rotation doesn't need more than
+# ~15 Hz, and iio-sensor-proxy's buffer driver doesn't set a rate, so its
+# data-ready interrupt would fire 125 times a second while the UI listens.
+ACTION=="add", SUBSYSTEM=="iio", ATTR{name}=="bma254", ATTR{in_accel_sampling_frequency}="15.620000"
