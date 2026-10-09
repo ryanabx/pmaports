@@ -3,7 +3,7 @@ maintainer="Ryan Brue <ryanbrue.dev@gmail.com>"
 pkgname=device-amazon-suez
 pkgdesc="Amazon Fire HD 10 (2017)"
 pkgver=5
-pkgrel=4
+pkgrel=5
 url="https://postmarketos.org"
 license="MIT"
 arch="aarch64"
@@ -34,6 +34,7 @@ install="
 	"
 source="
 	50-powervr-vulkan.conf
+	51-gtk-renderer.conf
 	61-powervr-drm-ignore.rules
 	90-suez-gauge-capacity.rules
 	90-suez-mt6630-addr.rules
@@ -52,6 +53,7 @@ source="
 	suez-hardlockup.service
 	suez-mt6630-addr
 	suez-mt6630-bdaddr@.service
+	suez-gtk-renderer.conf
 	suez-powervr-vulkan.conf
 	suez-pstore-blk
 	suez-pstore-blk.service
@@ -161,6 +163,14 @@ package() {
 	install -Dm644 "$srcdir"/suez-powervr-vulkan.conf \
 		"$pkgdir"/usr/lib/systemd/system.conf.d/50-powervr-vulkan.conf
 
+	# GTK 4 apps render with cairo: they start 4-6x faster than on GSK's GPU
+	# renderers here. The same three placements as the variable above, for
+	# the same reasons; 51-gtk-renderer.conf has the measurement.
+	install -Dm644 "$srcdir"/51-gtk-renderer.conf \
+		"$pkgdir"/usr/lib/environment.d/51-gtk-renderer.conf
+	install -Dm644 "$srcdir"/suez-gtk-renderer.conf \
+		"$pkgdir"/usr/lib/systemd/system.conf.d/51-gtk-renderer.conf
+
 	# SUSPEND POLICY
 	#
 	# Suspend-to-RAM works on this board and every known blocker is fixed and
@@ -267,6 +277,7 @@ vulkan() {
 
 sha512sums="
 76ab946d5e09ddc8674c429aaf09ae6667aa39c00a68c32e0826f484e94d3f6de3aa6e20e63cba811cb65b08b8fa111535a17fc9585bbb0d22396bc95001fa02  50-powervr-vulkan.conf
+757e96f8de5e59c6441d8a5953a8c2d87cd4b609e1357c0c8bc4fe4297efb873f3284d5d67a920421a0be763c90eb4c414b7ba6d4f611b42827d0efebcb61c38  51-gtk-renderer.conf
 854834243154653d29c2ac2d514199fb981caa77ec482352b9644803f8f8542899db72e29907e9fd1a1d5fb966665a92fb2154c93977df35d65b8b312a5c2de7  61-powervr-drm-ignore.rules
 4f3667cbf076748d4da584d50bd7ff6ee90408a4a591a69a65f7e414e1521a9de5181556cfc3b51609b4f95ac4ddba7e7ba2b5f4337bf4cc80f12d9052200d72  90-suez-gauge-capacity.rules
 6ed2f313000ba2a088120c4b413a21cfa721db812bafb94c1a0ee5e6e732048f797421c86643dc57aef56d55943aa635a17782a3f95fc2260e676ec2b497808d  90-suez-mt6630-addr.rules
@@ -285,6 +296,7 @@ aaf34e1a660df1fe4782b8a130ab7cd9477c39eb559f48f3ee78aa01673666491087d9f0ed6403b3
 23a31b720d49046880090b671164dd06c7ec662246dbe4580938ef5f0c9b58b3c0dc5b1688b7110c76c3c1d7b4196497ff2b55149dd4b4aa479eeae4924d3c0a  suez-hardlockup.service
 05ad3c2dc2439292d502737e70d87337a94e02b18c2c64c9ef8b551838f6d66fb5084982b19390454c14613bb85fa79a8db66884de3679f8af6efc2e79185f3d  suez-mt6630-addr
 90df791c68d4377cc6179406e6328d896b9ae72fcfa53dffca05498d3280901ad4aebad3cd05413171efc29d64f7779c91222517895ee53caef8b99dace1ea62  suez-mt6630-bdaddr@.service
+cb44fc3ecfa23b58303036874d76f130d8d5d327fcf0d50e9da825aec9e5539890a7f6118c62b89d639b1160dadc5dade5cd04bca03cddc43c41301da1d99369  suez-gtk-renderer.conf
 5c75e206ef78b51a328f2039d6410ca5fd01713e560b5bc87a1c6fedb0f7c94fbc4f2e698797d645a1027c8687ecf3d32535de949653ccdf18662b981a17fb22  suez-powervr-vulkan.conf
 8814fc2c8418110c39e62e26a6afb5a06c71ec4d79919fc0ef51cca899da833d75a6a411f4158893e36bf760ccba506b94cb68a892b5541544bb01716ea6b0c2  suez-pstore-blk
 5641f47975b388bef6e83b6062b885357539df30a2bb893391e5088df67fe3e6720c618cb67fef53c6eb6617bf2c0ba5bdd5d714b855c797a0a99a63f34ec4d8  suez-pstore-blk.service

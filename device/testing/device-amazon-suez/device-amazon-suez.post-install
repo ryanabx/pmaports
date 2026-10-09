@@ -40,4 +40,11 @@ _f=/etc/environment
 if ! grep -q '^PVR_I_WANT_A_BROKEN_VULKAN_DRIVER=' "$_f" 2>/dev/null; then
 	printf 'PVR_I_WANT_A_BROKEN_VULKAN_DRIVER=1\n' >> "$_f"
 fi
+
+# GSK_RENDERER=cairo, the third placement for the same reason; see
+# 51-gtk-renderer.conf. A line already present is left alone, so a local
+# choice of renderer survives upgrades.
+if ! grep -q '^GSK_RENDERER=' "$_f" 2>/dev/null; then
+	printf 'GSK_RENDERER=cairo\n' >> "$_f"
+fi
 exit 0
