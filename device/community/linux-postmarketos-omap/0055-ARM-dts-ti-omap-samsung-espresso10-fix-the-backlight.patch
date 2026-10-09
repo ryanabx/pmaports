@@ -1,0 +1,40 @@
+From 6646cc52fb91fe07843217bf4d311cb6b7a24afb Mon Sep 17 00:00:00 2001
+From: Ryan Brue <ryanbrue.dev@gmail.com>
+Date: Thu, 8 Oct 2026 23:44:01 -0500
+Subject: [PATCH] ARM: dts: ti: omap: samsung-espresso10: fix the backlight PWM
+ period
+
+The screen stays black at all but the highest brightness levels. The
+PWM period is given as 1600, taken from the vendor kernel, where it is
+the PWM length in ticks of the 38.4 MHz timer clock (pwm_duty_max = 1600,
+"25kHz"). The pwms specifier takes nanoseconds, so the backlight is
+driven at 625 kHz, which its LED driver doesn't follow: at the lower
+duty cycles the backlight stays off, and only level 7 (close to 100%,
+effectively DC) lights the panel.
+
+Use a period of 40000 ns (25 kHz). Checked on a GT-P5113: the duty
+cycle of brightness level 3 (about 5%), dark at 625 kHz, gives a dim
+but readable picture at 25 kHz.
+
+Fixes: 16dcd2c7535e ("ARM: dts: ti: omap: samsung-espresso10: Add initial support for Galaxy Tab 2 10.1")
+Assisted-by: LLM
+---
+ arch/arm/boot/dts/ti/omap/omap4-samsung-espresso10.dts | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/arch/arm/boot/dts/ti/omap/omap4-samsung-espresso10.dts b/arch/arm/boot/dts/ti/omap/omap4-samsung-espresso10.dts
+index 429af30a8d79..4d6d4bd330db 100644
+--- a/arch/arm/boot/dts/ti/omap/omap4-samsung-espresso10.dts
++++ b/arch/arm/boot/dts/ti/omap/omap4-samsung-espresso10.dts
+@@ -79,7 +79,7 @@ backlight: backlight {
+ 		compatible = "pwm-backlight";
+ 		pinctrl-names = "default";
+ 		pinctrl-0 = <&backlight_pins>;
+-		pwms = <&pwm10 0 1600 0>;
++		pwms = <&pwm10 0 40000 0>; /* 25 kHz */
+ 		power-supply = <&reg_lcd>;
+ 		enable-gpios = <&gpio3 31 GPIO_ACTIVE_HIGH>;
+ 		brightness-levels = <0 4 8 16 32 64 128 255>;
+-- 
+2.55.0
+

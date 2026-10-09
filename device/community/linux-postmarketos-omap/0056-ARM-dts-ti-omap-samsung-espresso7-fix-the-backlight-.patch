@@ -1,0 +1,38 @@
+From aeaa77b12374c5c9c0b828e3b24049a9c401411b Mon Sep 17 00:00:00 2001
+From: Ryan Brue <ryanbrue.dev@gmail.com>
+Date: Thu, 8 Oct 2026 23:44:01 -0500
+Subject: [PATCH] ARM: dts: ti: omap: samsung-espresso7: fix the backlight PWM
+ period
+
+The PWM period is given as 1200, taken from the vendor kernel, where it
+is the PWM length in ticks of the 38.4 MHz timer clock (pwm_duty_max =
+1200, "32kHz"). The pwms specifier takes nanoseconds, so the backlight
+is driven at 833 kHz instead of 32 kHz. On the 10.1" model the same
+mistake leaves the backlight off at all but the highest brightness
+levels.
+
+Use a period of 31250 ns (32 kHz), as the vendor kernel does. Not tested
+on the 7" model; the 10.1" fix was.
+
+Fixes: f1bf8f533554 ("ARM: dts: ti: omap: samsung-espresso7: Add initial support for Galaxy Tab 2 7.0")
+Assisted-by: LLM
+---
+ arch/arm/boot/dts/ti/omap/omap4-samsung-espresso7.dts | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/arch/arm/boot/dts/ti/omap/omap4-samsung-espresso7.dts b/arch/arm/boot/dts/ti/omap/omap4-samsung-espresso7.dts
+index ede72ec0e1ec..b1e05fd29567 100644
+--- a/arch/arm/boot/dts/ti/omap/omap4-samsung-espresso7.dts
++++ b/arch/arm/boot/dts/ti/omap/omap4-samsung-espresso7.dts
+@@ -11,7 +11,7 @@ backlight: backlight {
+ 		compatible = "pwm-backlight";
+ 		pinctrl-names = "default";
+ 		pinctrl-0 = <&backlight_pins>;
+-		pwms = <&pwm10 0 1200 0>;
++		pwms = <&pwm10 0 31250 0>; /* 32 kHz */
+ 		power-supply = <&reg_lcd>;
+ 		enable-gpios = <&gpio3 31 GPIO_ACTIVE_HIGH>;
+ 		brightness-levels = <0 4 8 16 32 64 128 255>;
+-- 
+2.55.0
+

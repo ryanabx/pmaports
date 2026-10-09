@@ -2,7 +2,7 @@
 maintainer="Mithil Bavishi <bavishimithil@gmail.com>"
 pkgname=linux-postmarketos-omap
 pkgver=7.1.5
-pkgrel=57
+pkgrel=59
 pkgdesc="Mainline kernel fork for OMAP devices"
 arch="armv7"
 url="https://kernel.org/"
@@ -101,6 +101,8 @@ source="
 	0052-ARM-dts-ti-omap-samsung-espresso10-power-the-touchsc.patch
 	0053-drm-omap-reclaim-the-overlays-of-a-plane-state-resto.patch
 	0054-ARM-dts-ti-omap-espresso-common-fix-the-acceleromete.patch
+	0055-ARM-dts-ti-omap-samsung-espresso10-fix-the-backlight.patch
+	0056-ARM-dts-ti-omap-samsung-espresso7-fix-the-backlight-.patch
 "
 builddir="$srcdir/linux-$_kernver"
 replaces="linux-samsung-espresso3g linux-nokia-n900"
@@ -187,4 +189,6 @@ eca94aa1fe7bbe7fa0a863d1a9cbb926b474b6fcd7c42b3d3cc5b929a6595ca9c546e173062a92f5
 27f5661d7ead55b50e8478c6718d6ad33f74294a9ac4d56f266426d727acd5b768da0de95c22a0f7aaa5d34c30a640ec972127f4a1f26d4270aabf94e9ed6200  0052-ARM-dts-ti-omap-samsung-espresso10-power-the-touchsc.patch
 3fc782fe13653b4d23f3acd7408163cca14199105c8fc381b8ba5f9f55738351389eb27a3da9450174b1566eae0f4192a296f7f7b1b15aa2dbab9c148e3281c0  0053-drm-omap-reclaim-the-overlays-of-a-plane-state-resto.patch
 354c694c8c0a3e0fe00611ebca5999cf29bdbfb0fbd506c2a3d88a21082dbbf5d32c7d320ce0990603d8f2dfaca095cc33212102e1e789c9e5ff3d43af229009  0054-ARM-dts-ti-omap-espresso-common-fix-the-acceleromete.patch
+5548106b89953b9b0bb59cdda9c8a6617ae7faf952137848d29b77ac8613aedab129ce869a418d3517a60660f650ba2a6bd633494b1e529fd1eeda59dba3e16b  0055-ARM-dts-ti-omap-samsung-espresso10-fix-the-backlight.patch
+446ed2e0301a659fcb6c2884af0c1d627db12f03319d2368aa403b5575fcdeea3e52170e30e738a79def87959a2fc7babbb777303729a723c0669d13b24d6984  0056-ARM-dts-ti-omap-samsung-espresso7-fix-the-backlight-.patch
 "
