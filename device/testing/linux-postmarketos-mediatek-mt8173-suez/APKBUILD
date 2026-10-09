@@ -2,7 +2,7 @@
 maintainer="Ryan Brue <ryanbrue.dev@gmail.com>"
 pkgname=linux-postmarketos-mediatek-mt8173-suez
 pkgver=7.3.0_rc6
-pkgrel=4
+pkgrel=5
 pkgdesc="Mainline kernel fork for the Amazon Fire HD 10 (2017)"
 arch="aarch64"
 _carch="arm64"
@@ -36,6 +36,13 @@ license="GPL-2.0-only"
 # category:debug, which requires CONFIG_FUNCTION_TRACER, whose instrumentation
 # is worth ~1 MiB here. kconfigcheck.toml explicitly allows dropping this
 # option for devices in testing.
+#
+# Lock debugging (PROVE_LOCKING, PROVE_RCU, DEBUG_{SPINLOCK,MUTEXES,RWSEMS,
+# WW_MUTEX_SLOWPATH,...}) is off. It is worth building with when hunting a
+# locking bug, but it costs about 40 % of the GPU path on this board: glmark2
+# off-screen 74-75 fps without it, 43-49 with it, and a phosh panel gesture
+# costs twice the CPU, because Mesa's PowerVR driver churns GEM objects
+# every frame.
 #
 # KNOWN DEVIATION: CONFIG_DEBUG_INFO_BTF and CONFIG_DEBUG_INFO_BTF_MODULES are
 # disabled, which category:default requires. BTF measures 6.00 MiB of the
@@ -163,6 +170,6 @@ package() {
 
 sha512sums="
 4573163ea4e9b4150d2c26bbfeea64891626a0b9e0d31a206af7d8c9aa7c77bb047a459469ba9e164ea766d1f06e3bf5dc82a003acc5a44c3331408579a721fc  linux-postmarketos-mediatek-mt8173-suez-9b57525070d6d114fb10c21ab25ea0a61534e1ed.tar.gz
-390a79c1cd5a81de0b87ff854fb2981545639eaacd360b0827ee2975a1ed49cac981f7e8f9b8353ab3252dd424e13e9648b15b80315f21bf503464aaab298070  config-postmarketos-mediatek-mt8173-suez.aarch64
+a78c5e1bf459b8147af0e4d27ea3eda7eb989a6262366b15d8ec32259213f5774636b1178188c6d4dd1d5f6c71ae2678526d328932cfe3235c696b6cb067ea30  config-postmarketos-mediatek-mt8173-suez.aarch64
 73a749289476ddfb4b5be8743dd22153e134637c55d9fee2d636d14805db29540603dca08495a93273153ee91c45bf64d448eda6d51e9dfc01df4ac9a3c99b3a  el2-stage.bin
 "
