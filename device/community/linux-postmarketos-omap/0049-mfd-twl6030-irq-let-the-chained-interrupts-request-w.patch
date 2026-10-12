@@ -1,4 +1,4 @@
-From b3d3d7aa6df45e5630871e35ed2e9c3f7755b7e5 Mon Sep 17 00:00:00 2001
+From 11b7762d76dd004ff53f4a519b9c287a3718a594 Mon Sep 17 00:00:00 2001
 From: Ryan Brue <ryanbrue.dev@gmail.com>
 Date: Wed, 7 Oct 2026 19:57:41 -0500
 Subject: [PATCH] mfd: twl6030-irq: let the chained interrupts request wakeup

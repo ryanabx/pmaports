@@ -1,4 +1,4 @@
-From 15d90f0335141c5856140f16c5e312b2ae9f10cc Mon Sep 17 00:00:00 2001
+From 74d315370cf567dd474bfd436ecfa6aff64be8c4 Mon Sep 17 00:00:00 2001
 From: Ryan Brue <ryanbrue.dev@gmail.com>
 Date: Fri, 25 Sep 2026 02:52:23 -0500
 Subject: [PATCH] power: supply: max17042_battery: report the battery's design

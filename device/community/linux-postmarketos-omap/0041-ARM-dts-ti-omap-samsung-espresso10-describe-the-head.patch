@@ -1,4 +1,4 @@
-From 6d2ccbc5c173a8aa3e64272d936e704e55761d40 Mon Sep 17 00:00:00 2001
+From 9c5980a3d91d23a2f97bd64f88eb127bbebb2076 Mon Sep 17 00:00:00 2001
 From: Ryan Brue <ryanbrue.dev@gmail.com>
 Date: Fri, 25 Sep 2026 17:23:51 -0500
 Subject: [PATCH] ARM: dts: ti: omap: samsung-espresso10: describe the headset

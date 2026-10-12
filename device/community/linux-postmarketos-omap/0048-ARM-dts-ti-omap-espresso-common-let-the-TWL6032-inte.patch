@@ -1,4 +1,4 @@
-From e4cf227acbead8b8fbd5533b3266d2daefb2cb2b Mon Sep 17 00:00:00 2001
+From ab85f87543836ba4f934a58ad6899ee2d8d7fc67 Mon Sep 17 00:00:00 2001
 From: Ryan Brue <ryanbrue.dev@gmail.com>
 Date: Wed, 7 Oct 2026 18:49:31 -0500
 Subject: [PATCH] ARM: dts: ti: omap: espresso-common: let the TWL6032

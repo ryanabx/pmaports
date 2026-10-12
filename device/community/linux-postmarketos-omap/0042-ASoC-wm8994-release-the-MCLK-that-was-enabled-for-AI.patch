@@ -1,4 +1,4 @@
-From a6f09ef1ee17004491a04d4029f106be7854b0c1 Mon Sep 17 00:00:00 2001
+From 3a0c45416de49df31f2c200d33bf9b8a57a4f1a6 Mon Sep 17 00:00:00 2001
 From: Ryan Brue <ryanbrue.dev@gmail.com>
 Date: Wed, 7 Oct 2026 12:51:46 -0500
 Subject: [PATCH] ASoC: wm8994: release the MCLK that was enabled for AIFnCLK

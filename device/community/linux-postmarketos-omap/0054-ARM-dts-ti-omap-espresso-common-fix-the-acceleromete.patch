@@ -1,4 +1,4 @@
-From ac7ef5df86131f46d4b92a82c4c4c0099e7edcfe Mon Sep 17 00:00:00 2001
+From 72b75467e29f1d411358c4c7a8e7ce4380df12b7 Mon Sep 17 00:00:00 2001
 From: Ryan Brue <ryanbrue.dev@gmail.com>
 Date: Thu, 8 Oct 2026 15:04:41 -0500
 Subject: [PATCH] ARM: dts: ti: omap: espresso-common: fix the accelerometer

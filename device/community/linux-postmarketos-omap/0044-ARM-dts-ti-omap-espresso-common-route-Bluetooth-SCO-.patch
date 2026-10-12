@@ -1,4 +1,4 @@
-From 85e91d808dbe1e97d2406edd32f88f6fcadf1288 Mon Sep 17 00:00:00 2001
+From 2a680d8d3776280d565fd5d335c6ba0bc8e49d81 Mon Sep 17 00:00:00 2001
 From: Ryan Brue <ryanbrue.dev@gmail.com>
 Date: Wed, 7 Oct 2026 13:24:09 -0500
 Subject: [PATCH] ARM: dts: ti: omap: espresso-common: route Bluetooth SCO over

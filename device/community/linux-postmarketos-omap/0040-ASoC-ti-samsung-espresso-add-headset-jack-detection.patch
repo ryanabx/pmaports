@@ -1,4 +1,4 @@
-From e71048a281ea1e36e8c3f3ab931c6868bc8d86a0 Mon Sep 17 00:00:00 2001
+From e515fdfb8b86dd37f0574d8e8bec6212a2a6f62c Mon Sep 17 00:00:00 2001
 From: Ryan Brue <ryanbrue.dev@gmail.com>
 Date: Wed, 7 Oct 2026 00:28:10 -0500
 Subject: [PATCH] ASoC: ti: samsung-espresso: add headset jack detection
@@ -36,8 +36,8 @@ Volume keys untested (no such headset at hand).
 Assisted-by: LLM
 ---
  sound/soc/ti/Kconfig            |   2 +-
- sound/soc/ti/samsung-espresso.c | 278 +++++++++++++++++++++++++++++++-
- 2 files changed, 277 insertions(+), 3 deletions(-)
+ sound/soc/ti/samsung-espresso.c | 279 +++++++++++++++++++++++++++++++-
+ 2 files changed, 278 insertions(+), 3 deletions(-)
 
 diff --git a/sound/soc/ti/Kconfig b/sound/soc/ti/Kconfig
 index fb6b0067ca2c..4e7087cd212d 100644
@@ -53,7 +53,7 @@ index fb6b0067ca2c..4e7087cd212d 100644
  	select MFD_WM8994
  	select SND_SOC_WM8994
 diff --git a/sound/soc/ti/samsung-espresso.c b/sound/soc/ti/samsung-espresso.c
-index 9c00da0dfab9..327d790b202d 100644
+index 9c00da0dfab9..81455587a767 100644
 --- a/sound/soc/ti/samsung-espresso.c
 +++ b/sound/soc/ti/samsung-espresso.c
 @@ -7,10 +7,17 @@
@@ -370,6 +370,11 @@ index 9c00da0dfab9..327d790b202d 100644
  	ret = snd_soc_of_parse_audio_routing(card, "audio-routing");
  	if (ret < 0)
  		return dev_err_probe(dev, ret,
+@@ -403,3 +677,4 @@ module_platform_driver(espresso_driver);
+ 
+ MODULE_DESCRIPTION("ASoC support for the Samsung Galaxy Tab 2 (espresso)");
+ MODULE_LICENSE("GPL");
++MODULE_IMPORT_NS("IIO_CONSUMER");
 -- 
 2.55.0
 

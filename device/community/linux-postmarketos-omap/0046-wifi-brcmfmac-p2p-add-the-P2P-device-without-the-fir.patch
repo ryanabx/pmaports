@@ -1,4 +1,4 @@
-From 624a7b433139a9f4c9ea4ea0c0922d1eda668de5 Mon Sep 17 00:00:00 2001
+From a58eae65b37a390dd0be0c91e30b0523350f799a Mon Sep 17 00:00:00 2001
 From: Ryan Brue <ryanbrue.dev@gmail.com>
 Date: Wed, 7 Oct 2026 16:54:27 -0500
 Subject: [PATCH] wifi: brcmfmac: p2p: add the P2P device without the

@@ -1,4 +1,4 @@
-From b35bbef24cf278472047cbfe149a9e2dd64bc5bc Mon Sep 17 00:00:00 2001
+From 67e637595d6d93a52825727226b2a82115a562d7 Mon Sep 17 00:00:00 2001
 From: Ryan Brue <ryanbrue.dev@gmail.com>
 Date: Wed, 7 Oct 2026 20:15:56 -0500
 Subject: [PATCH] clocksource/drivers/timer-ti-dm: suspend runtime-active

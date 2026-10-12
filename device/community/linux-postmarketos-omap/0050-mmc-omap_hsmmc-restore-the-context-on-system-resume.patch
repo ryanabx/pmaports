@@ -1,4 +1,4 @@
-From 3fa1a43c4f24e97c438cfafa66612700c0bf339f Mon Sep 17 00:00:00 2001
+From 118eb1b387c8affc12c9af27f553b21709587ad6 Mon Sep 17 00:00:00 2001
 From: Ryan Brue <ryanbrue.dev@gmail.com>
 Date: Wed, 7 Oct 2026 20:07:45 -0500
 Subject: [PATCH] mmc: omap_hsmmc: restore the context on system resume

@@ -1,4 +1,4 @@
-From 524fdced975b3e51fbcb4c21f2e3dfd3ccd46f8a Mon Sep 17 00:00:00 2001
+From e2a090c39f0e21fc1dd225a72fdafb70ad5d7c60 Mon Sep 17 00:00:00 2001
 From: Ryan Brue <ryanbrue.dev@gmail.com>
 Date: Wed, 7 Oct 2026 20:58:49 -0500
 Subject: [PATCH] drm/omap: reclaim the overlays of a plane state restored on

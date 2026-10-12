@@ -1,4 +1,4 @@
-From 6646cc52fb91fe07843217bf4d311cb6b7a24afb Mon Sep 17 00:00:00 2001
+From 4c50038a413d460bc34ba0658f3e4b5aaf87c72d Mon Sep 17 00:00:00 2001
 From: Ryan Brue <ryanbrue.dev@gmail.com>
 Date: Thu, 8 Oct 2026 23:44:01 -0500
 Subject: [PATCH] ARM: dts: ti: omap: samsung-espresso10: fix the backlight PWM

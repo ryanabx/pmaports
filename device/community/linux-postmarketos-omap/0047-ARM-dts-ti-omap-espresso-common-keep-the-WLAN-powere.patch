@@ -1,4 +1,4 @@
-From 92ec77a385f189cb65bae3c94641cb7318a56094 Mon Sep 17 00:00:00 2001
+From 33c3fcd49b54be45a957a965f34d822ef6e139e1 Mon Sep 17 00:00:00 2001
 From: Ryan Brue <ryanbrue.dev@gmail.com>
 Date: Wed, 7 Oct 2026 17:16:56 -0500
 Subject: [PATCH] ARM: dts: ti: omap: espresso-common: keep the WLAN powered in
