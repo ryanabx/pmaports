@@ -2,7 +2,7 @@
 maintainer="Mithil Bavishi <bavishimithil@gmail.com>"
 pkgname=linux-postmarketos-omap
 pkgver=7.1.5
-pkgrel=60
+pkgrel=61
 pkgdesc="Mainline kernel fork for OMAP devices"
 arch="armv7"
 url="https://kernel.org/"
@@ -103,6 +103,7 @@ source="
 	0054-ARM-dts-ti-omap-espresso-common-fix-the-acceleromete.patch
 	0055-ARM-dts-ti-omap-samsung-espresso10-fix-the-backlight.patch
 	0056-ARM-dts-ti-omap-samsung-espresso7-fix-the-backlight-.patch
+	0057-ARM-dts-ti-omap-espresso-common-fix-the-magnetometer.patch
 "
 builddir="$srcdir/linux-$_kernver"
 replaces="linux-samsung-espresso3g linux-nokia-n900"
@@ -191,4 +192,5 @@ ae3a19e25cc77d33d04db88bd364f1d0a8a56d96976380b4b49c2b5d7ef09ed2bdc4f1240f95b710
 d9d35a34fe26d09d70f1a576abd5d2832732df7ee029354aeb0ecbc6d53cb2f12dded678da1fc7dc76f9275a4e85f1f760a14e07cf660b55093da3b5c9009311  0054-ARM-dts-ti-omap-espresso-common-fix-the-acceleromete.patch
 7813ba90797c8364a57a4661a9dc746cfa3cd7e5915c10b107831a9a3d0c4b5136f3014bbb65a9b3833ec63d8db80c14a73af520979fd71894a69d9d2ae3afc8  0055-ARM-dts-ti-omap-samsung-espresso10-fix-the-backlight.patch
 c100b277f1b1bacc33794c9fd9c7f113d9d67a998dfc5ad6a4cb41439c82a1bfb252cab05047203043b009f2d2e0e70864a6e667a03930b209d50b5f53ca3349  0056-ARM-dts-ti-omap-samsung-espresso7-fix-the-backlight-.patch
+1a0794966a28996d19197cb0db11b754dd2e8be6e19118b625b6d996ef04f11b32526a9db16a7dc910caaabb5087840291e5b6dce6f3a988b9af24b80d5cc1f6  0057-ARM-dts-ti-omap-espresso-common-fix-the-magnetometer.patch
 "

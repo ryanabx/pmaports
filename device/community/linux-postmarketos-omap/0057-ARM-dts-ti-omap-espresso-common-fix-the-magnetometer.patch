@@ -1,0 +1,41 @@
+From 83352739a2058e1c2269349f78f3f5cfb580a13a Mon Sep 17 00:00:00 2001
+From: Ryan Brue <ryanbrue.dev@gmail.com>
+Date: Tue, 13 Oct 2026 09:24:48 -0500
+Subject: [PATCH] ARM: dts: ti: omap: espresso-common: fix the magnetometer
+ interrupt
+
+The YAS530 node lists its interrupt as <&gpio6 10 IRQ_TYPE_EDGE_RISING>
+without an interrupt-parent, so the parent is inherited from the root
+(the WUGEN) and the GPIO phandle is read as the first of its three
+cells: the interrupt doesn't resolve, and silently so, because i2c core
+falls back to no interrupt.
+
+The vendor kernel names GPIO_170 (gpio6 line 10) MAG_INT, so the line
+was right; make GPIO6 the parent.
+
+The yas530 driver doesn't use the interrupt yet, so this changes
+nothing at runtime.
+
+Fixes: f768d54723d1 ("ARM: dts: ti: omap: espresso-common: Add common device tree for Samsung Galaxy Tab 2 series")
+Assisted-by: LLM
+---
+ arch/arm/boot/dts/ti/omap/omap4-samsung-espresso-common.dtsi | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/arch/arm/boot/dts/ti/omap/omap4-samsung-espresso-common.dtsi b/arch/arm/boot/dts/ti/omap/omap4-samsung-espresso-common.dtsi
+index 9655becd25ed..5cfbc3b2843e 100644
+--- a/arch/arm/boot/dts/ti/omap/omap4-samsung-espresso-common.dtsi
++++ b/arch/arm/boot/dts/ti/omap/omap4-samsung-espresso-common.dtsi
+@@ -860,7 +860,8 @@ magnetometer@2e {
+ 		vdd-supply = <&ldo4>;
+ 		iovdd-supply = <&ldo5>;
+ 		reset-gpios = <&gpio5 29 GPIO_ACTIVE_LOW>;
+-		interrupts = <&gpio6 10 IRQ_TYPE_EDGE_RISING>;
++		interrupt-parent = <&gpio6>;
++		interrupts = <10 IRQ_TYPE_EDGE_RISING>;	/* MAG_INT, GPIO_170 */
+ 	};
+ };
+ 
+-- 
+2.56.0
+
