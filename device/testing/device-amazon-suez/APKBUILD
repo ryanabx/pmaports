@@ -3,7 +3,7 @@ maintainer="Ryan Brue <ryanbrue.dev@gmail.com>"
 pkgname=device-amazon-suez
 pkgdesc="Amazon Fire HD 10 (2017)"
 pkgver=5
-pkgrel=5
+pkgrel=6
 url="https://postmarketos.org"
 license="MIT"
 arch="aarch64"
@@ -14,6 +14,7 @@ depends="
 	firmware-powervr-gx6250
 	linux-firmware-mediatek
 	linux-postmarketos-mediatek-mt8173-suez
+	losetup
 	mkbootimg
 	postmarketos-base
 	postmarketos-base-ui-audio-backend-pipewire
@@ -298,7 +299,7 @@ aaf34e1a660df1fe4782b8a130ab7cd9477c39eb559f48f3ee78aa01673666491087d9f0ed6403b3
 90df791c68d4377cc6179406e6328d896b9ae72fcfa53dffca05498d3280901ad4aebad3cd05413171efc29d64f7779c91222517895ee53caef8b99dace1ea62  suez-mt6630-bdaddr@.service
 cb44fc3ecfa23b58303036874d76f130d8d5d327fcf0d50e9da825aec9e5539890a7f6118c62b89d639b1160dadc5dade5cd04bca03cddc43c41301da1d99369  suez-gtk-renderer.conf
 5c75e206ef78b51a328f2039d6410ca5fd01713e560b5bc87a1c6fedb0f7c94fbc4f2e698797d645a1027c8687ecf3d32535de949653ccdf18662b981a17fb22  suez-powervr-vulkan.conf
-8814fc2c8418110c39e62e26a6afb5a06c71ec4d79919fc0ef51cca899da833d75a6a411f4158893e36bf760ccba506b94cb68a892b5541544bb01716ea6b0c2  suez-pstore-blk
+025df21d0302db8f0c81c14165ef75d52cd91178dc60e0a2f298d10162c78716103a3d4fbec572b1d2df28c78ea4541e20e26ff7d05d1dedc2874bdc85a7a053  suez-pstore-blk
 5641f47975b388bef6e83b6062b885357539df30a2bb893391e5088df67fe3e6720c618cb67fef53c6eb6617bf2c0ba5bdd5d714b855c797a0a99a63f34ec4d8  suez-pstore-blk.service
 35c47540da0f6adc6afecfa5ac1d2b2d10beef5cba655078fe7076c7a61af289ba586d0072cf88f4b918d0d07e1abbb98a7f00e362da38686e3767a5875199da  suez-stability.conf
 6deaca34cdd9337057fded39a7f3cad52869874a6f233591990a8cf70f318fd0431f69cdd83e6938d9453aac0e7643e2cda28a2c80e4e02816aead59427638cd  suez-watchdog.conf
