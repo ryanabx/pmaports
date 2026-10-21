@@ -1,4 +1,3 @@
-# Archived: unmaintained
 # Reference: <https://postmarketos.org/vendorkernel>
 # Kernel config based on: arch/arm/configs/sheldon_defconfig
 maintainer=""
