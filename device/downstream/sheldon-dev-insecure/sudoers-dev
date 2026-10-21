@@ -1,0 +1,5 @@
+# Development stick only. Lets the default user run any command as root
+# without a password, so tooling (kexec, pstore, /dev/mem) can run over ssh
+# without piping a password in. /etc/sudoers already carries
+# "@includedir /etc/sudoers.d", so this is picked up automatically.
+user ALL=(ALL) NOPASSWD: ALL

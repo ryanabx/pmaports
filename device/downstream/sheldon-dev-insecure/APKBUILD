@@ -1,0 +1,23 @@
+# Development device only: never install this on a device you rely on.
+maintainer="Ryan Brue <ryanbrue.dev@gmail.com>"
+pkgname=sheldon-dev-insecure
+pkgver=1
+pkgrel=0
+pkgdesc="Passwordless sudo, an unrestricted kernel log and kexec, for the sheldon(p) dev stick"
+url="https://postmarketos.org"
+arch="noarch"
+license="MIT"
+depends="sudo-virt kexec-tools"
+install="$pkgname.post-install"
+source="sudoers-dev sysctl-90-dev.conf"
+options="!check"
+
+package() {
+	install -Dm440 "$srcdir"/sudoers-dev "$pkgdir"/etc/sudoers.d/dev
+	install -Dm644 "$srcdir"/sysctl-90-dev.conf "$pkgdir"/etc/sysctl.d/90-dev.conf
+}
+
+sha512sums="
+13059fc345e94b84ebc4dab6f359d1843ac26d4b2bcdb00653edba4f9bff2de77cefc3771bba4680d1898e02711fdccdb6843c144b147e7554b75151360a8605  sudoers-dev
+e074ecce7d3765d4962d3913b48f47b05251cad400ddac34b7669a9dae4cbf2eb790a1722d4997f222db305ee78d86089941401cf135673187d463112e9af242  sysctl-90-dev.conf
+"

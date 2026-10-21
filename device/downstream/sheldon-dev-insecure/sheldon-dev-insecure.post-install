@@ -1,0 +1,15 @@
+#!/bin/sh
+# Apply the sysctl now, so sideloading this onto a running device takes effect
+# without a reboot.
+sysctl -p /etc/sysctl.d/90-dev.conf >/dev/null 2>&1 || true
+
+cat >&2 <<'WARNING'
+*
+* sheldon-dev-insecure is installed: the 'user' account can now run any
+* command as root without a password, and the kernel log is world-readable.
+*
+* This is for a development device on a trusted link. Remove it with:
+*     apk del sheldon-dev-insecure
+*
+WARNING
+exit 0
