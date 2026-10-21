@@ -1,0 +1,35 @@
+diff --git a/arch/arm/boot/dts/sheldon.dts b/arch/arm/boot/dts/sheldon.dts
+index e91a3e12bd18..fb45f272f630 100644
+--- a/arch/arm/boot/dts/sheldon.dts
++++ b/arch/arm/boot/dts/sheldon.dts
+@@ -25,6 +25,19 @@
+ 		reg = <0 0x40000000 0 0x40000000>;
+ 	};
+ 
++	/*
++	 * Shared with the mainline bring-up kernel: a log that survives a warm
++	 * (watchdog) reset, in the gap between the MediaTek ram_console and
++	 * minirdump carveouts. 4.4 does not populate reserved-memory children,
++	 * so the region is carved out there and the device is a root node.
++	 */
++	ramoops@44440000 {
++		compatible = "ramoops";
++		reg = <0 0x44440000 0 0x80000>;
++		record-size = <0x10000>;
++		console-size = <0x40000>;
++	};
++
+ 	extcon_usb: extcon_iddig {
+ 		compatible = "linux,extcon-usb-gpio";
+ 		id-gpio = <&pio 55 GPIO_ACTIVE_HIGH>;
+@@ -636,3 +649,10 @@ androidboot.hardware=mt8695 androidboot.serialno=0123456789ABCDEF";
+ &svs {
+ 	vproc-supply = <&mt6393_vproc_reg>;
+ };
++
++&reserved_memory {
++	ramoops-reserved-memory@44440000 {
++		reg = <0 0x44440000 0 0x80000>;
++		no-map;
++	};
++};
