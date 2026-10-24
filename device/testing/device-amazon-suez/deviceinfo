@@ -52,6 +52,10 @@ deviceinfo_zram_swap_pct="50"
 deviceinfo_no_framebuffer="true"
 
 # Bootloader related
+#
+# U-Boot, which upstream TF-A starts from p10 "reserved", boots the
+# extlinux.conf on the boot partition.
+deviceinfo_generate_extlinux_config="true"
 deviceinfo_flash_method="fastboot"
 deviceinfo_generate_bootimg="true"
 deviceinfo_create_initfs_extra="true"
