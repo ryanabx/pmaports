@@ -8,7 +8,6 @@ deviceinfo_codename="amazon-suez"
 deviceinfo_year="2017"
 deviceinfo_arch="aarch64"
 deviceinfo_dtb="mediatek/mt8173-amazon-suez"
-deviceinfo_append_dtb="true"
 
 # Device related
 deviceinfo_chassis="tablet"
@@ -54,17 +53,10 @@ deviceinfo_no_framebuffer="true"
 # Bootloader related
 #
 # U-Boot, which upstream TF-A starts from p10 "reserved", boots the
-# extlinux.conf on the boot partition.
+# extlinux.conf on the boot partition, which carries the legacy BIOS bootable
+# attribute for its bootflow scan. Nothing reads an Android boot image any
+# more: that was LK's, which no longer runs. Install by writing the split
+# images to "system" and "userdata", from U-Boot's fastboot or from Linux.
 deviceinfo_generate_extlinux_config="true"
-deviceinfo_flash_method="fastboot"
-deviceinfo_generate_bootimg="true"
+deviceinfo_flash_method="none"
 deviceinfo_create_initfs_extra="true"
-deviceinfo_flash_offset_base="0x40078000"
-deviceinfo_flash_offset_kernel="0x00008000"
-deviceinfo_flash_offset_ramdisk="0x05f88000"
-deviceinfo_flash_offset_second="0x00e88000"
-deviceinfo_flash_offset_tags="0x07f88000"
-deviceinfo_flash_pagesize="2048"
-# The hacked bootloader maps "boot" to the amonet payload partition, the real
-# Android boot partition is "boot_x". Flashing "boot" would break amonet.
-deviceinfo_flash_fastboot_partition_kernel="boot_x"

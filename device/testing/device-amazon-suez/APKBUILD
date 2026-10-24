@@ -3,7 +3,7 @@ maintainer="Ryan Brue <ryanbrue.dev@gmail.com>"
 pkgname=device-amazon-suez
 pkgdesc="Amazon Fire HD 10 (2017)"
 pkgver=5
-pkgrel=8
+pkgrel=9
 url="https://postmarketos.org"
 license="MIT"
 arch="aarch64"
@@ -14,7 +14,6 @@ depends="
 	firmware-powervr-gx6250
 	linux-firmware-mediatek
 	linux-postmarketos-mediatek-mt8173-suez
-	mkbootimg
 	postmarketos-base
 	postmarketos-base-ui-audio-backend-pipewire
 "
@@ -41,12 +40,8 @@ source="
 	99-suez-charge-voltage.rules
 	amazon-suez-gpu.service
 	deviceinfo
-	kernel-cmdline.conf
 	modules-initfs
 	pipewire-pulse.service
-	suez-bcb-arm.sh
-	suez-bcb-disarm
-	suez-bcb-disarm.service
 	suez-charger-limit
 	suez-charger-limit.service
 	suez-gauge-capacity
@@ -79,19 +74,6 @@ package() {
 	install -d "$pkgdir"/etc/systemd/system
 	ln -s /dev/null "$pkgdir"/etc/systemd/system/nftables.service
 
-	# Recovery fallback: the initramfs hook arms LK's bootloader control
-	# block, and the service clears it once the boot has succeeded. See the
-	# comments in those files.
-	install -Dm755 "$srcdir"/suez-bcb-arm.sh \
-		"$pkgdir"/usr/share/mkinitfs/hooks/00-suez-bcb-arm.sh
-	install -Dm755 "$srcdir"/suez-bcb-disarm \
-		"$pkgdir"/usr/sbin/suez-bcb-disarm
-	install -Dm644 "$srcdir"/suez-bcb-disarm.service \
-		"$pkgdir"/usr/lib/systemd/system/suez-bcb-disarm.service
-	install -d "$pkgdir"/usr/lib/systemd/system/multi-user.target.wants
-	ln -s ../suez-bcb-disarm.service \
-		"$pkgdir"/usr/lib/systemd/system/multi-user.target.wants/suez-bcb-disarm.service
-
 	# ALSA UCM for the mt8173-mt6391 card. The card is DPCM and everything
 	# powers up muted; without this profile the front-end PCMs cannot even
 	# be opened and the desktop only sees dummy outputs. See the comments
@@ -107,6 +89,7 @@ package() {
 		"$pkgdir"/usr/sbin/suez-charger-limit
 	install -Dm644 "$srcdir"/suez-charger-limit.service \
 		"$pkgdir"/usr/lib/systemd/system/suez-charger-limit.service
+	install -d "$pkgdir"/usr/lib/systemd/system/multi-user.target.wants
 	ln -s ../suez-charger-limit.service \
 		"$pkgdir"/usr/lib/systemd/system/multi-user.target.wants/suez-charger-limit.service
 
@@ -269,13 +252,9 @@ sha512sums="
 6ed2f313000ba2a088120c4b413a21cfa721db812bafb94c1a0ee5e6e732048f797421c86643dc57aef56d55943aa635a17782a3f95fc2260e676ec2b497808d  90-suez-mt6630-addr.rules
 7c0bc0904e64d096c2218264352ef0788afbebb633616c58fafbd186805a06959bf8a160ca9768a1b11b1e57d15e0886f85bdfbc44382d034e8d3984e550f829  99-suez-charge-voltage.rules
 cc39763190e092d761ecc454368df9db9b7ddc300ef05c563bd9b3cafadc711801cadd8b4ab64feeb716cef1e6d307427da8f21aed8f794f75d664474ac7bb5b  amazon-suez-gpu.service
-b1404a83c6b7d191fed119a26effca5b8d8e512ba039c08559e35f48c930fab7ef617dafa9722f1f5b7a8165661c3b0905ce6029215d355615b390b55cd64f3d  deviceinfo
-d89b08ef9888faae6cb96a378421669e6119023307a3b5a109e18b7f9e2c70e1f8b240ba8f9b9d22d319fa28e416565d06074d34382f482c9b037b7ab3f4861c  kernel-cmdline.conf
+1671b2b0e341133cf3ac07c25752c9ac412ab6a77d8d393f9ab315d01dfd8b688d8abb269991d7168b4677fbfdac97aee7b6fba496a3d111ed3467419ebf31e9  deviceinfo
 d89fa6205d2ec177514a6e47877f27c7c69745d30994e36597ac6940c114a71868940d7050ba67dc5a260dc338ca5d789c521e35c37d7f2d3645762ab02101a9  modules-initfs
 ed206890b81cc15ac38a64e0b94c97762210e3c7f6b6d6f7312b7fe779dc19bd68cb651452c9ff94d4cee7b5270ca15af73cfed7a65013975c248f41aee316cb  pipewire-pulse.service
-fbdb7d4e8dbd03258dca7b1147130865513cf45599bd9f83e253079d1dfe009c890198adc2bbb14773d0d20822fe13898bbc2f9e1a0e5ce4b6acfbd4ea64eca2  suez-bcb-arm.sh
-33b6cca3c1c822781f5a8da665d60843239152344b7d585081eb531adb30933631487c8f422893e0a2e274307c7537c97284016634370620a41badccb3a4efd9  suez-bcb-disarm
-aaf34e1a660df1fe4782b8a130ab7cd9477c39eb559f48f3ee78aa01673666491087d9f0ed6403b33fafddf61411f5a1efa0ba101c86934df0fdae24c712f3c5  suez-bcb-disarm.service
 508c0986921b34597b366287768ea6e81a414b185649e8e07c27bf01b8e0d0c6496959ddb1200aade1c202580fcd93c12ebbfd934829e7dc58e9bffab97b5d02  suez-charger-limit
 3d6fe65bf0ddbdcdcb59a11d5df77ab9d2c477af59bcf0980cf697c6031ceec26599a79712b9147c9648b284eb27031dd58b75684a9898f7d87a11cf9044c6f4  suez-charger-limit.service
 24306fb8d6e825863f3f2f9a25a2e968141a34394b0f618fa40e46d21c719b7f999f862931ebc535688842fc673c13b064ec2e0558410c43c9206bdac6c87a2a  suez-gauge-capacity
