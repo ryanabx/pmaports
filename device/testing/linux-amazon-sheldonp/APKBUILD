@@ -1,0 +1,182 @@
+# Kernel config based on: arm64 defconfig with the bring-up fragments of
+# the sheldonp work repo (configs/mainline-arm{32,64}-bringup.config)
+maintainer="Ryan Brue <ryanbrue.dev@gmail.com>"
+pkgname=linux-amazon-sheldonp
+pkgver=7.3
+pkgrel=0
+pkgdesc="Amazon Fire TV Stick 3rd Gen mainline kernel fork"
+arch="aarch64"
+_carch="arm64"
+_flavor="${pkgname#linux-}"
+url="https://kernel.org"
+license="GPL-2.0-only AND 0BSD"
+options="!strip !check !tracedeps pmb:cross-native"
+makedepends="
+	bash
+	bison
+	clang
+	dtc
+	elfutils-dev
+	findutils
+	flex
+	linux-firmware-mediatek
+	linux-headers
+	lld
+	llvm
+	openssl-dev
+	perl
+	python3
+	wireless-regdb
+	xz
+	zstd
+"
+
+# There is no release tarball: build from the device branch with
+# pmbootstrap build --src (ryanabx/devices/amazon-sheldon, on v7.3).
+_config="config-$_flavor.$arch"
+_tramp="
+	trampoline64xz.S
+	trampoline64xz.lds
+	xzboot.c
+	dtbfix.c
+	xz_config.h
+	xz_crc32.c
+	xz_dec_bcj.c
+	xz_dec_lzma2.c
+	xz_dec_stream.c
+	xz.h
+	xz_lzma2.h
+	xz_private.h
+	xz_stream.h
+	shim-stdlib.h
+	shim-string.h
+"
+source="$_config $_tramp"
+builddir="$srcdir/linux-$pkgver"
+
+# The Wi-Fi/Bluetooth drivers are built in and load their firmware at
+# probe time, before any root file system: CONFIG_EXTRA_FIRMWARE embeds it.
+_firmware="
+	mediatek/mt7663pr2h.bin
+	mediatek/mt7663_n9_v3.bin
+	mediatek/mt7663pr2h_rebb.bin
+	mediatek/mt7663_n9_rebb.bin
+	regulatory.db
+	regulatory.db.p7s
+"
+
+# LK keeps only about the first 120 characters of the boot image's command
+# line, which cuts pmos_root_uuid short. The trampoline appends these from
+# the DTB, after LK's: the empty UUIDs make the initramfs find the
+# partitions by label instead. The watchdog stays armed (the trampoline
+# arms it, the kernel feeds it), and stalls panic, so failed boots reset.
+_bootargs="console=ttyS0,921600n8 console=tty0 ignore_loglevel panic=5
+	watchdog.handle_boot_enabled=1 oops=panic
+	sysctl.kernel.panic_on_rcu_stall=1
+	pmos_boot_uuid= pmos_root_uuid= pmos_rootfsopts=defaults"
+
+prepare() {
+	default_prepare
+	cp "$srcdir/$_config" .config
+	make ARCH="$_carch" LLVM=1 olddefconfig
+
+	local f dir
+	for f in $_firmware; do
+		mkdir -p "firmware-embed/$(dirname "$f")"
+		for dir in /usr/lib/firmware /lib/firmware; do
+			if [ -f "$dir/$f.zst" ]; then
+				zstd -dcq "$dir/$f.zst" > "firmware-embed/$f"
+			elif [ -f "$dir/$f.xz" ]; then
+				xz -dc "$dir/$f.xz" > "firmware-embed/$f"
+			elif [ -f "$dir/$f" ]; then
+				cp "$dir/$f" "firmware-embed/$f"
+			else
+				continue
+			fi
+			break
+		done
+		[ -s "firmware-embed/$f" ] || die "firmware $f not found"
+	done
+
+	mkdir -p "$srcdir"/tramp/shim
+	cp "$srcdir"/shim-stdlib.h "$srcdir"/tramp/shim/stdlib.h
+	cp "$srcdir"/shim-string.h "$srcdir"/tramp/shim/string.h
+}
+
+# LK starts the kernel as a 32-bit zImage at 0x40008000. The trampoline
+# (from the sheldonp work repo, tools/kexec-probe) switches to AArch64
+# through ATF and starts the Image, which it carries XZ-compressed so that
+# it fits the 16 MiB boot partition with the initramfs.
+_build_trampoline() {
+	local t="$srcdir"/tramp
+	local libfdt="$builddir"/scripts/dtc/libfdt
+	local cflags="--target=armv7a-none-eabi -marm -march=armv7-a
+		-mfloat-abi=soft -mfpu=none -ffreestanding -fno-builtin -nostdinc
+		-isystem $(clang -print-resource-dir)/include -Os -fno-pic
+		-fno-stack-protector -fno-unwind-tables
+		-fno-asynchronous-unwind-tables -DXZ_DEC_SINGLE -DXZ_DEC_ARM64
+		-I $t/shim -I $srcdir -I $libfdt"
+	local src objs=""
+
+	xz -c -T0 --check=crc32 --arm64 --lzma2=preset=9e,dict=32MiB \
+		arch/arm64/boot/Image > "$t"/Image.xz
+	for src in "$srcdir"/xzboot.c "$srcdir"/dtbfix.c \
+		"$srcdir"/xz_crc32.c "$srcdir"/xz_dec_stream.c \
+		"$srcdir"/xz_dec_lzma2.c "$srcdir"/xz_dec_bcj.c \
+		"$libfdt"/fdt.c "$libfdt"/fdt_ro.c "$libfdt"/fdt_rw.c \
+		"$libfdt"/fdt_wip.c; do
+		# shellcheck disable=SC2086
+		clang $cflags -c "$src" -o "$t/$(basename "$src" .c).o"
+		objs="$objs $t/$(basename "$src" .c).o"
+	done
+	clang --target=armv7a-none-eabi -marm -DPAYLOAD="\"$t/Image.xz\"" \
+		-c "$srcdir"/trampoline64xz.S -o "$t"/trampxz.o
+	# shellcheck disable=SC2086
+	ld.lld -T "$srcdir"/trampoline64xz.lds "$t"/trampxz.o $objs \
+		-o "$t"/trampxz.elf
+	llvm-objcopy -O binary "$t"/trampxz.elf "$t"/zImage
+}
+
+build() {
+	unset LDFLAGS
+	make ARCH="$_carch" LLVM=1 \
+		KBUILD_BUILD_VERSION="$((pkgrel + 1))-postmarketOS"
+	_build_trampoline
+}
+
+package() {
+	mkdir -p "$pkgdir"/boot
+	make modules_install dtbs_install \
+		ARCH="$_carch" \
+		LLVM=1 \
+		INSTALL_MOD_PATH="$pkgdir"/usr \
+		INSTALL_MOD_STRIP=1 \
+		INSTALL_DTBS_PATH="$pkgdir"/boot/dtbs
+	rm -f "$pkgdir"/usr/lib/modules/*/build "$pkgdir"/usr/lib/modules/*/source
+
+	install -Dm644 "$srcdir"/tramp/zImage "$pkgdir"/boot/vmlinuz
+	# shellcheck disable=SC2086
+	fdtput -t s "$pkgdir"/boot/dtbs/mediatek/mt8695-amazon-sheldonp.dtb \
+		/chosen sheldon,bootargs-append "$(echo $_bootargs)"
+
+	install -D "$builddir"/include/config/kernel.release \
+		"$pkgdir"/usr/share/kernel/$_flavor/kernel.release
+}
+sha512sums="
+5ac7b5d80cce89989cdf60d5cd5c1e8c9e17bd1e46b72fe2357cfeed86dbb953cb34f8ca59f05bd0f00e0d3b7ff7bd347b11fa23c3fdee62660e618a4ddbcd4b  config-amazon-sheldonp.aarch64
+641a876f075c9f9c3dc182bb22ca07a2e041a84b0d8c41cc9505f3d55854a538244840501f1efa53349f4f4ef0ec0e6bf12b98736ab18375c3e3e921e7f9a736  trampoline64xz.S
+3dc0f0fcf5d36ebc3bdeb6f9e3289849fb60331be0e42c79edce188c56ed04b1fa8c787c824d9e6e72cd64173b10eab9fe263167ddeb88694e9983fb19c79eab  trampoline64xz.lds
+ddf10f3801994f9cd899a75e11b795b29f6d9959cba55314b6cc0fd0e68c59f08bd791eba4eb23ebd684b834b43c88a9cf0dbc29f41258b5e4f50f15f69f8203  xzboot.c
+a633310da805502fdec3f4f9960fa9e46bf10b498a78674bd61d424df1aa97972de52b31d748b3dba61bc8315f611089f33abdc995706786d643667c7facbcf4  dtbfix.c
+b0c6921b03542aa016dd8dba691b948b11da76781b4f079935cc2a0424b691e42d48a2e4f7363df8a06eed43a8049e7a1d72a5bc7e5b5f4411e53e44efe9b421  xz_config.h
+2aff537304acde7b25ba7e192bbd290e74508294034f2792391dbff3c131cedc3f5ceaf28610d6973f4682007646b5fceb97fb432e0b485c8a26866963d06bd6  xz_crc32.c
+b637272f503a2b33261bf030a3e5991e360530d3549e9b47ab9a1a9c6a4b96ef55f5bcf3c3dbe71f02bf1e74c41ae750898ac39188a1917c3550b23cf799c542  xz_dec_bcj.c
+5b144843f07a286c9d1a2723e678b7d8205703812df4fae9b7863c13881300f2b4857b3baac4862173002ec692c81d9459ff9ac42f3b223ce5e54fa69a7575d0  xz_dec_lzma2.c
+b7f58d4b6364e4adb896fab33819b37c8355b252b24409054d6422a67a4e7875b622a3c95d9aa544fb4f1a7020d832eceed3c6b6b153d92d6952a361ae8d3d91  xz_dec_stream.c
+e8227f704a0438ecb2d0eecf6a672a7f1e6753698747bc9c53411a8669f4a6663bcdedadc4276c81d713d875d9f05409bca7f2fff687ce9ed1d0417c66628629  xz.h
+28f7510065c9ba31c144a89d53022adb37a6c372adc85e44c99c5119e390f706de8cb2a160281494ab7b98c170baf5e7142a7ede2bea1fb967c2442313da8cbf  xz_lzma2.h
+c0dd742708bb2494d5c0b312db58dc1ec51fd9dc8e6b42682e0d661ea9d95b3fadc7a223b25e27b82e0aac82f4f921a13d1243a1d8db2d5165bedbbef063328d  xz_private.h
+40ab4c35f63f3c30901f3f509ae85b0aa929d5433bb0f2f14638eb53b6fbd43f03c371ed59356cf1420a2de9e929fe9198cdcd93ff516e6ea0520ae42a438ad8  xz_stream.h
+66fa0b6696d0db96a87bf3956dc63a8d76571a5ae1d1ca7cfbb7a60a03fce65c81922561cc4c2b53d57ed4117de9637a49fd6d71894c20f0648f1f4da21e464c  shim-stdlib.h
+ea251f2f411708d9b5a1a74e6ab7befc00eba6b86c0eb7dde12a2fca73eff4d5c640eb27a71d4c7d0d3a52d2582ad4f6c2692cccaf799ef12d616fb4637689b7  shim-string.h
+"
