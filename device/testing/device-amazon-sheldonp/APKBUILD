@@ -3,7 +3,7 @@ maintainer="Ryan Brue <ryanbrue.dev@gmail.com>"
 pkgname=device-amazon-sheldonp
 pkgdesc="Amazon Fire TV Stick 3rd Gen (mainline)"
 pkgver=1
-pkgrel=0
+pkgrel=1
 url="https://postmarketos.org"
 license="MIT"
 arch="aarch64"
@@ -24,6 +24,6 @@ package() {
 	devicepkg_package $startdir $pkgname
 }
 sha512sums="
-dc8d21489d7cbf06254e34ec75dfc0ab5bd76485ac6464d5f8be274de2ab2842b752f6f2d0a14da1a70a7a4b93f51fdd0134a55138102d9a2f7b7c4750cc7de3  deviceinfo
+d6865a6a01dabcfd95abeaf7857744f6c62509a12826a9800746dd4f5464c66d22daf3ca3f031910bd3b67059c38f4c16abbf7c26c39c1a989c6a4bf819ec3c1  deviceinfo
 be2af51cbd6532a7c19eec48e1ebd78c6bb17394a7c4b59d0b9bb83d001e7b50cd535cc6a70a37ee80639f6fc6307430c4ac19a88c8475674c93dd65693b392b  kernel-cmdline.conf
 "

@@ -32,6 +32,8 @@ deviceinfo_flash_offset_ramdisk="0x15000000"
 deviceinfo_flash_offset_second="0x00f00000"
 deviceinfo_flash_offset_tags="0x14000000"
 # Kernel, DTB and initramfs share the 16 MiB boot partition: keep the
-# initramfs small, the rest goes to initramfs-extra in pmOS_boot
-deviceinfo_initfs_compression="zstd:best"
+# initramfs small, the rest goes to initramfs-extra in pmOS_boot. gzip:
+# mkinitfs compresses initramfs-extra the same way as the initramfs, but
+# the initramfs (3.12.5) unpacks it with gzip only (2026-10-25)
+deviceinfo_initfs_compression="gzip:best"
 deviceinfo_create_initfs_extra="true"
