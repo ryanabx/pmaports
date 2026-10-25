@@ -1,0 +1,29 @@
+# Reference: <https://postmarketos.org/devicepkg>
+maintainer="Ryan Brue <ryanbrue.dev@gmail.com>"
+pkgname=device-amazon-sheldonp
+pkgdesc="Amazon Fire TV Stick 3rd Gen (mainline)"
+pkgver=1
+pkgrel=0
+url="https://postmarketos.org"
+license="MIT"
+arch="aarch64"
+options="!check !archcheck"
+depends="
+	linux-amazon-sheldonp
+	mkbootimg
+	postmarketos-base
+"
+makedepends="devicepkg-dev"
+source="deviceinfo kernel-cmdline.conf"
+
+build() {
+	devicepkg_build $startdir $pkgname
+}
+
+package() {
+	devicepkg_package $startdir $pkgname
+}
+sha512sums="
+dc8d21489d7cbf06254e34ec75dfc0ab5bd76485ac6464d5f8be274de2ab2842b752f6f2d0a14da1a70a7a4b93f51fdd0134a55138102d9a2f7b7c4750cc7de3  deviceinfo
+be2af51cbd6532a7c19eec48e1ebd78c6bb17394a7c4b59d0b9bb83d001e7b50cd535cc6a70a37ee80639f6fc6307430c4ac19a88c8475674c93dd65693b392b  kernel-cmdline.conf
+"

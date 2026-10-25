@@ -1,0 +1,37 @@
+# Reference: <https://postmarketos.org/deviceinfo>
+# Please use double quotes only. You can source this file in shell
+# scripts.
+deviceinfo_format_version="0"
+deviceinfo_name="Amazon Fire TV Stick 3rd Gen"
+deviceinfo_manufacturer="Amazon"
+deviceinfo_codename="amazon-sheldonp"
+deviceinfo_year="2020"
+deviceinfo_dtb="mediatek/mt8695-amazon-sheldonp"
+deviceinfo_arch="aarch64"
+
+# Device related
+deviceinfo_chassis="embedded"
+
+# USB networking: the scripts of the sheldonp work repo expect NCM
+deviceinfo_usb_network_function="ncm.usb0"
+
+# Bootloader related
+# The boot partition carries the Kamakiri microloader in front of the boot
+# image: never flash it with fastboot, use the work repo's scripts
+# (flash-pmos-twrp.sh, flash-boot-ssh.sh). LK boots the kernel as a 32-bit
+# zImage with the DTB appended; the kernel package's trampoline does the
+# rest.
+deviceinfo_flash_method="fastboot"
+deviceinfo_generate_bootimg="true"
+deviceinfo_append_dtb="true"
+deviceinfo_flash_pagesize="2048"
+deviceinfo_header_version="1"
+deviceinfo_flash_offset_base="0x40000000"
+deviceinfo_flash_offset_kernel="0x00008000"
+deviceinfo_flash_offset_ramdisk="0x15000000"
+deviceinfo_flash_offset_second="0x00f00000"
+deviceinfo_flash_offset_tags="0x14000000"
+# Kernel, DTB and initramfs share the 16 MiB boot partition: keep the
+# initramfs small, the rest goes to initramfs-extra in pmOS_boot
+deviceinfo_initfs_compression="zstd:best"
+deviceinfo_create_initfs_extra="true"
