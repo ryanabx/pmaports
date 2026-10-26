@@ -1,0 +1,4 @@
+# unudhcpd's addresses, for every unudhcpd.<interface> service; the same as
+# the initramfs's in /etc/unudhcpd.conf.
+UNUDHCPD_SERVER=172.16.44.1
+UNUDHCPD_CLIENT=172.16.44.2

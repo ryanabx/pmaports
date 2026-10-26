@@ -3,7 +3,7 @@ maintainer="Eli Hersha <elihersha@gmail.com>"
 pkgname=device-amazon-sheldon
 pkgdesc="Amazon Fire TV Stick Lite"
 pkgver=4
-pkgrel=1
+pkgrel=2
 url="https://postmarketos.org"
 license="MIT"
 arch="armv7"
@@ -14,7 +14,7 @@ depends="
 	postmarketos-base
 "
 makedepends="devicepkg-dev"
-source="deviceinfo kernel-cmdline.conf"
+source="deviceinfo kernel-cmdline.conf unudhcpd.conf unudhcpd.confd"
 
 build() {
 	devicepkg_build $startdir $pkgname
@@ -22,9 +22,15 @@ build() {
 
 package() {
 	devicepkg_package $startdir $pkgname
+
+	# The USB network on a subnet of its own, 172.16.44.x; see unudhcpd.conf.
+	install -Dm644 "$srcdir"/unudhcpd.conf "$pkgdir"/etc/unudhcpd.conf
+	install -Dm644 "$srcdir"/unudhcpd.confd "$pkgdir"/etc/conf.d/unudhcpd
 }
 
 sha512sums="
 55411ef694848b690862598c42d224c2725e1944162d250f541d17238b443c6d7b92ba8ac9d51506c7c77c9c15c86dc467f02ff562b927437c40a37e32816741  deviceinfo
 4d71bbb121126ce3b015263def88c53b32042de7c32881dba00592d9fc3e8632bf601b4d6b5364e31ff2082d525af27c93a15a76bb0d063a05484215afafd326  kernel-cmdline.conf
+0f7fde05fdcb741c065ecdf3f78a602f7ec33057340ef7642bbea1159f50511ffcf37bff8ad52acfc69211df59f9fb30d41e6a585ed74435b99333974ce03616  unudhcpd.conf
+742504673aaf2840fa5acc376a4a89d53bc6f25df34c15d72be40a3e086536bbc7ab0175203fccfcc478166ca5aa61dc530de627f293df536a7292e371a278e1  unudhcpd.confd
 "
