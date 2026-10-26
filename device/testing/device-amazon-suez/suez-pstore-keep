@@ -1,0 +1,19 @@
+#!/bin/sh
+# Keep each boot's crash records instead of only the last one.
+# systemd-pstore moves every record out of /sys/fs/pstore to a file of the
+# same name in /var/lib/systemd/pstore, so the next record with that name,
+# which is the next boot's, replaces it. The board DTS asks ramoops for a
+# record at every reboot (max-reason 4), so a panic's record would be gone
+# two boots later. Move each boot's records into a directory of their own,
+# named by the time, and keep the newest 20 (about 50 KB each).
+set -eu
+
+cd /var/lib/systemd/pstore
+set -- *-ramoops-*
+[ -f "$1" ] || exit 0
+
+dir=$(date +%Y%m%d-%H%M%S)
+mkdir -p "$dir"
+mv -- "$@" "$dir"/
+
+ls -1d 2*/ | sort -r | tail -n +21 | xargs -r rm -rf

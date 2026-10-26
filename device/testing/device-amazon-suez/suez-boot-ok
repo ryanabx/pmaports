@@ -1,0 +1,14 @@
+#!/bin/sh
+# Tell U-Boot that this boot worked. U-Boot counts its own starts in the
+# MT6397 RTC's spare bytes 2 (the count) and 3 (0xbc, the bootcount-rtc
+# magic), and after three boots that nobody reset the count for, it stays in
+# fastboot instead of booting again: a kernel that panics or hangs before
+# userspace would otherwise boot-loop with no way back but the UART.
+#
+# Writing the magic as well keeps a count written by an older U-Boot, or by
+# nothing at all, from reading as garbage.
+set -eu
+
+nvmem=/sys/bus/nvmem/devices/mt6397_rtc_spare0/nvmem
+
+printf '\000\274' | dd of="$nvmem" bs=1 seek=2 count=2 conv=notrunc 2>/dev/null

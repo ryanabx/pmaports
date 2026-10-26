@@ -3,7 +3,7 @@ maintainer="Ryan Brue <ryanbrue.dev@gmail.com>"
 pkgname=device-amazon-suez
 pkgdesc="Amazon Fire HD 10 (2017)"
 pkgver=5
-pkgrel=9
+pkgrel=10
 url="https://postmarketos.org"
 license="MIT"
 arch="aarch64"
@@ -42,6 +42,9 @@ source="
 	deviceinfo
 	modules-initfs
 	pipewire-pulse.service
+	suez-boot-deadline.conf
+	suez-boot-ok
+	suez-boot-ok.service
 	suez-charger-limit
 	suez-charger-limit.service
 	suez-gauge-capacity
@@ -50,10 +53,15 @@ source="
 	suez-mt6630-bdaddr@.service
 	suez-gtk-renderer.conf
 	suez-powervr-vulkan.conf
+	suez-pstore-keep
+	suez-pstore-keep.conf
 	suez-stability.conf
+	suez-usb-developer-mode
+	suez-usb-developer-mode.conf
 	suez-watchdog.conf
 	ucm-HiFi.conf
 	ucm-mt8173-mt6391.conf
+	unudhcpd.conf
 "
 
 build() {
@@ -212,6 +220,35 @@ package() {
 		ln -sf /dev/null "$pkgdir"/etc/systemd/system/"$_t"
 	done
 
+	# Count a boot as good once it reaches multi-user.target, for U-Boot,
+	# which stays in fastboot after three that were not; and reboot one that
+	# does not get there in five minutes, so that it is counted. See the
+	# script and the drop-in.
+	install -Dm755 "$srcdir"/suez-boot-ok \
+		"$pkgdir"/usr/sbin/suez-boot-ok
+	install -Dm644 "$srcdir"/suez-boot-ok.service \
+		"$pkgdir"/usr/lib/systemd/system/suez-boot-ok.service
+	ln -s ../suez-boot-ok.service \
+		"$pkgdir"/usr/lib/systemd/system/multi-user.target.wants/suez-boot-ok.service
+	install -Dm644 "$srcdir"/suez-boot-deadline.conf \
+		"$pkgdir"/usr/lib/systemd/system/multi-user.target.d/50-suez-boot-deadline.conf
+
+	# Keep every boot's ramoops records, not just the last; see the script.
+	install -Dm755 "$srcdir"/suez-pstore-keep \
+		"$pkgdir"/usr/sbin/suez-pstore-keep
+	install -Dm644 "$srcdir"/suez-pstore-keep.conf \
+		"$pkgdir"/usr/lib/systemd/system/systemd-pstore.service.d/50-suez-pstore-keep.conf
+
+	# The USB network on a subnet of its own, 172.16.43.x, so that suez and
+	# other postmarketOS devices can share a host; see unudhcpd.conf. The
+	# initramfs and unudhcpd read the file, and usb-signaller's developer
+	# mode is run through suez-usb-developer-mode until it does too.
+	install -Dm644 "$srcdir"/unudhcpd.conf "$pkgdir"/etc/unudhcpd.conf
+	install -Dm755 "$srcdir"/suez-usb-developer-mode \
+		"$pkgdir"/usr/sbin/suez-usb-developer-mode
+	install -Dm644 "$srcdir"/suez-usb-developer-mode.conf \
+		"$pkgdir"/usr/lib/systemd/system/usb-signaller-developer-mode.service.d/50-suez-address.conf
+
 	# Let PID 1 own the hardware watchdog; see the comments in the file.
 	install -Dm644 "$srcdir"/suez-watchdog.conf \
 		"$pkgdir"/usr/lib/systemd/system.conf.d/99-suez-watchdog.conf
@@ -255,6 +292,9 @@ cc39763190e092d761ecc454368df9db9b7ddc300ef05c563bd9b3cafadc711801cadd8b4ab64fee
 1671b2b0e341133cf3ac07c25752c9ac412ab6a77d8d393f9ab315d01dfd8b688d8abb269991d7168b4677fbfdac97aee7b6fba496a3d111ed3467419ebf31e9  deviceinfo
 d89fa6205d2ec177514a6e47877f27c7c69745d30994e36597ac6940c114a71868940d7050ba67dc5a260dc338ca5d789c521e35c37d7f2d3645762ab02101a9  modules-initfs
 ed206890b81cc15ac38a64e0b94c97762210e3c7f6b6d6f7312b7fe779dc19bd68cb651452c9ff94d4cee7b5270ca15af73cfed7a65013975c248f41aee316cb  pipewire-pulse.service
+aa90b0ab336022f313a75b8a207b788482587c979f7d3798e9d93f05056e098c9f731926394d91110c86a2a8f1bc615f441273e6d73588a84d000101648c7d93  suez-boot-deadline.conf
+fbd09c39cdfb2b441b7c85364784f265bd53826d6c0680b8b253fc9e01d74984c0816c1627fc8d311b223012109f520a12e99ac9db6728ccc95d3ddf3c88d5c2  suez-boot-ok
+d2c153cb3af543a68ce8be24073a803fab66cd9561d003842658e77f7841abf4279bd83a21916a904ac528337cca856b93de2fc74573fb87c81b5a9af9d923d3  suez-boot-ok.service
 508c0986921b34597b366287768ea6e81a414b185649e8e07c27bf01b8e0d0c6496959ddb1200aade1c202580fcd93c12ebbfd934829e7dc58e9bffab97b5d02  suez-charger-limit
 3d6fe65bf0ddbdcdcb59a11d5df77ab9d2c477af59bcf0980cf697c6031ceec26599a79712b9147c9648b284eb27031dd58b75684a9898f7d87a11cf9044c6f4  suez-charger-limit.service
 24306fb8d6e825863f3f2f9a25a2e968141a34394b0f618fa40e46d21c719b7f999f862931ebc535688842fc673c13b064ec2e0558410c43c9206bdac6c87a2a  suez-gauge-capacity
@@ -263,8 +303,13 @@ ed206890b81cc15ac38a64e0b94c97762210e3c7f6b6d6f7312b7fe779dc19bd68cb651452c9ff94
 90df791c68d4377cc6179406e6328d896b9ae72fcfa53dffca05498d3280901ad4aebad3cd05413171efc29d64f7779c91222517895ee53caef8b99dace1ea62  suez-mt6630-bdaddr@.service
 cb44fc3ecfa23b58303036874d76f130d8d5d327fcf0d50e9da825aec9e5539890a7f6118c62b89d639b1160dadc5dade5cd04bca03cddc43c41301da1d99369  suez-gtk-renderer.conf
 5c75e206ef78b51a328f2039d6410ca5fd01713e560b5bc87a1c6fedb0f7c94fbc4f2e698797d645a1027c8687ecf3d32535de949653ccdf18662b981a17fb22  suez-powervr-vulkan.conf
+4762ee3e6e81742afc0472e37c11939aafb0567005f426dad78d9ba80de478754bec3d98980b2582769db574d35b55cfb160fd019a205526a30dbb94b5bbb13b  suez-pstore-keep
+153c96069008f086467fcb7209f681783cd34b34d51485cd8e5073876d7331dea2f8b6b2f8e4399513dd84320f0685422fc202e307109a4a3a14b8ff7c399b46  suez-pstore-keep.conf
 35c47540da0f6adc6afecfa5ac1d2b2d10beef5cba655078fe7076c7a61af289ba586d0072cf88f4b918d0d07e1abbb98a7f00e362da38686e3767a5875199da  suez-stability.conf
+aff0328566f2a007ce6de0e940358c358953b787621d466a73e9b6542ffe02899d289f4566d2253f9c4a7e1e7374740822ef8e7d7a998bfd6202a33654525fb2  suez-usb-developer-mode
+64d004c3f693231c6257fe5ca2522a12f56bab2648f9abfe4b5413aebc6a0cc3dac56af6d2ab63a0d7cbffe062d326b16a277ad3cad33400b342909be3d36ac9  suez-usb-developer-mode.conf
 6deaca34cdd9337057fded39a7f3cad52869874a6f233591990a8cf70f318fd0431f69cdd83e6938d9453aac0e7643e2cda28a2c80e4e02816aead59427638cd  suez-watchdog.conf
 8faea36c99649c96a854f4587e53058cffcac4f936de25805db47a32db2791a217edb782712c57caff9118f54519f77df36d317357c94722eda04cf31f275d1a  ucm-HiFi.conf
 0a8b6c05b00bba01e727ed1de39ef2e6c0a2c68c243625bc44579f1b576dff9c4a167aabc8364f46d03b74df523868f78f73eae399464c3037a5707b7222d692  ucm-mt8173-mt6391.conf
+381cce5d79971b5f15bac8c27871d72bf5cbf2a4fd190df5e8e5366062a6b6142a7aca17a6f8849371390d225055a85c1dbd8cc69fc0a56b1641fd1fe11cad11  unudhcpd.conf
 "

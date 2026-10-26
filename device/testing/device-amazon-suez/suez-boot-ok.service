@@ -1,0 +1,15 @@
+[Unit]
+Description=Reset U-Boot's boot count
+# Reaching multi-user.target is what U-Boot's count waits for; see the
+# script. suez-boot-deadline.conf turns a boot that never gets there into a
+# reset, so that it is counted.
+After=multi-user.target
+ConditionPathExists=/sys/bus/nvmem/devices/mt6397_rtc_spare0/nvmem
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/sbin/suez-boot-ok
+
+[Install]
+WantedBy=multi-user.target

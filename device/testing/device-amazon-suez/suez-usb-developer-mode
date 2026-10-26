@@ -1,0 +1,13 @@
+#!/bin/sh
+# usb-signaller-developer-mode, with the addresses in /etc/unudhcpd.conf.
+#
+# usb-signaller (0.4.3) gives the gadget interface 172.16.42.1 and the host
+# 172.16.42.2 whatever unudhcpd is configured with, so a board with its own
+# subnet (see unudhcpd.conf) would serve one address and sit on another. Run
+# its script with those two assignments replaced, until it reads the file
+# itself. Without the file, they keep usb-signaller's own values.
+[ -r /etc/unudhcpd.conf ] && . /etc/unudhcpd.conf
+
+sed -e "s|^IP_ADDRESS_SERVER=.*|IP_ADDRESS_SERVER=${UNUDHCPD_SERVER:-172.16.42.1}|" \
+	-e "s|^IP_ADDRESS_CLIENT=.*|IP_ADDRESS_CLIENT=${UNUDHCPD_CLIENT:-172.16.42.2}|" \
+	/usr/bin/usb-signaller-developer-mode | sh -s -- "$@"
