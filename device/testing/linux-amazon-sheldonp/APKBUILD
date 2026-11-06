@@ -3,7 +3,7 @@
 maintainer="Ryan Brue <ryanbrue.dev@gmail.com>"
 pkgname=linux-amazon-sheldonp
 pkgver=7.4_rc1
-pkgrel=0
+pkgrel=1
 pkgdesc="Amazon Fire TV Stick 3rd Gen mainline kernel fork"
 arch="aarch64"
 _carch="arm64"
