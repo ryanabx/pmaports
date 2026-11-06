@@ -1,0 +1,35 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Ryan Brue <ryanbrue.dev@gmail.com>
+Date: Sat, 31 Oct 2026 01:59:10 -0500
+Subject: [PATCH] PROTOTYPE pvr: reuse the SPM scratch buffer for any smaller
+ render
+
+Local measurement prototype for amazon-suez, never to be sent. The device
+keeps one SPM scratch buffer and reused it only for a render of exactly
+the same size, so alternating render sizes created a new one each time:
+a kernel buffer of several MB (~9 MB for one full-screen output register
+at 1200x1920). Only one partial render runs at a time, so a larger buffer
+serves any smaller render.
+---
+ src/imagination/vulkan/pvr_spm.c | 5 ++++-
+ 1 file changed, 4 insertions(+), 1 deletion(-)
+
+diff --git a/src/imagination/vulkan/pvr_spm.c b/src/imagination/vulkan/pvr_spm.c
+index 9bc8e4d6616..706aa7516b1 100644
+--- a/src/imagination/vulkan/pvr_spm.c
++++ b/src/imagination/vulkan/pvr_spm.c
+@@ -184,7 +184,10 @@ VkResult pvr_spm_scratch_buffer_get_buffer(
+     * framebuffers as the scratch buffer is only used during PRs and only one PR
+     * can ever be executed at any one time.
+     */
+-   if (store->head_ref && store->head_ref->size == size) {
++   /* PROTOTYPE: any buffer at least as large will do (one PR at a time, see
++    * above), so renders of different sizes stop reallocating it.
++    */
++   if (store->head_ref && store->head_ref->size >= size) {
+       buffer = store->head_ref;
+    } else {
+       VkResult result;
+-- 
+2.55.0
+

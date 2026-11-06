@@ -1,0 +1,186 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Ryan Brue <ryanbrue.dev@gmail.com>
+Date: Sat, 31 Oct 2026 01:19:00 -0500
+Subject: [PATCH] PROTOTYPE pvr: recycle control stream buffers
+
+Local measurement prototype for amazon-suez, never to be sent. Each
+graphics sub-command's control stream started on a new 4 KiB kernel
+buffer, freed again when the command buffer was reset. Keep up to 256 of
+them per device and reuse them, zeroed, as a new kernel buffer would be.
+---
+ src/imagination/vulkan/pvr_arch_csb.c    | 16 ++++---
+ src/imagination/vulkan/pvr_arch_device.c |  4 ++
+ src/imagination/vulkan/pvr_csb.c         | 59 +++++++++++++++++++++++-
+ src/imagination/vulkan/pvr_csb.h         |  4 ++
+ src/imagination/vulkan/pvr_device.h      |  7 +++
+ 5 files changed, 83 insertions(+), 7 deletions(-)
+
+diff --git a/src/imagination/vulkan/pvr_arch_csb.c b/src/imagination/vulkan/pvr_arch_csb.c
+index 66edec7622b..b368462e4de 100644
+--- a/src/imagination/vulkan/pvr_arch_csb.c
++++ b/src/imagination/vulkan/pvr_arch_csb.c
+@@ -121,12 +121,16 @@ static bool pvr_csb_buffer_extend(struct pvr_csb *csb)
+    STATIC_ASSERT(ROGUE_VDMCTRL_GUARD_SIZE_DEFAULT ==
+                  ROGUE_CDMCTRL_GUARD_SIZE_DEFAULT);
+ 
+-   result = pvr_bo_alloc(csb->device,
+-                         csb->device->heaps.general_heap,
+-                         PVR_CMD_BUFFER_CSB_BO_SIZE,
+-                         cache_line_size,
+-                         PVR_BO_ALLOC_FLAG_CPU_MAPPED,
+-                         &pvr_bo);
++   pvr_bo = pvr_csb_bo_cache_get(csb->device);
++   if (pvr_bo)
++      result = VK_SUCCESS;
++   else
++      result = pvr_bo_alloc(csb->device,
++                            csb->device->heaps.general_heap,
++                            PVR_CMD_BUFFER_CSB_BO_SIZE,
++                            cache_line_size,
++                            PVR_BO_ALLOC_FLAG_CPU_MAPPED,
++                            &pvr_bo);
+    if (result != VK_SUCCESS) {
+       vk_error(csb->device, result);
+       csb->status = result;
+diff --git a/src/imagination/vulkan/pvr_arch_device.c b/src/imagination/vulkan/pvr_arch_device.c
+index 5d7656588d7..bd2a5ea049b 100644
+--- a/src/imagination/vulkan/pvr_arch_device.c
++++ b/src/imagination/vulkan/pvr_arch_device.c
+@@ -22,6 +22,7 @@
+ 
+ #include "pvr_border.h"
+ #include "pvr_clear.h"
++#include "pvr_csb.h"
+ #include "pvr_entrypoints.h"
+ #include "pvr_framebuffer.h"
+ #include "pvr_free_list.h"
+@@ -964,6 +965,8 @@ VkResult PVR_PER_ARCH(create_device)(struct pvr_physical_device *pdevice,
+ 
+    pvr_spm_init_scratch_buffer_store(device);
+ 
++   pvr_csb_bo_cache_init(device);
++
+    result = pvr_init_robustness_buffer(device);
+    if (result != VK_SUCCESS)
+       goto err_pvr_spm_finish_scratch_buffer_store;
+@@ -1115,6 +1118,7 @@ void PVR_PER_ARCH(destroy_device)(struct pvr_device *device,
+    simple_mtx_destroy(&device->rs_mtx);
+ 
+    pvr_device_finish_rt_cache(device);
++   pvr_csb_bo_cache_finish(device);
+ 
+    pvr_device_dummy_rt_finish(device);
+    pvr_arch_border_color_table_finish(device);
+diff --git a/src/imagination/vulkan/pvr_csb.c b/src/imagination/vulkan/pvr_csb.c
+index deaae4f3c71..2ca1a37f3ff 100644
+--- a/src/imagination/vulkan/pvr_csb.c
++++ b/src/imagination/vulkan/pvr_csb.c
+@@ -105,6 +105,63 @@ void pvr_csb_init(struct pvr_device *device,
+  *
+  * \sa #pvr_csb_init()
+  */
++/* PROTOTYPE: keep up to this many control stream buffers for reuse. */
++#define PVR_CSB_BO_CACHE_MAX 256U
++
++void pvr_csb_bo_cache_init(struct pvr_device *device)
++{
++   simple_mtx_init(&device->csb_bo_cache_mtx, mtx_plain);
++   list_inithead(&device->csb_bo_cache);
++   device->csb_bo_cache_count = 0;
++}
++
++void pvr_csb_bo_cache_finish(struct pvr_device *device)
++{
++   list_for_each_entry_safe (struct pvr_bo, pvr_bo, &device->csb_bo_cache, link) {
++      list_del(&pvr_bo->link);
++      pvr_bo_free(device, pvr_bo);
++   }
++   simple_mtx_destroy(&device->csb_bo_cache_mtx);
++}
++
++/* Returns a zeroed, CPU-mapped buffer of PVR_CMD_BUFFER_CSB_BO_SIZE bytes, as
++ * pvr_bo_alloc() would, or NULL if the cache is empty.
++ */
++struct pvr_bo *pvr_csb_bo_cache_get(struct pvr_device *device)
++{
++   struct pvr_bo *pvr_bo = NULL;
++
++   simple_mtx_lock(&device->csb_bo_cache_mtx);
++   if (!list_is_empty(&device->csb_bo_cache)) {
++      pvr_bo = list_first_entry(&device->csb_bo_cache, struct pvr_bo, link);
++      list_del(&pvr_bo->link);
++      device->csb_bo_cache_count--;
++   }
++   simple_mtx_unlock(&device->csb_bo_cache_mtx);
++
++   if (pvr_bo)
++      memset(pvr_bo->bo->map, 0, PVR_CMD_BUFFER_CSB_BO_SIZE);
++
++   return pvr_bo;
++}
++
++static void pvr_csb_bo_cache_put(struct pvr_device *device,
++                                 struct pvr_bo *pvr_bo)
++{
++   if (pvr_bo->bo->size == PVR_CMD_BUFFER_CSB_BO_SIZE && pvr_bo->bo->map) {
++      simple_mtx_lock(&device->csb_bo_cache_mtx);
++      if (device->csb_bo_cache_count < PVR_CSB_BO_CACHE_MAX) {
++         list_add(&pvr_bo->link, &device->csb_bo_cache);
++         device->csb_bo_cache_count++;
++         pvr_bo = NULL;
++      }
++      simple_mtx_unlock(&device->csb_bo_cache_mtx);
++   }
++
++   if (pvr_bo)
++      pvr_bo_free(device, pvr_bo);
++}
++
+ void pvr_csb_finish(struct pvr_csb *csb)
+ {
+ #if MESA_DEBUG
+@@ -118,7 +175,7 @@ void pvr_csb_finish(struct pvr_csb *csb)
+    } else {
+       list_for_each_entry_safe (struct pvr_bo, pvr_bo, &csb->pvr_bo_list, link) {
+          list_del(&pvr_bo->link);
+-         pvr_bo_free(csb->device, pvr_bo);
++         pvr_csb_bo_cache_put(csb->device, pvr_bo);
+       }
+    }
+ 
+diff --git a/src/imagination/vulkan/pvr_csb.h b/src/imagination/vulkan/pvr_csb.h
+index 07a49dfd6ff..b7c776ccc6d 100644
+--- a/src/imagination/vulkan/pvr_csb.h
++++ b/src/imagination/vulkan/pvr_csb.h
+@@ -249,6 +249,10 @@ void pvr_csb_init(struct pvr_device *device,
+                   enum pvr_cmd_stream_type stream_type,
+                   struct pvr_csb *csb);
+ void pvr_csb_finish(struct pvr_csb *csb);
++
++struct pvr_bo *pvr_csb_bo_cache_get(struct pvr_device *device);
++void pvr_csb_bo_cache_init(struct pvr_device *device);
++void pvr_csb_bo_cache_finish(struct pvr_device *device);
+ VkResult pvr_csb_bake(struct pvr_csb *csb, struct list_head *bo_list_out);
+ 
+ #ifdef PVR_PER_ARCH
+diff --git a/src/imagination/vulkan/pvr_device.h b/src/imagination/vulkan/pvr_device.h
+index 9ce3701081a..7f60fe4cae4 100644
+--- a/src/imagination/vulkan/pvr_device.h
++++ b/src/imagination/vulkan/pvr_device.h
+@@ -191,6 +191,13 @@ struct pvr_device {
+    simple_mtx_t rs_mtx;
+    struct list_head render_states;
+ 
++   /* PROTOTYPE: control stream buffers of command buffers that were reset or
++    * freed, for reuse instead of a kernel buffer per sub-command.
++    */
++   simple_mtx_t csb_bo_cache_mtx;
++   struct list_head csb_bo_cache;
++   uint32_t csb_bo_cache_count;
++
+    /* Render targets shared by dynamic renders of the same size, so that
+     * vkCmdBeginRendering() does not create and destroy a HWRT dataset and a
+     * free list each time. Entries live until the device is destroyed.
+-- 
+2.55.0
+

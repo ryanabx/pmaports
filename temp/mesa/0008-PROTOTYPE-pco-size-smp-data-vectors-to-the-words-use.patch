@@ -1,0 +1,80 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Ryan Brue <ryanbrue.dev@gmail.com>
+Date: Wed, 4 Nov 2026 06:24:51 -0600
+Subject: [PATCH] PROTOTYPE pco: size smp data vectors to the words used
+
+Local experiment for amazon-suez, never to be sent (Imagination declines
+LLM-generated code in src/imagination). From
+sweep/submit/mesa-pvr-desktop-perf/patches/fix1-smp-data-size.patch.
+
+Generated-by: LLM
+---
+ src/compiler/nir/nir_intrinsics.py | 11 +++++++----
+ src/imagination/pco/pco_nir_tex.c  | 10 +++++++---
+ 2 files changed, 14 insertions(+), 7 deletions(-)
+
+diff --git a/src/compiler/nir/nir_intrinsics.py b/src/compiler/nir/nir_intrinsics.py
+index 002a3d85cc2..c196f7fdedf 100644
+--- a/src/compiler/nir/nir_intrinsics.py
++++ b/src/compiler/nir/nir_intrinsics.py
+@@ -3221,24 +3221,27 @@ intrinsic("load_smp_meta_pco", src_comp=[1], dest_comp=0, indices=[DESC_SET, BIN
+ 
+ index("uint16_t", "smp_flags_pco")
+ 
++# The data source of the smp_*_pco intrinsics is sized to the words actually
++# used (rounded up to a valid NIR vector size); RANGE is the exact count.
++#
+ # smp_pco(data, tex_state, smp_state)
+ # Performs a standard sampling operation with the given data and state words.
+ # Outputs between 1-4 comps.
+-intrinsic("smp_pco", src_comp=[16, 4, 4], dest_comp=0, indices=[SMP_FLAGS_PCO, RANGE, ACCESS], bit_sizes=[32])
++intrinsic("smp_pco", src_comp=[-1, 4, 4], dest_comp=0, indices=[SMP_FLAGS_PCO, RANGE, ACCESS], bit_sizes=[32])
+ 
+ # smp_coeffs_pco(data, tex_state, smp_state)
+ # Returns the calculated sampling coefficients for the given data and state words.
+ # Actually outputs 7/14 components, but NIR doesn't support those for num_components, so fake it as 16 for now.
+-intrinsic("smp_coeffs_pco", src_comp=[16, 4, 4], dest_comp=16, indices=[SMP_FLAGS_PCO, RANGE, ACCESS], bit_sizes=[32])
++intrinsic("smp_coeffs_pco", src_comp=[-1, 4, 4], dest_comp=16, indices=[SMP_FLAGS_PCO, RANGE, ACCESS], bit_sizes=[32])
+ 
+ # smp_raw_pco(data, tex_state, smp_state)
+ # Returns the raw sampling data for the given data and state words.
+ # Actually outputs 4/8/12/16 components, but NIR doesn't support num_components == 12, so fake it as 8 for now.
+-intrinsic("smp_raw_pco", src_comp=[16, 4, 4], dest_comp=16, indices=[SMP_FLAGS_PCO, RANGE, ENABLED_CHANNELS, ACCESS], bit_sizes=[32])
++intrinsic("smp_raw_pco", src_comp=[-1, 4, 4], dest_comp=16, indices=[SMP_FLAGS_PCO, RANGE, ENABLED_CHANNELS, ACCESS], bit_sizes=[32])
+ 
+ # smp_write_pco(data, tex_state, smp_state)
+ # Performs a sample write for the given data and state words.
+-intrinsic("smp_write_pco", src_comp=[16, 4, 4], indices=[SMP_FLAGS_PCO, RANGE, ACCESS], bit_sizes=[32])
++intrinsic("smp_write_pco", src_comp=[-1, 4, 4], indices=[SMP_FLAGS_PCO, RANGE, ACCESS], bit_sizes=[32])
+ 
+ # alphatst_pco(data, comparator, comparison op)
+ # Performs an alpha test on the given parameters, returning float 0/1 depending on the comparison result.
+diff --git a/src/imagination/pco/pco_nir_tex.c b/src/imagination/pco/pco_nir_tex.c
+index 19addc4a745..f8d71cd4f49 100644
+--- a/src/imagination/pco/pco_nir_tex.c
++++ b/src/imagination/pco/pco_nir_tex.c
+@@ -344,14 +344,18 @@ nir_intrinsic_instr *pco_emit_nir_smp(nir_builder *b, pco_smp_params *params)
+       smp_flags.wrt = true;
+    }
+ 
+-   /* Pad out the rest of the data words. */
++   /* Pad only up to the next valid NIR vector size. Padding to the maximum
++    * leaves undefs that are later lowered to zero and moved into registers
++    * the sampler never reads.
++    */
+    assert(count <= NIR_MAX_VEC_COMPONENTS);
++   unsigned num_comps = nir_round_up_components(MAX2(count, 1));
+ 
+    nir_def *undef = nir_undef(b, 1, 32);
+-   for (unsigned c = count; c < ARRAY_SIZE(comps); ++c)
++   for (unsigned c = count; c < num_comps; ++c)
+       comps[c] = undef;
+ 
+-   nir_def *smp_data = nir_vec(b, comps, ARRAY_SIZE(comps));
++   nir_def *smp_data = nir_vec(b, comps, num_comps);
+ 
+    if (params->sample_coeffs) {
+       assert(!params->sample_raw);
+-- 
+2.55.0
+

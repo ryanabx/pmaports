@@ -1,0 +1,97 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Ryan Brue <ryanbrue.dev@gmail.com>
+Date: Wed, 4 Nov 2026 07:49:36 -0600
+Subject: [PATCH] PROTOTYPE pco: no ISP feedback for fragment shaders that
+ cannot discard
+
+Local experiment for amazon-suez, never to be sent (Imagination declines
+LLM-generated code in src/imagination).
+
+lower_isp_fb() made every fragment shader without early fragment tests
+discard helper invocations through ISP feedback: a helper-invocation test
+(lowered to a sample-mask-in and sample-id sequence), an alphaf at the
+end, and the punch-through pass type, whether or not the shader could
+discard at all. Only do that when the shader contains a demote or
+terminate. SUEZ_PCO_ALWAYS_ISP_FB=1 restores the old behaviour (part of
+the pipeline cache key).
+
+Measured on GX6250, gles-layers, same build, control interleaved: a
+full-screen wlroots textured layer 7.85 -> 6.3 ms, colour layer
+6.4 -> 4.6 ms, textured shader 40 -> 31 instructions; check and vertex
+probes pass.
+
+Generated-by: LLM
+---
+ src/imagination/pco/pco_nir_pvfio.c        | 36 +++++++++++++++++++++-
+ src/imagination/vulkan/pvr_arch_pipeline.c |  1 +
+ 2 files changed, 36 insertions(+), 1 deletion(-)
+
+diff --git a/src/imagination/pco/pco_nir_pvfio.c b/src/imagination/pco/pco_nir_pvfio.c
+index f0744f10c6d..f164b89e367 100644
+--- a/src/imagination/pco/pco_nir_pvfio.c
++++ b/src/imagination/pco/pco_nir_pvfio.c
+@@ -515,6 +515,32 @@ bool pco_nir_lower_sample_mask_out(nir_shader *shader, bool sample_check)
+    return true;
+ }
+ 
++/* PROTOTYPE: whether the fragment shader can kill a pixel at all. */
++static bool shader_can_discard(nir_shader *shader)
++{
++   nir_foreach_function_impl (impl, shader) {
++      nir_foreach_block (block, impl) {
++         nir_foreach_instr (instr, block) {
++            if (instr->type != nir_instr_type_intrinsic)
++               continue;
++
++            switch (nir_instr_as_intrinsic(instr)->intrinsic) {
++            case nir_intrinsic_demote:
++            case nir_intrinsic_demote_if:
++            case nir_intrinsic_demote_samples:
++            case nir_intrinsic_terminate:
++            case nir_intrinsic_terminate_if:
++               return true;
++            default:
++               break;
++            }
++         }
++      }
++   }
++
++   return false;
++}
++
+ static bool lower_isp_fb(nir_builder *b, struct pfo_state *state)
+ {
+    nir_shader *shader = b->shader;
+@@ -554,7 +580,15 @@ static bool lower_isp_fb(nir_builder *b, struct pfo_state *state)
+ 
+    nir_def *undef = nir_undef(b, 1, 32);
+ 
+-   nir_def *discard_cond = nir_is_helper_invocation(b, 1);
++   /* PROTOTYPE: a shader that cannot discard has no helper invocations to
++    * suppress; without this every fragment shader carried a helper test
++    * (a sample-mask/sample-id sequence) and an ISP feedback, and ran as a
++    * punch-through pass. SUEZ_PCO_ALWAYS_ISP_FB=1 restores that.
++    */
++   nir_def *discard_cond = (shader_can_discard(shader) ||
++                            getenv("SUEZ_PCO_ALWAYS_ISP_FB"))
++                              ? nir_is_helper_invocation(b, 1)
++                              : NULL;
+ 
+    /* Drop depth writes and discard cond if early fragment tests. */
+    if (shader->info.fs.early_fragment_tests) {
+diff --git a/src/imagination/vulkan/pvr_arch_pipeline.c b/src/imagination/vulkan/pvr_arch_pipeline.c
+index 3a1dddf6350..0f088fa1c2d 100644
+--- a/src/imagination/vulkan/pvr_arch_pipeline.c
++++ b/src/imagination/vulkan/pvr_arch_pipeline.c
+@@ -3039,6 +3039,7 @@ pvr_gfx_pipeline_cache_key(const struct pvr_device *device,
+    pvr_gfx_cache_hash_str(&ctx, "PVR_DEBUG");
+    pvr_gfx_cache_hash_str(&ctx, "SUEZ_PVR_2D_VIEW_OF_3D");
+    pvr_gfx_cache_hash_str(&ctx, "SUEZ_PVR_CWE");
++   pvr_gfx_cache_hash_str(&ctx, "SUEZ_PCO_ALWAYS_ISP_FB");
+ 
+    _mesa_blake3_final(&ctx, key);
+ }
+-- 
+2.55.0
+

@@ -1,0 +1,139 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Ryan Brue <ryanbrue.dev@gmail.com>
+Date: Sat, 31 Oct 2026 01:15:26 -0500
+Subject: [PATCH] PROTOTYPE pvr: sample null combined image samplers from a
+ zero texture state
+
+Local measurement prototype for amazon-suez, never to be sent. Null
+combined image samplers hold a 1x1 twiddled texture state over the zeroed
+null buffer whose swizzle returns zero, and texture samples drop out of
+the null-descriptor lowering, so there is no branch around every sample
+(zink requires nullDescriptor). Texel buffers stay guarded: their null
+views are still zeroed. Known gaps: size queries on a null texture report
+1x1 instead of 0, and 3D or cube samples read a 2D state.
+---
+ src/imagination/pco/pco_nir.c                 |  7 ++++--
+ .../pco/pco_nir_lower_null_descriptors.c      |  9 +++++--
+ .../vulkan/pvr_arch_descriptor_set.c          |  7 +++++-
+ src/imagination/vulkan/pvr_arch_device.c      | 24 +++++++++++++++++++
+ src/imagination/vulkan/pvr_device.h           |  6 +++++
+ 5 files changed, 48 insertions(+), 5 deletions(-)
+
+diff --git a/src/imagination/pco/pco_nir.c b/src/imagination/pco/pco_nir.c
+index 1451749f1a7..cfe84a760be 100644
+--- a/src/imagination/pco/pco_nir.c
++++ b/src/imagination/pco/pco_nir.c
+@@ -1018,13 +1018,16 @@ void pco_lower_nir(pco_ctx *ctx, nir_shader *nir, pco_data *data)
+ 
+    if (data->common.null_descriptor) {
+       /* PROTOTYPE: null UBO descriptors point at a zeroed buffer
+-       * (pvr_device::null_buffer), so UBO loads are left unguarded.
++       * (pvr_device::null_buffer) and null combined image samplers hold a
++       * texture state that samples zero (pvr_device::null_image_state), so
++       * UBO loads and texture samples are left unguarded.
+        */
+       NIR_PASS(_,
+                nir,
+                pco_nir_lower_null_descriptors,
+                pco_nir_lower_null_descriptor_all &
+-                  ~pco_nir_lower_null_descriptor_ubo);
++                  ~(pco_nir_lower_null_descriptor_ubo |
++                    pco_nir_lower_null_descriptor_texture));
+    }
+ 
+    NIR_PASS(_, nir, pco_nir_lower_vk, data);
+diff --git a/src/imagination/pco/pco_nir_lower_null_descriptors.c b/src/imagination/pco/pco_nir_lower_null_descriptors.c
+index 0b0a3d1fd98..cdc2375c37b 100644
+--- a/src/imagination/pco/pco_nir_lower_null_descriptors.c
++++ b/src/imagination/pco/pco_nir_lower_null_descriptors.c
+@@ -66,10 +66,15 @@ static nir_def *get_is_null(nir_builder *b,
+    }
+ 
+    if (instr->type == nir_instr_type_tex) {
+-      if (!(options & pco_nir_lower_null_descriptor_texture))
++      nir_tex_instr *tex = nir_instr_as_tex(instr);
++
++      /* PROTOTYPE: null texel buffer views are still zeroed, so they stay
++       * guarded whatever the options say.
++       */
++      if (!(options & pco_nir_lower_null_descriptor_texture) &&
++          tex->sampler_dim != GLSL_SAMPLER_DIM_BUF)
+          return NULL;
+ 
+-      nir_tex_instr *tex = nir_instr_as_tex(instr);
+       nir_def *deref_def = nir_get_tex_src(tex, nir_tex_src_texture_deref);
+       if (!deref_def)
+          return NULL;
+diff --git a/src/imagination/vulkan/pvr_arch_descriptor_set.c b/src/imagination/vulkan/pvr_arch_descriptor_set.c
+index e1c6d5ca29f..8a46d1765ed 100644
+--- a/src/imagination/vulkan/pvr_arch_descriptor_set.c
++++ b/src/imagination/vulkan/pvr_arch_descriptor_set.c
+@@ -133,7 +133,12 @@ write_image_sampler(const struct pvr_descriptor_set *set,
+ 
+    image_sampler_desc.sampler = sampler->descriptor;
+ 
+-   if (image_info->imageView != VK_NULL_HANDLE) {
++   if (image_info->imageView == VK_NULL_HANDLE) {
++      const struct pvr_device *device =
++         container_of(set->layout->vk.base.device, struct pvr_device, vk);
++
++      image_sampler_desc.image = device->null_image_state;
++   } else {
+       VK_FROM_HANDLE(pvr_image_view, image_view, image_info->imageView);
+       image_sampler_desc.image =
+          image_view->image_state[PVR_TEXTURE_STATE_SAMPLE];
+diff --git a/src/imagination/vulkan/pvr_arch_device.c b/src/imagination/vulkan/pvr_arch_device.c
+index f0386cf088f..5d7656588d7 100644
+--- a/src/imagination/vulkan/pvr_arch_device.c
++++ b/src/imagination/vulkan/pvr_arch_device.c
+@@ -968,6 +968,30 @@ VkResult PVR_PER_ARCH(create_device)(struct pvr_physical_device *pdevice,
+    if (result != VK_SUCCESS)
+       goto err_pvr_spm_finish_scratch_buffer_store;
+ 
++   {
++      const struct pvr_texture_state_info null_tex_info = {
++         .format = VK_FORMAT_R8G8B8A8_UNORM,
++         .mem_layout = PVR_MEMLAYOUT_TWIDDLED,
++         .type = VK_IMAGE_VIEW_TYPE_2D,
++         .aspect_mask = VK_IMAGE_ASPECT_COLOR_BIT,
++         .tex_state_type = PVR_TEXTURE_STATE_SAMPLE,
++         .extent = { .width = 1, .height = 1, .depth = 1 },
++         .mip_levels = 1,
++         .sample_count = 1,
++         .swizzle = { PIPE_SWIZZLE_0,
++                      PIPE_SWIZZLE_0,
++                      PIPE_SWIZZLE_0,
++                      PIPE_SWIZZLE_0 },
++         .addr = device->null_buffer->vma->dev_addr,
++      };
++
++      result = pvr_arch_pack_tex_state(device,
++                                       &null_tex_info,
++                                       &device->null_image_state);
++      if (result != VK_SUCCESS)
++         goto err_pvr_robustness_buffer_finish;
++   }
++
+    result = pvr_arch_border_color_table_init(device);
+    if (result != VK_SUCCESS)
+       goto err_pvr_robustness_buffer_finish;
+diff --git a/src/imagination/vulkan/pvr_device.h b/src/imagination/vulkan/pvr_device.h
+index 9f249a9339c..9ce3701081a 100644
+--- a/src/imagination/vulkan/pvr_device.h
++++ b/src/imagination/vulkan/pvr_device.h
+@@ -150,6 +150,12 @@ struct pvr_device {
+     */
+    struct pvr_bo *null_buffer;
+ 
++   /* PROTOTYPE: texture state that null sampled-image descriptors hold: a
++    * 1x1 texture over null_buffer whose swizzle returns zero, so that
++    * texture samples need no null-descriptor branch.
++    */
++   struct pvr_image_descriptor null_image_state;
++
+    struct vk_sync *presignaled_sync;
+ 
+    struct {
+-- 
+2.55.0
+

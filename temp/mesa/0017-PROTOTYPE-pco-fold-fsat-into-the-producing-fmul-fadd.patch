@@ -1,0 +1,128 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Ryan Brue <ryanbrue.dev@gmail.com>
+Date: Wed, 4 Nov 2026 09:13:46 -0600
+Subject: [PATCH] PROTOTYPE pco: fold fsat into the producing fmul/fadd/fmad
+
+Local experiment for amazon-suez, never to be sent (Imagination declines
+LLM-generated code in src/imagination).
+
+NIR's fsat is translated as a separate 'fadd.sat dst, x, 0'. When x comes
+from an fmul, fadd or fmad in the same block with no other user, set .sat
+on that instruction instead. On GX6250, a wlroots textured layer through
+zink (premultiplied alpha times a uniform, one fsat per channel) drops
+from 31 to 27 instructions and 5.6 to 4.95 ms per full-screen layer
+(gles-layers, n=8, same build, SUEZ_PCO_NO_FOLD_SAT=1 as the control,
+interleaved); check passes with 16 and 40 stripes.
+
+Generated-by: LLM
+---
+ src/imagination/pco/pco_opt.c              | 73 ++++++++++++++++++++++
+ src/imagination/vulkan/pvr_arch_pipeline.c |  1 +
+ 2 files changed, 74 insertions(+)
+
+diff --git a/src/imagination/pco/pco_opt.c b/src/imagination/pco/pco_opt.c
+index 58bd41b4270..e6173336451 100644
+--- a/src/imagination/pco/pco_opt.c
++++ b/src/imagination/pco/pco_opt.c
+@@ -316,6 +316,78 @@ static inline bool try_back_prop_instr(struct pco_use *uses, pco_instr *instr)
+    return true;
+ }
+ 
++/**
++ * \brief PROTOTYPE: folds "fadd.sat dst, x, 0" into the instruction that
++ * produces x, when that is an fmul/fadd/fmad with no other user.
++ *
++ * NIR's fsat is translated as a separate fadd.sat with zero; on GX6250 that
++ * was four of the 31 instructions of a wlroots textured layer through zink
++ * (premultiplied alpha, one per channel). fmul, fadd and fmad take .sat.
++ */
++static bool pco_opt_fold_sat(pco_shader *shader)
++{
++   bool progress = false;
++
++   if (getenv("SUEZ_PCO_NO_FOLD_SAT"))
++      return false;
++
++   pco_foreach_func_in_shader (func, shader) {
++      unsigned *uses = rzalloc_array_size(NULL, sizeof(*uses), func->next_ssa);
++      pco_instr **defs =
++         rzalloc_array_size(uses, sizeof(*defs), func->next_ssa);
++
++      pco_foreach_instr_in_func (instr, func) {
++         pco_foreach_instr_src_ssa (psrc, instr)
++            uses[psrc->val]++;
++         pco_foreach_instr_dest_ssa (pdest, instr)
++            defs[pdest->val] = instr;
++      }
++
++      pco_foreach_instr_in_func_safe (instr, func) {
++         if (instr->op != PCO_OP_FADD ||
++             !pco_instr_mod_is_set(instr, PCO_OP_MOD_SAT))
++            continue;
++
++         pco_ref x = instr->src[0];
++         pco_ref zero = instr->src[1];
++         pco_ref dest = instr->dest[0];
++
++         if (!pco_ref_is_ssa(x) || pco_ref_has_mods_set(x) ||
++             !pco_ref_is_ssa(dest) || pco_ref_has_mods_set(dest))
++            continue;
++
++         if (!pco_ref_is_hwreg(zero) ||
++             pco_ref_get_reg_class(zero) != PCO_REG_CLASS_CONST ||
++             zero.val != 0 || pco_ref_has_mods_set(zero))
++            continue;
++
++         if (uses[x.val] != 1)
++            continue;
++
++         pco_instr *def = defs[x.val];
++         if (!def || def->num_dests != 1 ||
++             def->parent_block != instr->parent_block ||
++             (def->op != PCO_OP_FMUL && def->op != PCO_OP_FADD &&
++              def->op != PCO_OP_FMAD))
++            continue;
++
++         if (pco_ref_get_bits(def->dest[0]) != pco_ref_get_bits(dest) ||
++             pco_ref_get_chans(def->dest[0]) != pco_ref_get_chans(dest))
++            continue;
++
++         def->dest[0] = dest;
++         pco_instr_set_mod(def, PCO_OP_MOD_SAT, true);
++         defs[dest.val] = def;
++         pco_instr_delete(instr);
++         progress = true;
++      }
++
++      ralloc_free(uses);
++   }
++
++   return progress;
++}
++
+ /**
+  * \brief Instruction back-propagation pass.
+  *
+@@ -565,6 +637,7 @@ bool pco_opt(pco_shader *shader)
+ 
+    PCO_PASS(progress, shader, pco_opt_prep_mods, &ctx);
+    PCO_PASS(progress, shader, pco_opt_back_prop);
++   PCO_PASS(progress, shader, pco_opt_fold_sat);
+    PCO_PASS(progress, shader, pco_opt_fwd_prop);
+    /* TODO: Track whether there are any comp instructions referencing hw
+     * registers resulting from the previous passes, and only run
+diff --git a/src/imagination/vulkan/pvr_arch_pipeline.c b/src/imagination/vulkan/pvr_arch_pipeline.c
+index 0f088fa1c2d..879b225ff0f 100644
+--- a/src/imagination/vulkan/pvr_arch_pipeline.c
++++ b/src/imagination/vulkan/pvr_arch_pipeline.c
+@@ -3040,6 +3040,7 @@ pvr_gfx_pipeline_cache_key(const struct pvr_device *device,
+    pvr_gfx_cache_hash_str(&ctx, "SUEZ_PVR_2D_VIEW_OF_3D");
+    pvr_gfx_cache_hash_str(&ctx, "SUEZ_PVR_CWE");
+    pvr_gfx_cache_hash_str(&ctx, "SUEZ_PCO_ALWAYS_ISP_FB");
++   pvr_gfx_cache_hash_str(&ctx, "SUEZ_PCO_NO_FOLD_SAT");
+ 
+    _mesa_blake3_final(&ctx, key);
+ }
+-- 
+2.55.0
+

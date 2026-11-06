@@ -1,0 +1,144 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Ryan Brue <ryanbrue.dev@gmail.com>
+Date: Wed, 4 Nov 2026 06:25:24 -0600
+Subject: [PATCH] PROTOTYPE pvr/pco: compile static MSAA state into fragment
+ shaders
+
+Local experiment for amazon-suez, never to be sent (Imagination declines
+LLM-generated code in src/imagination). Ported from
+sweep/submit/mesa-pvr-desktop-perf/patches/fix2-static-ms-state.patch.
+
+Generated-by: LLM
+---
+ src/imagination/pco/pco_data.h             |  4 +++-
+ src/imagination/pco/pco_internal.h         |  2 +-
+ src/imagination/pco/pco_nir.c              | 10 +++++---
+ src/imagination/pco/pco_nir_pvfio.c        |  8 +++----
+ src/imagination/vulkan/pvr_arch_pipeline.c | 27 +++++++++++++++++++---
+ 5 files changed, 39 insertions(+), 12 deletions(-)
+
+diff --git a/src/imagination/pco/pco_data.h b/src/imagination/pco/pco_data.h
+index a3ea4273821..c713061034f 100644
+--- a/src/imagination/pco/pco_data.h
++++ b/src/imagination/pco/pco_data.h
+@@ -121,7 +121,9 @@ typedef struct _pco_fs_data {
+       bool discard;
+       bool sample_shading;
+       bool sample_locations;
+-      bool alpha_to_coverage;
++      bool alpha_to_coverage; /** Alpha to coverage may be enabled. */
++      bool alpha_to_one; /** Alpha to one may be enabled. */
++      bool sample_mask; /** The sample mask may exclude a rasterized sample. */
+       bool olchk_skip;
+    } uses;
+ 
+diff --git a/src/imagination/pco/pco_internal.h b/src/imagination/pco/pco_internal.h
+index efcdb49ab3b..fa722e81dc1 100644
+--- a/src/imagination/pco/pco_internal.h
++++ b/src/imagination/pco/pco_internal.h
+@@ -1830,7 +1830,7 @@ bool pco_nir_lower_images(nir_shader *shader, pco_data *data, pco_ctx *ctx);
+ bool pco_nir_lower_interpolation(nir_shader *shader, pco_fs_data *fs);
+ bool pco_nir_lower_io(nir_shader *shader, pco_data *data);
+ bool pco_nir_lower_preamble_to_scalar(nir_shader *shader);
+-bool pco_nir_lower_sample_mask_out(nir_shader *shader);
++bool pco_nir_lower_sample_mask_out(nir_shader *shader, bool sample_check);
+ bool pco_nir_lower_shared_io_to_global(nir_shader *shader, unsigned usc_slots);
+ bool pco_nir_lower_subgroups(nir_shader *shader);
+ bool pco_nir_lower_tex(nir_shader *shader, pco_data *data, pco_ctx *ctx);
+diff --git a/src/imagination/pco/pco_nir.c b/src/imagination/pco/pco_nir.c
+index cfe84a760be..0c7a1830474 100644
+--- a/src/imagination/pco/pco_nir.c
++++ b/src/imagination/pco/pco_nir.c
+@@ -1077,7 +1077,7 @@ void pco_lower_nir(pco_ctx *ctx, nir_shader *nir, pco_data *data)
+    NIR_PASS(_, nir, pco_nir_lower_tex, data, ctx);
+ 
+    if (nir->info.stage == MESA_SHADER_FRAGMENT) {
+-      if (!internal)
++      if (!internal && data->fs.uses.alpha_to_coverage)
+          NIR_PASS(_, nir, pco_nir_lower_alpha_to_coverage);
+ 
+       NIR_PASS(_, nir, nir_lower_blend, &data->fs.blend_opts);
+@@ -1088,8 +1088,12 @@ void pco_lower_nir(pco_ctx *ctx, nir_shader *nir, pco_data *data)
+       };
+       NIR_PASS(_, nir, nir_opt_peephole_select, &peep_opts);
+       NIR_PASS(_, nir, pco_nir_lower_interpolation, &data->fs);
+-      if (!internal)
+-         NIR_PASS(_, nir, pco_nir_lower_sample_mask_out);
++      if (!internal) {
++         NIR_PASS(_,
++                  nir,
++                  pco_nir_lower_sample_mask_out,
++                  data->fs.uses.sample_mask);
++      }
+       NIR_PASS(_, nir, pco_nir_pfo, &data->fs);
+       NIR_PASS(_, nir, nir_lower_is_helper_invocation);
+       NIR_PASS(_, nir, pco_nir_lower_fs_intrinsics);
+diff --git a/src/imagination/pco/pco_nir_pvfio.c b/src/imagination/pco/pco_nir_pvfio.c
+index e28d2b0d960..f0744f10c6d 100644
+--- a/src/imagination/pco/pco_nir_pvfio.c
++++ b/src/imagination/pco/pco_nir_pvfio.c
+@@ -500,11 +500,11 @@ static bool lower_sample_mask_out(nir_builder *b, nir_intrinsic_instr *intr, UNU
+    return true;
+ }
+ 
+-bool pco_nir_lower_sample_mask_out(nir_shader *shader)
++bool pco_nir_lower_sample_mask_out(nir_shader *shader, bool sample_check)
+ {
+    bool progress = nir_shader_intrinsics_pass(shader, lower_sample_mask_out, nir_metadata_control_flow, NULL);
+-   if (progress)
+-      return true;
++   if (progress || !sample_check)
++      return progress;
+ 
+    /* If the sample check isn't present, then add one ourselves. */
+    nir_builder b = nir_builder_at(
+@@ -815,7 +815,7 @@ bool pco_nir_pfo(nir_shader *shader, pco_fs_data *fs)
+    /* TODO: instead of doing multiple passes, probably better to just cache all
+     * the stores
+     */
+-   if (!shader->info.internal) {
++   if (!shader->info.internal && fs->uses.alpha_to_one) {
+       progress |= nir_shader_intrinsics_pass(shader,
+                                              lower_alpha_to_one,
+                                              nir_metadata_control_flow,
+diff --git a/src/imagination/vulkan/pvr_arch_pipeline.c b/src/imagination/vulkan/pvr_arch_pipeline.c
+index 857da0adb11..4de685b4de0 100644
+--- a/src/imagination/vulkan/pvr_arch_pipeline.c
++++ b/src/imagination/vulkan/pvr_arch_pipeline.c
+@@ -2503,9 +2503,30 @@ pvr_preprocess_shader_data(pco_data *data,
+       pvr_init_fs_blend(data, state->cb);
+       pvr_init_fs_tile_buffers(data);
+ 
+-      data->fs.uses.alpha_to_coverage = false;
+-      if (state->ms)
+-         data->fs.uses.alpha_to_coverage = state->ms->alpha_to_coverage_enable;
++      /* Only compile the run-time alpha-to-coverage/one handling in when the
++       * pipeline can enable it: the state is unknown or dynamic, or the
++       * static state enables it.
++       */
++      data->fs.uses.alpha_to_coverage =
++         !state->ms ||
++         BITSET_TEST(state->dynamic,
++                     MESA_VK_DYNAMIC_MS_ALPHA_TO_COVERAGE_ENABLE) ||
++         state->ms->alpha_to_coverage_enable;
++      data->fs.uses.alpha_to_one =
++         !state->ms ||
++         BITSET_TEST(state->dynamic, MESA_VK_DYNAMIC_MS_ALPHA_TO_ONE_ENABLE) ||
++         state->ms->alpha_to_one_enable;
++
++      /* The sample mask test is a discard; it can only fail if the mask can
++       * leave out a sample that is rasterized.
++       */
++      data->fs.uses.sample_mask =
++         !state->ms ||
++         BITSET_TEST(state->dynamic, MESA_VK_DYNAMIC_MS_SAMPLE_MASK) ||
++         BITSET_TEST(state->dynamic,
++                     MESA_VK_DYNAMIC_MS_RASTERIZATION_SAMPLES) ||
++         (~state->ms->sample_mask &
++          BITFIELD_MASK(state->ms->rasterization_samples));
+ 
+       if (BITSET_TEST(state->dynamic, MESA_VK_DYNAMIC_CB_COLOR_WRITE_ENABLES) ||
+           (state->cb && state->cb->color_write_enables !=
+-- 
+2.55.0
+

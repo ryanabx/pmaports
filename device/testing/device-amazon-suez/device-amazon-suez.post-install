@@ -41,10 +41,14 @@ if ! grep -q '^PVR_I_WANT_A_BROKEN_VULKAN_DRIVER=' "$_f" 2>/dev/null; then
 	printf 'PVR_I_WANT_A_BROKEN_VULKAN_DRIVER=1\n' >> "$_f"
 fi
 
-# GSK_RENDERER=cairo, the third placement for the same reason; see
+# GSK_RENDERER=ngl, the third placement for the same reason; see
 # 51-gtk-renderer.conf. A line already present is left alone, so a local
-# choice of renderer survives upgrades.
-if ! grep -q '^GSK_RENDERER=' "$_f" 2>/dev/null; then
-	printf 'GSK_RENDERER=cairo\n' >> "$_f"
+# choice of renderer survives upgrades, except the old shipped default
+# GSK_RENDERER=cairo (device 5-r5 to 5-r10), which becomes ngl with the
+# Mesa fork.
+if grep -q '^GSK_RENDERER=cairo$' "$_f" 2>/dev/null; then
+	sed -i 's/^GSK_RENDERER=cairo$/GSK_RENDERER=ngl/' "$_f"
+elif ! grep -q '^GSK_RENDERER=' "$_f" 2>/dev/null; then
+	printf 'GSK_RENDERER=ngl\n' >> "$_f"
 fi
 exit 0

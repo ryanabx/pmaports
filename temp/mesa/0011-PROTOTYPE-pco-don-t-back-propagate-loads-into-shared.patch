@@ -1,0 +1,47 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Ryan Brue <ryanbrue.dev@gmail.com>
+Date: Wed, 4 Nov 2026 07:01:49 -0600
+Subject: [PATCH] PROTOTYPE pco: don't back-propagate loads into shared
+ registers
+
+Local experiment for amazon-suez, never to be sent (Imagination declines
+LLM-generated code in src/imagination).
+
+With PCO_DEBUG=preamble, zink's vertex preambles load uniforms straight
+into the shared registers (back-propagation folds 'ld r; mov sh, r' into
+'ld sh'), and every such vertex shader draws nothing on GX6250. The
+working preambles (fragment, and vk-sample's vertex) load into temps and
+copy. Keep loads, atomics and samples writing temps.
+
+Generated-by: LLM
+---
+ src/imagination/pco/pco_opt.c | 13 +++++++++++++
+ 1 file changed, 13 insertions(+)
+
+diff --git a/src/imagination/pco/pco_opt.c b/src/imagination/pco/pco_opt.c
+index b9aedeae197..58bd41b4270 100644
+--- a/src/imagination/pco/pco_opt.c
++++ b/src/imagination/pco/pco_opt.c
+@@ -261,6 +261,19 @@ static inline bool try_back_prop_instr(struct pco_use *uses, pco_instr *instr)
+    if (pco_ref_is_idx_reg(*pdest_from))
+       return false;
+ 
++   /* PROTOTYPE: a vertex preamble whose loads wrote straight into shared
++    * registers ("ld sh0, ...") left them unwritten on GX6250: every vertex
++    * shader with such a preamble drew nothing. Keep memory operations
++    * writing temporaries and copy into the shared registers.
++    */
++   if (pco_ref_is_reg(*pdest_from) &&
++       pco_ref_get_reg_class(*pdest_from) == PCO_REG_CLASS_SHARED &&
++       (instr->op == PCO_OP_LD || instr->op == PCO_OP_LD_REGBL ||
++        instr->op == PCO_OP_ATOMIC || instr->op == PCO_OP_SMP ||
++        instr->op == PCO_OP_SMP_WRT)) {
++      return false;
++   }
++
+    if (pco_ref_is_reg(*pdest_from) &&
+        pco_ref_get_reg_class(*pdest_from) == PCO_REG_CLASS_PIXOUT) {
+       return false;
+-- 
+2.55.0
+

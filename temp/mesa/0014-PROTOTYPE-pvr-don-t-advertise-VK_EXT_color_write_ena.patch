@@ -1,0 +1,73 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Ryan Brue <ryanbrue.dev@gmail.com>
+Date: Wed, 4 Nov 2026 07:46:06 -0600
+Subject: [PATCH] PROTOTYPE pvr: don't advertise VK_EXT_color_write_enable by
+ default
+
+Local experiment for amazon-suez, never to be sent (Imagination declines
+LLM-generated code in src/imagination).
+
+zink makes the color write enables dynamic state whenever the extension is
+there, and pvr then compiles every fragment shader with
+meta_present.color_write_enable: a framebuffer read (fbfetch, so a
+translucent pass type) and a select of the old colour at the end. A
+full-screen wlroots textured layer through zink (gles-layers, GX6250)
+costs 9.8 ms with it and 7.8 ms without (49 vs 40 instructions; colour
+layer 8.5 vs 6.5 ms), interleaved runs of the same build. zink uses the
+extension only for rasterizer discard with queries and falls back without
+it. SUEZ_PVR_CWE=1 advertises it again (part of the pipeline cache key).
+
+Hiding the extended-dynamic-state-3 MSAA features as well was tried and
+changed nothing (same 40 instructions); not kept.
+
+Generated-by: LLM
+---
+ src/imagination/vulkan/pvr_arch_pipeline.c   |  1 +
+ src/imagination/vulkan/pvr_physical_device.c | 12 ++++++++++++
+ 2 files changed, 13 insertions(+)
+
+diff --git a/src/imagination/vulkan/pvr_arch_pipeline.c b/src/imagination/vulkan/pvr_arch_pipeline.c
+index 18b11c6edb3..3a1dddf6350 100644
+--- a/src/imagination/vulkan/pvr_arch_pipeline.c
++++ b/src/imagination/vulkan/pvr_arch_pipeline.c
+@@ -3038,6 +3038,7 @@ pvr_gfx_pipeline_cache_key(const struct pvr_device *device,
+    pvr_gfx_cache_hash_str(&ctx, "PCO_DEBUG");
+    pvr_gfx_cache_hash_str(&ctx, "PVR_DEBUG");
+    pvr_gfx_cache_hash_str(&ctx, "SUEZ_PVR_2D_VIEW_OF_3D");
++   pvr_gfx_cache_hash_str(&ctx, "SUEZ_PVR_CWE");
+ 
+    _mesa_blake3_final(&ctx, key);
+ }
+diff --git a/src/imagination/vulkan/pvr_physical_device.c b/src/imagination/vulkan/pvr_physical_device.c
+index bf9c7ac0ed1..c722fd98a94 100644
+--- a/src/imagination/vulkan/pvr_physical_device.c
++++ b/src/imagination/vulkan/pvr_physical_device.c
+@@ -246,6 +246,8 @@ static void pvr_physical_device_get_supported_extensions(
+    /* PROTOTYPE: see pvr_physical_device_get_supported_features(). */
+    if (!getenv("SUEZ_PVR_2D_VIEW_OF_3D"))
+       extensions->EXT_image_2d_view_of_3d = false;
++   if (!getenv("SUEZ_PVR_CWE"))
++      extensions->EXT_color_write_enable = false;
+ }
+ 
+ static void pvr_physical_device_get_supported_features(
+@@ -608,6 +610,16 @@ static void pvr_physical_device_get_supported_features(
+       features->image2DViewOf3D = false;
+       features->sampler2DViewOf3D = false;
+    }
++
++   /* PROTOTYPE: zink makes the color write enables dynamic when offered,
++    * and pvr then compiles every fragment shader with a framebuffer read and
++    * a select (fbfetch, translucent pass): a wlroots textured layer through
++    * zink costs 9.8 ms instead of 7.8 ms on GX6250 (49 instead of 40
++    * instructions). zink needs the extension only for rasterizer discard
++    * with queries and has a fallback. SUEZ_PVR_CWE=1 advertises it.
++    */
++   if (!getenv("SUEZ_PVR_CWE"))
++      features->colorWriteEnable = false;
+ }
+ 
+ static uint32_t get_api_version(void)
+-- 
+2.55.0
+

@@ -1,0 +1,229 @@
+# Forked from Alpine's main/mesa (aports master, 26.2.6-r0, 2026-11-05) for
+# amazon-suez only: Mesa main plus Mesa !42747 (the pco preamble) and local
+# PowerVR prototypes that make the Phosh desktop GPU-accelerated on the
+# GX6250 (phoc's frame 84 -> 16 ms). The patches come from ~/repos/mesa
+# branch suez/pvr-desktop-pkg and are LOCAL EXPERIMENTS, NEVER TO BE SENT:
+# Imagination declines LLM-generated code in src/imagination. Evidence:
+# suez-work notes/PVR-DESKTOP-2026-11-04.md; book GPU chapter.
+#
+# Trimmed to what suez uses: gallium zink and llvmpipe, Vulkan imagination
+# and lavapipe; no VA, no rusticl, no Vulkan layers. Do not merge this into
+# pmaports master.
+maintainer="Ryan Brue <ryanbrue.dev@gmail.com>"
+pkgname=mesa
+pkgver=27.0.0_git20261104
+pkgrel=0
+_commit="1b60c2e3bd66612554b27c065ceebb239e8296c0"
+pkgdesc="Mesa DRI OpenGL library (amazon-suez PowerVR fork)"
+url="https://www.mesa3d.org"
+arch="aarch64"
+license="MIT AND SGI-B-2.0 AND BSL-1.0"
+subpackages="
+	$pkgname-dbg
+	$pkgname-dev
+	$pkgname-dri-gallium:_gallium
+	$pkgname-egl
+	$pkgname-gl
+	$pkgname-gles
+	$pkgname-gbm
+	$pkgname-vulkan-imagination:_vulkan
+	$pkgname-vulkan-swrast:_vulkan
+	"
+_llvmver=23
+depends_dev="
+	libdrm-dev
+	libxdamage-dev
+	libxshmfence-dev
+	"
+makedepends="
+	$depends_dev
+	binutils
+	bison
+	clang$_llvmver-dev
+	elfutils-dev
+	eudev-dev
+	expat-dev
+	findutils
+	flex
+	gettext
+	glslang-dev
+	libclc-dev~$_llvmver
+	libdisplay-info-dev
+	libtool
+	libx11-dev
+	libxfixes-dev
+	libxml2-dev
+	libxrandr-dev
+	libxxf86vm-dev
+	llvm$_llvmver-dev
+	meson
+	py3-cparser
+	py3-mako
+	py3-packaging
+	py3-ply
+	py3-yaml
+	python3
+	spirv-llvm-translator-dev
+	spirv-tools-dev
+	vulkan-loader-dev
+	wayland-dev
+	wayland-protocols
+	xorgproto
+	zlib-dev
+	zstd-dev
+	"
+source="mesa-$_commit.tar.gz::https://gitlab.freedesktop.org/mesa/mesa/-/archive/$_commit/mesa-$_commit.tar.gz
+	0001-pco-pvr-Mesa-42747-pco-preamble-Simon-Perretta-at-a7.patch
+	0002-PROTOTYPE-pvr-cache-render-targets-for-dynamic-rende.patch
+	0003-PROTOTYPE-pvr-back-null-buffer-descriptors-with-a-ze.patch
+	0004-PROTOTYPE-pvr-sample-null-combined-image-samplers-fr.patch
+	0005-PROTOTYPE-pvr-suballocate-SPM-background-object-cons.patch
+	0006-PROTOTYPE-pvr-recycle-control-stream-buffers.patch
+	0007-PROTOTYPE-pvr-reuse-the-SPM-scratch-buffer-for-any-s.patch
+	0008-PROTOTYPE-pco-size-smp-data-vectors-to-the-words-use.patch
+	0009-PROTOTYPE-pvr-pco-compile-static-MSAA-state-into-fra.patch
+	0010-PROTOTYPE-pvr-keep-the-transfer-submit-off-the-stack.patch
+	0011-PROTOTYPE-pco-don-t-back-propagate-loads-into-shared.patch
+	0012-PROTOTYPE-pvr-don-t-advertise-VK_EXT_image_2d_view_o.patch
+	0013-PROTOTYPE-pvr-cache-compiled-graphics-pipelines.patch
+	0014-PROTOTYPE-pvr-don-t-advertise-VK_EXT_color_write_ena.patch
+	0015-PROTOTYPE-pco-no-ISP-feedback-for-fragment-shaders-t.patch
+	0016-PROTOTYPE-pvr-cache-load-op-and-end-of-tile-shaders-.patch
+	0017-PROTOTYPE-pco-fold-fsat-into-the-producing-fmul-fadd.patch
+	0018-PROTOTYPE-pco-enable-the-preamble-by-default.patch
+	"
+builddir="$srcdir/mesa-$_commit"
+options="!check"
+
+_dri_driverdir=/usr/lib/dri
+
+build() {
+	export CFLAGS="$CFLAGS -O2 -g1"
+	export CXXFLAGS="$CXXFLAGS -O2 -g1"
+	export CPPFLAGS="$CPPFLAGS -O2 -g1"
+
+	PATH="$PATH:/usr/lib/llvm$_llvmver/bin" \
+	abuild-meson \
+		-Db_ndebug=true \
+		-Db_lto=false \
+		-Dallow-kcmp=enabled \
+		-Dexpat=enabled \
+		-Dshader-cache=enabled \
+		-Dxlib-lease=enabled \
+		-Dxmlconfig=enabled \
+		-Dzstd=enabled \
+		-Dbackend_max_links=2 \
+		-Dbuild-tests=false \
+		-Ddri-drivers-path=$_dri_driverdir \
+		-Dgallium-drivers=llvmpipe,zink \
+		-Dvulkan-drivers=imagination,swrast \
+		-Dvulkan-layers= \
+		-Dplatforms=x11,wayland \
+		-Dllvm=enabled \
+		-Dshared-llvm=enabled \
+		-Dgbm=enabled \
+		-Dglx=dri \
+		-Dopengl=true \
+		-Dgles1=enabled \
+		-Dgles2=enabled \
+		-Degl=enabled \
+		-Dgallium-rusticl=false \
+		-Dgallium-va=disabled \
+		-Dvideo-codecs= \
+		. output
+
+	meson configure --no-pager output
+
+	# Mesa main (2026-11): src/git_sha1.h is used by pvr_physical_device.c but
+	# not depended on, so generate it before the parallel build.
+	meson compile -C output src/git_sha1.h
+	meson compile -C output
+}
+
+package() {
+	DESTDIR="$pkgdir" meson install --no-rebuild -C output
+}
+
+egl() {
+	pkgdesc="Mesa libEGL runtime libraries"
+	depends="mesa=$pkgver-r$pkgrel mesa-gles=$pkgver-r$pkgrel"
+
+	amove usr/lib/libEGL.so*
+}
+
+gl() {
+	pkgdesc="Mesa libGL runtime libraries"
+	depends="mesa=$pkgver-r$pkgrel"
+
+	amove usr/lib/libGL.so*
+}
+
+gles() {
+	pkgdesc="Mesa libGLESv2 runtime libraries"
+	depends="mesa=$pkgver-r$pkgrel"
+
+	amove usr/lib/libGLES*.so*
+}
+
+gbm() {
+	pkgdesc="Mesa gbm library"
+	depends="mesa=$pkgver-r$pkgrel"
+
+	amove usr/lib/libgbm.so.*
+}
+
+_mv_links() {
+	install -d "$subpkgdir"/$1
+	find -L "$pkgdir"/$1 -samefile "$pkgdir"/$1/$2 -print0 \
+		| xargs -0 -I{} mv {} "$subpkgdir"/$1/
+}
+
+_mv_vulkan() {
+	local i
+	for i in "$@"; do
+		amove usr/lib/libvulkan_$i*.so
+		amove usr/share/vulkan/icd.d/${i}_*.*
+	done
+}
+
+_gallium() {
+	pkgdesc="Mesa gallium DRI drivers"
+	depends="mesa=$pkgver-r$pkgrel"
+
+	_mv_links $_dri_driverdir swrast_dri.so
+}
+
+_vulkan() {
+	local n=${subpkgname##*-vulkan-}
+	pkgdesc="Mesa Vulkan API driver for $n"
+	depends="mesa=$pkgver-r$pkgrel"
+
+	case $n in
+	imagination)
+		_mv_vulkan powervr_mesa ;;
+	swrast)
+		_mv_vulkan lvp ;;
+	esac
+}
+
+sha512sums="
+11b3d0d968cc30d7a1fed900a1c6c4bc50b55fc346e94b82ead51ba0edbd3c7f2cceec76527f112ca83eb0e5bbae82d86f60f7db4a05c5fccfc4a6f8186fe538  mesa-1b60c2e3bd66612554b27c065ceebb239e8296c0.tar.gz
+ea6bb98f7b42e2f347b36c99cf859c3adf2a2be28a81ba4556d70834bcf5b3996ccca06cd895ec41a15c7c9f69bc1ac2ee5fdc4635219253299ab09a3fd07b89  0001-pco-pvr-Mesa-42747-pco-preamble-Simon-Perretta-at-a7.patch
+7bff7b4a74955c1ec06e3616fd87fd144d40b98094d2f7f68d368a5891c917f0c7afeb57fd9db51abd672445eadcfaaa3f939d794c89ad5c23e6a65ace4371f3  0002-PROTOTYPE-pvr-cache-render-targets-for-dynamic-rende.patch
+bdb1d1068ea8f697241bff753acd4c95cd293d541ac62aa06a1b7c8e25587ace96f7bf43d0b33b43e3f2ad24f55f2c24f65ef7f9541826786f6259fde8514682  0003-PROTOTYPE-pvr-back-null-buffer-descriptors-with-a-ze.patch
+b1f929552cb7d45ede7532410922e310f7548ae4fad1107d3368edbac88236e9b33f3874c19c7fac3a43ce75ec65d2da2c040d598b5827410a44af8fd38b5c9d  0004-PROTOTYPE-pvr-sample-null-combined-image-samplers-fr.patch
+96ebca046f2b7c29977b382462e0d0ee41509a60f3dd877bd45fbf32ca88b9d8500960bd39f3e6635377ba412d060fc6188af0cd9e992b07cdc5a0df639b0e29  0005-PROTOTYPE-pvr-suballocate-SPM-background-object-cons.patch
+44447c0b521bcb1adc68853ddd0d0f14ad946e53062167e7598ff44647da7600995f78a4cef0b648809b2c665887d8c9d9a9a7aff8c39457a3ed4b0e3fe8e87b  0006-PROTOTYPE-pvr-recycle-control-stream-buffers.patch
+fcc87dfc8c3e01828d3384efadc56174ed61ce3aebfa776dbc20bff85cd48573845c775255cc232356a6b9cc1feddfde1cf12a347cddb4b6c56048479f3c1f4b  0007-PROTOTYPE-pvr-reuse-the-SPM-scratch-buffer-for-any-s.patch
+fb41829ade958684547465c8569679470b1224068197d57444cd1579ecf98769357aeff1d2854937730af4e48fd201f00c7af00b88e2452a9e70f58e492a32d8  0008-PROTOTYPE-pco-size-smp-data-vectors-to-the-words-use.patch
+00255dd92126dedd75810e62a75ffadb44806b497e330e2fb4272931268d2fead1613c64a9b141b74d1a6ded155f77035f9ba04234d78fe262105cb5d3b4bf86  0009-PROTOTYPE-pvr-pco-compile-static-MSAA-state-into-fra.patch
+8ef4a12c4ec55ff68de363ee6309c5508fd87f73daf5cf3a882ef9a2ae4bf29082fdcc8c761f3fe52b2708814388a863d32a019f3bbc009773ef116331ab691b  0010-PROTOTYPE-pvr-keep-the-transfer-submit-off-the-stack.patch
+3ab6738d9f6d6728599fbf4060df3b4fc3ac096ddf9e345be5b79f65256cd7a2f77c5a4d6bcaa8abe28f386766f02f43ec8588ff7969f4ca541fe0d7fd4b9696  0011-PROTOTYPE-pco-don-t-back-propagate-loads-into-shared.patch
+28f9b29484cc5ec14ec37a5edc2824870379b6812d5b8e89be8f274cf4ab0331dbadf7ac08f4b5613582840043a6fc6e8538c763c5c345e29bfd24cfea77bfff  0012-PROTOTYPE-pvr-don-t-advertise-VK_EXT_image_2d_view_o.patch
+02b7b120b1696c632f2d4c6770067783f48a67cf2f5a3626fe00db601173865a3b0ca1439d2ca27ef81113e922d9bb2d2a63e0ab160aeecb6c28336d6e32c9da  0013-PROTOTYPE-pvr-cache-compiled-graphics-pipelines.patch
+8f15b826e9aafdf3f6d62976dd65f5e3900fe98d9762fb5eb9a1761b736a334bfde04fab03edbcbed5cab61fe1776bc0a7cc6a69ff953e2b4cd7fa13cad4657e  0014-PROTOTYPE-pvr-don-t-advertise-VK_EXT_color_write_ena.patch
+4bba76d7ed56c00895a533b45ec5a054ffa810887a579af5d003c3d66daa3b079d8fad9c341cded99747aa7576a0e43116d2d8fe2fd409006203d5172f04f5cb  0015-PROTOTYPE-pco-no-ISP-feedback-for-fragment-shaders-t.patch
+6a630918e24a5f9c8738273e58a80eb4930e60c514699d839d024eed3d83c82357c9657918ae99683301d2979610da62fe72ec542937964c9f32626103c0bc51  0016-PROTOTYPE-pvr-cache-load-op-and-end-of-tile-shaders-.patch
+b5e8ac00ab8515fa2c806b5e0b34518f2db6a37dc1a2539350fc7b22422f671fd655cd91bb81d3dc1006d091b2590a1dcfb5184ea0bea0dd8047aa33d1d80f72  0017-PROTOTYPE-pco-fold-fsat-into-the-producing-fmul-fadd.patch
+45cb401bb9ba2c1ab331ef6e64ef077fcd5ff4ab12bfc7236d87783e1c5c73c2147280cccefd2f89e116a19c340110d511e4fb361ca9824743194e44243926a3  0018-PROTOTYPE-pco-enable-the-preamble-by-default.patch
+"

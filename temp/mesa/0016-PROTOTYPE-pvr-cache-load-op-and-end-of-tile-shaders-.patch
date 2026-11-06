@@ -1,0 +1,474 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Ryan Brue <ryanbrue.dev@gmail.com>
+Date: Wed, 4 Nov 2026 08:25:20 -0600
+Subject: [PATCH] PROTOTYPE pvr: cache load-op and end-of-tile shaders per
+ device
+
+Local experiment for amazon-suez, never to be sent (Imagination declines
+LLM-generated code in src/imagination).
+
+pvr compiled a load-op shader (pvr_uscgen_loadop) for every
+vkCmdBeginRendering that loads or clears, and an end-of-tile shader
+(pvr_usc_eot) for every render. In phoc on zink, during a panel gesture on
+GX6250, those were 8 % and 7-9 % of the compositor's CPU (perf). Both
+depend only on a few inputs, so keep the compiled binaries in per-device
+hash tables, in memory:
+
+* load ops: keyed by the clear/load/2D-view/MSAA masks, destination
+  formats, depth-clear register and the MRT setup fields the generator
+  reads. Not the whole usc_mrt_resource: mrt_desc's valid_mask and
+  priority hold uninitialised words beyond the target's size (seen on
+  the board as ASCII fragments), which made every key unique.
+* end of tile: keyed by the props, including the PBE state words (render
+  target addresses) and tile buffer addresses; at most 128 entries,
+  emptied when full.
+
+SUEZ_PVR_NO_LOADOP_CACHE / SUEZ_PVR_NO_EOT_CACHE disable them;
+SUEZ_PVR_CACHE_DEBUG prints hits and misses. In phoc over one gesture:
+44/44 load-op and 43/44 end-of-tile lookups hit; gles-layers check passes
+(16 and 40 stripes).
+
+Generated-by: LLM
+---
+ src/imagination/vulkan/pvr_arch_cmd_buffer.c | 113 ++++++++++-
+ src/imagination/vulkan/pvr_arch_device.c     |   8 +
+ src/imagination/vulkan/pvr_arch_mrt.c        | 185 ++++++++++++++++++-
+ src/imagination/vulkan/pvr_device.h          |   7 +
+ src/imagination/vulkan/pvr_mrt.h             |   4 +
+ 5 files changed, 300 insertions(+), 17 deletions(-)
+
+diff --git a/src/imagination/vulkan/pvr_arch_cmd_buffer.c b/src/imagination/vulkan/pvr_arch_cmd_buffer.c
+index fa5ae140aa0..3ef802b5ae4 100644
+--- a/src/imagination/vulkan/pvr_arch_cmd_buffer.c
++++ b/src/imagination/vulkan/pvr_arch_cmd_buffer.c
+@@ -68,6 +68,8 @@
+ #include "pdsc/pdsc_precomp_programs.h"
+ #include "util/bitscan.h"
+ #include "util/bitset.h"
++#include "util/hash_table.h"
++#include "util/mesa-blake3.h"
+ #include "util/compiler.h"
+ #include "util/list.h"
+ #include "util/macros.h"
+@@ -619,17 +621,108 @@ static VkResult pvr_sub_cmd_gfx_per_job_fragment_programs_create_and_upload(
+          props.msaa_samples = 1;
+    }
+ 
+-   eot =
+-      pvr_usc_eot(device->pdevice->pco_ctx, &props, &device->pdevice->dev_info);
+-   usc_temp_count = pco_shader_data(eot)->common.temps;
+-
+-   result = pvr_cmd_buffer_upload_usc(cmd_buffer,
+-                                      pco_shader_binary_data(eot),
+-                                      pco_shader_binary_size(eot),
+-                                      4,
+-                                      &usc_eot_program);
++   /* PROTOTYPE: end-of-tile shader cache. pvr compiled this shader with pco
++    * for every render (9 % of phoc's CPU during a panel gesture on GX6250,
++    * measured with perf). It depends only on the props below, including the
++    * PBE state words (render target addresses), so a compositor cycling
++    * through its swapchain images hits after the first frames. Kept per
++    * device, in memory, at most 128 entries (emptied when full).
++    */
++   struct pvr_eot_cache_entry {
++      blake3_hash key;
++      uint32_t temps;
++      uint32_t bin_size;
++      uint8_t bin[];
++   } *cached = NULL;
++   const bool use_cache = device->eot_cache &&
++                          !getenv("SUEZ_PVR_NO_EOT_CACHE");
++   blake3_hash key;
++
++   if (use_cache) {
++      struct mesa_blake3 ctx;
++
++      _mesa_blake3_init(&ctx);
++      _mesa_blake3_update(&ctx, &props.emit_count, sizeof(props.emit_count));
++      _mesa_blake3_update(&ctx,
++                          &props.shared_words,
++                          sizeof(props.shared_words));
++      _mesa_blake3_update(&ctx,
++                          props.state_words,
++                          emit_count * ROGUE_NUM_PBESTATE_STATE_WORDS *
++                             sizeof(props.state_words[0]));
++      _mesa_blake3_update(&ctx,
++                          &props.msaa_samples,
++                          sizeof(props.msaa_samples));
++      _mesa_blake3_update(&ctx,
++                          &props.num_output_regs,
++                          sizeof(props.num_output_regs));
++      _mesa_blake3_update(&ctx,
++                          props.tile_buffer_addrs,
++                          sizeof(props.tile_buffer_addrs));
++      _mesa_blake3_final(&ctx, key);
++
++      simple_mtx_lock(&device->loadop_cache_mtx);
++      struct hash_entry *he = _mesa_hash_table_search(device->eot_cache, key);
++      cached = he ? he->data : NULL;
++      simple_mtx_unlock(&device->loadop_cache_mtx);
++   }
++
++   if (use_cache && getenv("SUEZ_PVR_CACHE_DEBUG")) {
++      char hex[BLAKE3_HEX_LEN];
++      _mesa_blake3_format(hex, key);
++      fprintf(stderr, "pvr-eot-cache: %s %.16s emit=%u w0=%08x w1=%08x w2=%08x w3=%08x\n",
++              cached ? "hit " : "miss", hex, emit_count,
++              emit_count ? props.state_words[0] : 0,
++              emit_count ? props.state_words[1] : 0,
++              emit_count ? props.state_words[2] : 0,
++              emit_count ? props.state_words[3] : 0);
++   }
++
++   if (cached) {
++      usc_temp_count = cached->temps;
++      result = pvr_cmd_buffer_upload_usc(cmd_buffer,
++                                         cached->bin,
++                                         cached->bin_size,
++                                         4,
++                                         &usc_eot_program);
++   } else {
++      eot = pvr_usc_eot(device->pdevice->pco_ctx,
++                        &props,
++                        &device->pdevice->dev_info);
++      usc_temp_count = pco_shader_data(eot)->common.temps;
++
++      result = pvr_cmd_buffer_upload_usc(cmd_buffer,
++                                         pco_shader_binary_data(eot),
++                                         pco_shader_binary_size(eot),
++                                         4,
++                                         &usc_eot_program);
++
++      if (use_cache) {
++         const uint32_t bin_size = pco_shader_binary_size(eot);
++         struct pvr_eot_cache_entry *entry = malloc(sizeof(*entry) + bin_size);
++
++         if (entry) {
++            memcpy(entry->key, key, sizeof(key));
++            entry->temps = usc_temp_count;
++            entry->bin_size = bin_size;
++            memcpy(entry->bin, pco_shader_binary_data(eot), bin_size);
++
++            simple_mtx_lock(&device->loadop_cache_mtx);
++            if (_mesa_hash_table_num_entries(device->eot_cache) >= 128) {
++               hash_table_foreach (device->eot_cache, he)
++                  free(he->data);
++               _mesa_hash_table_clear(device->eot_cache, NULL);
++            }
++            if (_mesa_hash_table_search(device->eot_cache, entry->key))
++               free(entry);
++            else
++               _mesa_hash_table_insert(device->eot_cache, entry->key, entry);
++            simple_mtx_unlock(&device->loadop_cache_mtx);
++         }
++      }
+ 
+-   ralloc_free(eot);
++      ralloc_free(eot);
++   }
+ 
+    if (result != VK_SUCCESS)
+       return result;
+diff --git a/src/imagination/vulkan/pvr_arch_device.c b/src/imagination/vulkan/pvr_arch_device.c
+index 120055d86af..e8eaa75b92b 100644
+--- a/src/imagination/vulkan/pvr_arch_device.c
++++ b/src/imagination/vulkan/pvr_arch_device.c
+@@ -11,6 +11,7 @@
+  */
+ 
+ #include "pvr_device.h"
++#include "pvr_mrt.h"
+ 
+ #include "vk_log.h"
+ #include "vk_pipeline_cache.h"
+@@ -1025,6 +1026,10 @@ VkResult PVR_PER_ARCH(create_device)(struct pvr_physical_device *pdevice,
+    simple_mtx_init(&device->rt_cache_mtx, mtx_plain);
+    device->rt_cache_count = 0;
+ 
++   simple_mtx_init(&device->loadop_cache_mtx, mtx_plain);
++   device->loadop_cache = pvr_loadop_cache_create();
++   device->eot_cache = pvr_loadop_cache_create();
++
+    *pDevice = pvr_device_to_handle(device);
+ 
+    /* PROTOTYPE: a device-level weak pipeline cache, so graphics pipelines
+@@ -1156,6 +1161,9 @@ void PVR_PER_ARCH(destroy_device)(struct pvr_device *device,
+    p_atomic_dec(&device->instance->active_device_count);
+    if (device->vk.mem_cache)
+       vk_pipeline_cache_destroy(device->vk.mem_cache, NULL);
++   pvr_loadop_cache_destroy(device->loadop_cache);
++   pvr_loadop_cache_destroy(device->eot_cache);
++   simple_mtx_destroy(&device->loadop_cache_mtx);
+    vk_device_finish(&device->vk);
+    vk_free(&device->vk.alloc, device);
+ }
+diff --git a/src/imagination/vulkan/pvr_arch_mrt.c b/src/imagination/vulkan/pvr_arch_mrt.c
+index bd59ccd64c5..e292f8b3bf5 100644
+--- a/src/imagination/vulkan/pvr_arch_mrt.c
++++ b/src/imagination/vulkan/pvr_arch_mrt.c
+@@ -5,6 +5,8 @@
+  */
+ 
+ #include "pvr_mrt.h"
++#include "util/hash_table.h"
++#include "util/mesa-blake3.h"
+ 
+ #include "vk_log.h"
+ 
+@@ -575,13 +577,12 @@ VkResult pvr_arch_pds_unitex_state_program_create_and_upload(
+ static VkResult pvr_pds_fragment_program_create_and_upload(
+    struct pvr_device *device,
+    const VkAllocationCallbacks *allocator,
+-   pco_shader *fs,
++   const pco_data *fs_data,
+    struct pvr_suballoc_bo *shader_bo,
+    struct pvr_pds_upload *pds_frag_prog,
+    bool msaa)
+ {
+    struct pvr_pds_kickusc_program program = { 0 };
+-   pco_data *fs_data = pco_shader_data(fs);
+    uint32_t staging_buffer_size;
+    uint32_t *staging_buffer;
+    VkResult result;
+@@ -638,6 +639,109 @@ static VkResult pvr_pds_fragment_program_create_and_upload(
+    return VK_SUCCESS;
+ }
+ 
++/* PROTOTYPE: load-op shader cache.
++ *
++ * pvr compiled a load-op shader with pco on every vkCmdBeginRendering that
++ * loads or clears (13 % of phoc's CPU during a panel gesture on GX6250,
++ * measured with perf). The shader only depends on the load-op state and the
++ * MRT setup, so keep compiled ones per device, in memory.
++ */
++struct pvr_loadop_cache_entry {
++   blake3_hash key;
++   pco_data data;
++   uint32_t num_tile_buffers;
++   uint32_t const_shareds_count;
++   uint32_t shareds_count;
++   uint32_t bin_size;
++   uint8_t bin[];
++};
++
++static uint32_t pvr_loadop_cache_hash(const void *key)
++{
++   return _mesa_hash_data(key, sizeof(blake3_hash));
++}
++
++static bool pvr_loadop_cache_equal(const void *a, const void *b)
++{
++   return !memcmp(a, b, sizeof(blake3_hash));
++}
++
++struct hash_table *pvr_loadop_cache_create(void)
++{
++   return _mesa_hash_table_create(NULL,
++                                  pvr_loadop_cache_hash,
++                                  pvr_loadop_cache_equal);
++}
++
++void pvr_loadop_cache_destroy(struct hash_table *cache)
++{
++   if (!cache)
++      return;
++
++   hash_table_foreach (cache, entry)
++      free(entry->data);
++
++   _mesa_hash_table_destroy(cache, NULL);
++}
++
++static void pvr_loadop_cache_key(const struct pvr_load_op *load_op,
++                                 blake3_hash key)
++{
++   const struct usc_mrt_setup *setup = load_op->clears_loads_state.mrt_setup;
++   struct mesa_blake3 ctx;
++
++   _mesa_blake3_init(&ctx);
++   _mesa_blake3_update(&ctx,
++                       &load_op->clears_loads_state.rt_clear_mask,
++                       sizeof(load_op->clears_loads_state.rt_clear_mask));
++   _mesa_blake3_update(&ctx,
++                       &load_op->clears_loads_state.rt_load_mask,
++                       sizeof(load_op->clears_loads_state.rt_load_mask));
++   _mesa_blake3_update(&ctx,
++                       &load_op->clears_loads_state.rt_2d_view_3d_mask,
++                       sizeof(load_op->clears_loads_state.rt_2d_view_3d_mask));
++   _mesa_blake3_update(&ctx,
++                       &load_op->clears_loads_state.unresolved_msaa_mask,
++                       sizeof(load_op->clears_loads_state.unresolved_msaa_mask));
++   _mesa_blake3_update(&ctx,
++                       load_op->clears_loads_state.dest_vk_format,
++                       sizeof(load_op->clears_loads_state.dest_vk_format));
++   _mesa_blake3_update(&ctx,
++                       &load_op->clears_loads_state.depth_clear_to_reg,
++                       sizeof(load_op->clears_loads_state.depth_clear_to_reg));
++   if (setup) {
++      _mesa_blake3_update(&ctx,
++                          &setup->num_render_targets,
++                          sizeof(setup->num_render_targets));
++      _mesa_blake3_update(&ctx,
++                          &setup->num_output_regs,
++                          sizeof(setup->num_output_regs));
++      _mesa_blake3_update(&ctx,
++                          &setup->num_tile_buffers,
++                          sizeof(setup->num_tile_buffers));
++      _mesa_blake3_update(&ctx,
++                          &setup->disable_source_pos_override,
++                          sizeof(setup->disable_source_pos_override));
++      /* Only what pvr_uscgen_loadop() reads: mrt_desc's valid_mask and
++       * priority can hold uninitialised words beyond the target's size.
++       */
++      for (unsigned i = 0; i < setup->num_render_targets; i++) {
++         const struct usc_mrt_resource *res = &setup->mrt_resources[i];
++         const uint32_t fields[] = {
++            res->type,
++            res->intermediate_size,
++            res->mrt_desc.intermediate_size,
++            res->type == USC_MRT_RESOURCE_TYPE_OUTPUT_REG ? res->reg.output_reg
++                                                          : res->mem.tile_buffer,
++            res->type == USC_MRT_RESOURCE_TYPE_OUTPUT_REG ? res->reg.offset
++                                                          : res->mem.offset_dw,
++         };
++         _mesa_blake3_update(&ctx, fields, sizeof(fields));
++      }
++   }
++   _mesa_blake3_final(&ctx, key);
++}
++
+ VkResult
+ pvr_arch_load_op_shader_generate(struct pvr_device *device,
+                                  const VkAllocationCallbacks *allocator,
+@@ -645,12 +749,79 @@ pvr_arch_load_op_shader_generate(struct pvr_device *device,
+ {
+    const struct pvr_device_info *dev_info = &device->pdevice->dev_info;
+    const uint32_t cache_line_size = pvr_get_slc_cache_line_size(dev_info);
++   struct pvr_loadop_cache_entry *cached = NULL;
++   const bool use_cache = device->loadop_cache &&
++                          !getenv("SUEZ_PVR_NO_LOADOP_CACHE");
++   blake3_hash key;
++   pco_shader *loadop = NULL;
++   const pco_data *data;
++   const void *bin;
++   uint32_t bin_size;
++
++   if (use_cache) {
++      pvr_loadop_cache_key(load_op, key);
++
++      simple_mtx_lock(&device->loadop_cache_mtx);
++      struct hash_entry *he =
++         _mesa_hash_table_search(device->loadop_cache, key);
++      cached = he ? he->data : NULL;
++      simple_mtx_unlock(&device->loadop_cache_mtx);
++   }
++
++   if (use_cache && getenv("SUEZ_PVR_CACHE_DEBUG")) {
++      char hex[BLAKE3_HEX_LEN];
++      _mesa_blake3_format(hex, key);
++      fprintf(stderr, "pvr-loadop-cache: %s %.16s clear=%x load=%x\n",
++              cached ? "hit " : "miss", hex,
++              load_op->clears_loads_state.rt_clear_mask,
++              load_op->clears_loads_state.rt_load_mask);
++   }
+ 
+-   pco_shader *loadop = pvr_uscgen_loadop(device->pdevice->pco_ctx, load_op);
++   if (cached) {
++      /* Entries are never removed before the device is destroyed. */
++      load_op->num_tile_buffers = cached->num_tile_buffers;
++      load_op->const_shareds_count = cached->const_shareds_count;
++      load_op->shareds_count = cached->shareds_count;
++      data = &cached->data;
++      bin = cached->bin;
++      bin_size = cached->bin_size;
++   } else {
++      loadop = pvr_uscgen_loadop(device->pdevice->pco_ctx, load_op);
++      data = pco_shader_data(loadop);
++      bin = pco_shader_binary_data(loadop);
++      bin_size = pco_shader_binary_size(loadop);
++
++      if (use_cache) {
++         struct pvr_loadop_cache_entry *entry =
++            malloc(sizeof(*entry) + bin_size);
++
++         if (entry) {
++            memcpy(entry->key, key, sizeof(key));
++            entry->data = *data;
++            for (unsigned u = 0; u < ARRAY_SIZE(entry->data.common.desc_sets);
++                 u++) {
++               entry->data.common.desc_sets[u].bindings = NULL;
++               entry->data.common.desc_sets[u].binding_count = 0;
++            }
++            entry->num_tile_buffers = load_op->num_tile_buffers;
++            entry->const_shareds_count = load_op->const_shareds_count;
++            entry->shareds_count = load_op->shareds_count;
++            entry->bin_size = bin_size;
++            memcpy(entry->bin, bin, bin_size);
++
++            simple_mtx_lock(&device->loadop_cache_mtx);
++            if (_mesa_hash_table_search(device->loadop_cache, entry->key))
++               free(entry);
++            else
++               _mesa_hash_table_insert(device->loadop_cache, entry->key, entry);
++            simple_mtx_unlock(&device->loadop_cache_mtx);
++         }
++      }
++   }
+ 
+    VkResult result = pvr_gpu_upload_usc(device,
+-                                        pco_shader_binary_data(loadop),
+-                                        pco_shader_binary_size(loadop),
++                                        bin,
++                                        bin_size,
+                                         cache_line_size,
+                                         &load_op->usc_frag_prog_bo);
+ 
+@@ -665,12 +836,12 @@ pvr_arch_load_op_shader_generate(struct pvr_device *device,
+    result =
+       pvr_pds_fragment_program_create_and_upload(device,
+                                                  allocator,
+-                                                 loadop,
++                                                 data,
+                                                  load_op->usc_frag_prog_bo,
+                                                  &load_op->pds_frag_prog,
+                                                  msaa);
+ 
+-   load_op->temps_count = pco_shader_data(loadop)->common.temps;
++   load_op->temps_count = data->common.temps;
+    ralloc_free(loadop);
+ 
+    if (result != VK_SUCCESS)
+diff --git a/src/imagination/vulkan/pvr_device.h b/src/imagination/vulkan/pvr_device.h
+index 7f60fe4cae4..3ec0f3a4e45 100644
+--- a/src/imagination/vulkan/pvr_device.h
++++ b/src/imagination/vulkan/pvr_device.h
+@@ -204,6 +204,13 @@ struct pvr_device {
+     */
+    simple_mtx_t rt_cache_mtx;
+    uint32_t rt_cache_count;
++
++   /* PROTOTYPE: compiled load-op shaders, keyed by their inputs. */
++   simple_mtx_t loadop_cache_mtx;
++   struct hash_table *loadop_cache;
++
++   /* PROTOTYPE: compiled end-of-tile shaders, keyed by their inputs. */
++   struct hash_table *eot_cache;
+    struct pvr_rt_cache_entry {
+       uint32_t width;
+       uint32_t height;
+diff --git a/src/imagination/vulkan/pvr_mrt.h b/src/imagination/vulkan/pvr_mrt.h
+index 249a913f770..816855b65fe 100644
+--- a/src/imagination/vulkan/pvr_mrt.h
++++ b/src/imagination/vulkan/pvr_mrt.h
+@@ -230,4 +230,8 @@ void PVR_PER_ARCH(mrt_load_op_state_cleanup)(const struct pvr_device *device,
+ 
+ #endif /* PVR_PER_ARCH */
+ 
++/* PROTOTYPE: load-op shader cache, see pvr_arch_mrt.c. */
++struct hash_table *pvr_loadop_cache_create(void);
++void pvr_loadop_cache_destroy(struct hash_table *cache);
++
+ #endif /* PVR_MRT_H */
+-- 
+2.55.0
+

@@ -1,0 +1,681 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Ryan Brue <ryanbrue.dev@gmail.com>
+Date: Wed, 4 Nov 2026 07:42:00 -0600
+Subject: [PATCH] PROTOTYPE pvr: cache compiled graphics pipelines
+
+Local experiment for amazon-suez, never to be sent (Imagination declines
+LLM-generated code in src/imagination).
+
+pvr took a VkPipelineCache and never used it, so every graphics pipeline
+was compiled from SPIR-V in every process: about 0.7 s of a GTK4 app's
+first frame on GX6250 (zink's pipelines for GSK's GL renderer, measured
+with perf). Cache the compiled result of a whole graphics pipeline (both
+stages' pco_data and binding tables, binaries, the fragment shader's
+varying interpolation) as a raw-data object, which the runtime also puts
+in the disk cache. A device-level weak cache covers callers that pass no
+VkPipelineCache.
+
+The key hashes the stages (vk_pipeline_hash_shader_stage), the layout's
+set-layout hashes and push ranges, the graphics state by value (all_state
+is now zeroed before vk_graphics_pipeline_state_fill() so padding is
+deterministic; the sample-locations pointer is hashed by value), the
+enabled features, and PCO_DEBUG, PVR_DEBUG and SUEZ_PVR_2D_VIEW_OF_3D.
+Render-pass pipelines, capture flags and transform feedback are not
+cached. SUEZ_PVR_NO_PIPELINE_CACHE disables it; SUEZ_PVR_CACHE_DEBUG
+prints hits and misses.
+
+Measured on the board: gnome-calculator on GSK's GL renderer, 7 pipelines
+per launch, all hit from the second launch with an unchanged Mesa GL
+shader cache; gles-layers check and probes still pass.
+
+Generated-by: LLM
+---
+ src/imagination/vulkan/pvr_arch_device.c   |  11 +
+ src/imagination/vulkan/pvr_arch_pipeline.c | 467 +++++++++++++++++++--
+ 2 files changed, 452 insertions(+), 26 deletions(-)
+
+diff --git a/src/imagination/vulkan/pvr_arch_device.c b/src/imagination/vulkan/pvr_arch_device.c
+index bd2a5ea049b..120055d86af 100644
+--- a/src/imagination/vulkan/pvr_arch_device.c
++++ b/src/imagination/vulkan/pvr_arch_device.c
+@@ -13,6 +13,7 @@
+ #include "pvr_device.h"
+ 
+ #include "vk_log.h"
++#include "vk_pipeline_cache.h"
+ 
+ #include "hwdef/pvr_hw_utils.h"
+ 
+@@ -1026,6 +1027,14 @@ VkResult PVR_PER_ARCH(create_device)(struct pvr_physical_device *pdevice,
+ 
+    *pDevice = pvr_device_to_handle(device);
+ 
++   /* PROTOTYPE: a device-level weak pipeline cache, so graphics pipelines
++    * created without a VkPipelineCache still reach the disk cache.
++    */
++   device->vk.mem_cache = vk_pipeline_cache_create(
++      &device->vk,
++      &(struct vk_pipeline_cache_create_info){ .weak_ref = true },
++      NULL);
++
+    return VK_SUCCESS;
+ 
+ err_pvr_border_color_table_finish:
+@@ -1145,6 +1154,8 @@ void PVR_PER_ARCH(destroy_device)(struct pvr_device *device,
+    pvr_bo_store_destroy(device);
+    pvr_winsys_destroy(device->ws);
+    p_atomic_dec(&device->instance->active_device_count);
++   if (device->vk.mem_cache)
++      vk_pipeline_cache_destroy(device->vk.mem_cache, NULL);
+    vk_device_finish(&device->vk);
+    vk_free(&device->vk.alloc, device);
+ }
+diff --git a/src/imagination/vulkan/pvr_arch_pipeline.c b/src/imagination/vulkan/pvr_arch_pipeline.c
+index 4de685b4de0..18b11c6edb3 100644
+--- a/src/imagination/vulkan/pvr_arch_pipeline.c
++++ b/src/imagination/vulkan/pvr_arch_pipeline.c
+@@ -127,12 +127,11 @@ static VkResult pvr_pds_coeff_program_create_and_upload(
+ static VkResult pvr_pds_fragment_program_create(
+    struct pvr_device *device,
+    const VkAllocationCallbacks *allocator,
+-   pco_shader *fs,
++   const pco_data *fs_data,
+    struct pvr_fragment_shader_state *fragment_state)
+ {
+    struct pvr_pds_kickusc_program *program =
+       &fragment_state->pds_fragment_program;
+-   pco_data *fs_data = pco_shader_data(fs);
+    uint32_t staging_buffer_size;
+    uint32_t *staging_buffer;
+ 
+@@ -1133,12 +1132,11 @@ pvr_graphics_pipeline_destroy(struct pvr_device *const device,
+ }
+ 
+ static void pvr_vertex_state_save(struct pvr_graphics_pipeline *gfx_pipeline,
+-                                  pco_shader *vs)
++                                  const pco_data *shader_data)
+ {
+    struct pvr_vertex_shader_state *vertex_state =
+       &gfx_pipeline->shader_state.vertex;
+ 
+-   const pco_data *shader_data = pco_shader_data(vs);
+    memcpy(&gfx_pipeline->vs_data, shader_data, sizeof(*shader_data));
+ 
+    /* This ends up unused since we'll use the temp_usage for the PDS program we
+@@ -1149,12 +1147,11 @@ static void pvr_vertex_state_save(struct pvr_graphics_pipeline *gfx_pipeline,
+ }
+ 
+ static void pvr_fragment_state_save(struct pvr_graphics_pipeline *gfx_pipeline,
+-                                    pco_shader *fs)
++                                    const pco_data *shader_data)
+ {
+    struct pvr_fragment_shader_state *fragment_state =
+       &gfx_pipeline->shader_state.fragment;
+ 
+-   const pco_data *shader_data = pco_shader_data(fs);
+    memcpy(&gfx_pipeline->fs_data, shader_data, sizeof(*shader_data));
+ 
+    if (shader_data->fs.uses.depth_feedback)
+@@ -1293,17 +1290,19 @@ static void pvr_graphics_pipeline_setup_vertex_dma(
+    }
+ }
+ 
++/* PROTOTYPE: takes the fragment shader's read varyings and their
++ * interpolation modes instead of its NIR, so a cached pipeline can use it.
++ */
+ static void pvr_graphics_pipeline_setup_fragment_coeff_program(
+    struct pvr_graphics_pipeline *gfx_pipeline,
+-   nir_shader *fs)
++   uint64_t varyings_used,
++   const uint8_t interp[64])
+ {
+    struct pvr_fragment_shader_state *fragment_state =
+       &gfx_pipeline->shader_state.fragment;
+    struct pvr_pds_coeff_loading_program *frag_coeff_program =
+       &fragment_state->pds_coeff_program;
+ 
+-   uint64_t varyings_used = fs->info.inputs_read &
+-                            BITFIELD64_RANGE(VARYING_SLOT_VAR0, MAX_VARYING);
+    pco_vs_data *vs_data = &gfx_pipeline->vs_data.vs;
+    pco_fs_data *fs_data = &gfx_pipeline->fs_data.fs;
+ 
+@@ -1354,10 +1353,6 @@ static void pvr_graphics_pipeline_setup_fragment_coeff_program(
+    }
+ 
+    u_foreach_bit64 (varying, varyings_used) {
+-      nir_variable *var =
+-         nir_find_variable_with_location(fs, nir_var_shader_in, varying);
+-      assert(var);
+-
+       pco_range *cf_range = &fs_data->varyings[varying];
+       assert(cf_range->count > 0);
+       assert(!(cf_range->start % ROGUE_USC_COEFFICIENT_SET_SIZE));
+@@ -1397,7 +1392,7 @@ static void pvr_graphics_pipeline_setup_fragment_coeff_program(
+          douti_src.f16 = false;
+          douti_src.f16_offset = douti_src.f32_offset;
+ 
+-         switch (var->data.interpolation) {
++         switch (interp[varying]) {
+          case INTERP_MODE_SMOOTH:
+             douti_src.perspective = true;
+             FALLTHROUGH;
+@@ -2899,6 +2894,317 @@ static bool pvr_build_fs_passthrough(bool no_fragment_shader,
+    return is_arch_rogue && no_fragment_shader;
+ }
+ 
++/* PROTOTYPE: graphics pipeline cache.
++ *
++ * pvr ignored VkPipelineCache, so every pipeline was compiled from SPIR-V on
++ * every process start (zink's and GTK's pipelines: ~0.7 s of a GTK app's
++ * first frame on GX6250). This caches the compiled result of a whole
++ * graphics pipeline as a raw blob, keyed by everything the compile reads:
++ * the stages, the layout, the graphics state, the enabled features and the
++ * compiler's environment switches. The runtime backs it with the disk cache.
++ * Not cached: render-pass pipelines, capture flags, transform feedback.
++ */
++#define PVR_GFX_CACHE_MAGIC 0x47525650u /* "PVRG" */
++#define PVR_GFX_CACHE_VERSION 1u
++
++struct pvr_gfx_cache_hdr {
++   uint32_t magic;
++   uint32_t version;
++   uint32_t has_fs;
++   uint32_t fs_passthrough;
++   uint32_t vs_bin_size;
++   uint32_t fs_bin_size;
++   uint64_t fs_varyings_used;
++   uint8_t fs_interp[64];
++   uint32_t vs_binding_counts[PVR_MAX_DESCRIPTOR_SETS];
++   uint32_t fs_binding_counts[PVR_MAX_DESCRIPTOR_SETS];
++   pco_data vs_data;
++   pco_data fs_data;
++};
++
++static void pvr_gfx_cache_hash_str(struct mesa_blake3 *ctx, const char *name)
++{
++   const char *v = getenv(name);
++   _mesa_blake3_update(ctx, name, strlen(name) + 1);
++   if (v)
++      _mesa_blake3_update(ctx, v, strlen(v) + 1);
++   else
++      _mesa_blake3_update(ctx, "", 1);
++}
++
++#define PVR_GFX_CACHE_HASH_STATE(ctx, ptr)                     \
++   do {                                                       \
++      const uint8_t present = (ptr) != NULL;                  \
++      _mesa_blake3_update(ctx, &present, sizeof(present));    \
++      if (ptr)                                                \
++         _mesa_blake3_update(ctx, (ptr), sizeof(*(ptr)));     \
++   } while (0)
++
++static void
++pvr_gfx_pipeline_cache_key(const struct pvr_device *device,
++                           const VkGraphicsPipelineCreateInfo *pCreateInfo,
++                           const struct pvr_graphics_pipeline *gfx_pipeline,
++                           const struct vk_graphics_pipeline_state *state,
++                           blake3_hash key)
++{
++   const struct vk_pipeline_layout *layout = gfx_pipeline->base.layout;
++   struct mesa_blake3 ctx;
++
++   _mesa_blake3_init(&ctx);
++
++   static const char tag[] = "pvr-gfx-pipeline-v1";
++   _mesa_blake3_update(&ctx, tag, sizeof(tag));
++   _mesa_blake3_update(&ctx,
++                       &gfx_pipeline->base.pipeline_flags,
++                       sizeof(gfx_pipeline->base.pipeline_flags));
++
++   for (mesa_shader_stage stage = 0; stage < MESA_SHADER_STAGES; ++stage) {
++      const size_t stage_index = gfx_pipeline->stage_indices[stage];
++      blake3_hash stage_hash;
++      const uint32_t s = stage;
++
++      if (stage_index == ~0)
++         continue;
++
++      vk_pipeline_hash_shader_stage(gfx_pipeline->base.pipeline_flags,
++                                    &pCreateInfo->pStages[stage_index],
++                                    NULL,
++                                    stage_hash);
++      _mesa_blake3_update(&ctx, &s, sizeof(s));
++      _mesa_blake3_update(&ctx, stage_hash, sizeof(stage_hash));
++   }
++
++   _mesa_blake3_update(&ctx, &layout->set_count, sizeof(layout->set_count));
++   for (uint32_t i = 0; i < layout->set_count; i++) {
++      static const blake3_hash zero = { 0 };
++      const struct vk_descriptor_set_layout *set_layout =
++         layout->set_layouts[i];
++
++      _mesa_blake3_update(&ctx,
++                          set_layout ? set_layout->blake3 : zero,
++                          sizeof(blake3_hash));
++   }
++   _mesa_blake3_update(&ctx,
++                       &layout->push_range_count,
++                       sizeof(layout->push_range_count));
++   _mesa_blake3_update(&ctx,
++                       layout->push_ranges,
++                       layout->push_range_count *
++                          sizeof(layout->push_ranges[0]));
++
++   /* The state structs are hashed by value: pvr_graphics_pipeline_init()
++    * zeroes them before vk_graphics_pipeline_state_fill(), so their padding
++    * is deterministic. The multisample state's one pointer is hashed by
++    * what it points to.
++    */
++   PVR_GFX_CACHE_HASH_STATE(&ctx, state->vi);
++   PVR_GFX_CACHE_HASH_STATE(&ctx, state->ia);
++   PVR_GFX_CACHE_HASH_STATE(&ctx, state->ts);
++   PVR_GFX_CACHE_HASH_STATE(&ctx, state->vp);
++   PVR_GFX_CACHE_HASH_STATE(&ctx, state->dr);
++   PVR_GFX_CACHE_HASH_STATE(&ctx, state->rs);
++   PVR_GFX_CACHE_HASH_STATE(&ctx, state->fsr);
++   PVR_GFX_CACHE_HASH_STATE(&ctx, state->ds);
++   PVR_GFX_CACHE_HASH_STATE(&ctx, state->cb);
++   PVR_GFX_CACHE_HASH_STATE(&ctx, state->ial);
++   PVR_GFX_CACHE_HASH_STATE(&ctx, state->cal);
++   PVR_GFX_CACHE_HASH_STATE(&ctx, state->mv);
++   PVR_GFX_CACHE_HASH_STATE(&ctx, state->rp);
++   if (state->ms) {
++      struct vk_multisample_state ms = *state->ms;
++
++      ms.sample_locations = NULL;
++      PVR_GFX_CACHE_HASH_STATE(&ctx, &ms);
++      PVR_GFX_CACHE_HASH_STATE(&ctx, state->ms->sample_locations);
++   } else {
++      const struct vk_multisample_state *none = NULL;
++      PVR_GFX_CACHE_HASH_STATE(&ctx, none);
++   }
++   _mesa_blake3_update(&ctx, state->dynamic, sizeof(state->dynamic));
++   _mesa_blake3_update(&ctx,
++                       &state->pipeline_flags,
++                       sizeof(state->pipeline_flags));
++   _mesa_blake3_update(&ctx,
++                       &state->feedback_loop_not_input_only,
++                       sizeof(state->feedback_loop_not_input_only));
++   _mesa_blake3_update(&ctx,
++                       &state->rasterization_order_access,
++                       sizeof(state->rasterization_order_access));
++
++   _mesa_blake3_update(&ctx,
++                       &device->vk.enabled_features,
++                       sizeof(device->vk.enabled_features));
++
++   pvr_gfx_cache_hash_str(&ctx, "PCO_DEBUG");
++   pvr_gfx_cache_hash_str(&ctx, "PVR_DEBUG");
++   pvr_gfx_cache_hash_str(&ctx, "SUEZ_PVR_2D_VIEW_OF_3D");
++
++   _mesa_blake3_final(&ctx, key);
++}
++
++static void pvr_gfx_cache_fs_varyings(nir_shader *fs,
++                                      uint64_t *varyings_used,
++                                      uint8_t interp[64])
++{
++   *varyings_used = fs->info.inputs_read &
++                    BITFIELD64_RANGE(VARYING_SLOT_VAR0, MAX_VARYING);
++
++   u_foreach_bit64 (varying, *varyings_used) {
++      nir_variable *var =
++         nir_find_variable_with_location(fs, nir_var_shader_in, varying);
++      assert(var);
++      interp[varying] = var->data.interpolation;
++   }
++}
++
++/* Serializes a compiled pipeline; returns a malloc'd blob or NULL. */
++static void *pvr_gfx_cache_serialize(const pco_data *vs_data,
++                                     const void *vs_bin,
++                                     uint32_t vs_bin_size,
++                                     const pco_data *fs_data,
++                                     const void *fs_bin,
++                                     uint32_t fs_bin_size,
++                                     bool fs_passthrough,
++                                     uint64_t fs_varyings_used,
++                                     const uint8_t fs_interp[64],
++                                     size_t *size_out)
++{
++   struct pvr_gfx_cache_hdr hdr = {
++      .magic = PVR_GFX_CACHE_MAGIC,
++      .version = PVR_GFX_CACHE_VERSION,
++      .has_fs = fs_data != NULL,
++      .fs_passthrough = fs_passthrough,
++      .vs_bin_size = vs_bin_size,
++      .fs_bin_size = fs_bin_size,
++      .fs_varyings_used = fs_varyings_used,
++   };
++   size_t size = sizeof(hdr) + vs_bin_size + fs_bin_size;
++
++   memcpy(hdr.fs_interp, fs_interp, sizeof(hdr.fs_interp));
++   hdr.vs_data = *vs_data;
++   if (fs_data)
++      hdr.fs_data = *fs_data;
++
++   for (unsigned u = 0; u < PVR_MAX_DESCRIPTOR_SETS; u++) {
++      hdr.vs_binding_counts[u] =
++         vs_data->common.desc_sets[u].bindings
++            ? vs_data->common.desc_sets[u].binding_count
++            : 0;
++      hdr.vs_data.common.desc_sets[u].bindings = NULL;
++      size += hdr.vs_binding_counts[u] * sizeof(pco_binding_data);
++
++      if (fs_data) {
++         hdr.fs_binding_counts[u] =
++            fs_data->common.desc_sets[u].bindings
++               ? fs_data->common.desc_sets[u].binding_count
++               : 0;
++         hdr.fs_data.common.desc_sets[u].bindings = NULL;
++         size += hdr.fs_binding_counts[u] * sizeof(pco_binding_data);
++      }
++   }
++   hdr.vs_data.vs.xfb_info = NULL;
++
++   uint8_t *blob = malloc(size);
++   if (!blob)
++      return NULL;
++
++   uint8_t *p = blob;
++   memcpy(p, &hdr, sizeof(hdr));
++   p += sizeof(hdr);
++   for (unsigned u = 0; u < PVR_MAX_DESCRIPTOR_SETS; u++) {
++      size_t n = hdr.vs_binding_counts[u] * sizeof(pco_binding_data);
++      if (n)
++         memcpy(p, vs_data->common.desc_sets[u].bindings, n);
++      p += n;
++   }
++   for (unsigned u = 0; u < PVR_MAX_DESCRIPTOR_SETS; u++) {
++      size_t n = hdr.fs_binding_counts[u] * sizeof(pco_binding_data);
++      if (n)
++         memcpy(p, fs_data->common.desc_sets[u].bindings, n);
++      p += n;
++   }
++   memcpy(p, vs_bin, vs_bin_size);
++   p += vs_bin_size;
++   if (fs_bin_size)
++      memcpy(p, fs_bin, fs_bin_size);
++   p += fs_bin_size;
++   assert(p == blob + size);
++
++   *size_out = size;
++   return blob;
++}
++
++/* Restores a compiled pipeline from a blob. On success the binaries point
++ * into the blob and the binding arrays are rzalloc'd, as
++ * pvr_init_descriptors() does.
++ */
++static bool pvr_gfx_cache_deserialize(const void *data,
++                                      size_t size,
++                                      pco_data *vs_data,
++                                      const void **vs_bin,
++                                      uint32_t *vs_bin_size,
++                                      pco_data *fs_data,
++                                      bool *has_fs,
++                                      const void **fs_bin,
++                                      uint32_t *fs_bin_size,
++                                      bool *fs_passthrough,
++                                      uint64_t *fs_varyings_used,
++                                      uint8_t fs_interp[64])
++{
++   struct pvr_gfx_cache_hdr hdr;
++   const uint8_t *p = data;
++   size_t need = sizeof(hdr);
++
++   if (size < sizeof(hdr))
++      return false;
++   memcpy(&hdr, p, sizeof(hdr));
++   if (hdr.magic != PVR_GFX_CACHE_MAGIC ||
++       hdr.version != PVR_GFX_CACHE_VERSION)
++      return false;
++
++   for (unsigned u = 0; u < PVR_MAX_DESCRIPTOR_SETS; u++) {
++      need += (hdr.vs_binding_counts[u] + hdr.fs_binding_counts[u]) *
++              sizeof(pco_binding_data);
++   }
++   need += hdr.vs_bin_size + hdr.fs_bin_size;
++   if (size != need)
++      return false;
++
++   p += sizeof(hdr);
++   *vs_data = hdr.vs_data;
++   *fs_data = hdr.fs_data;
++
++   for (unsigned v = 0; v < 2; v++) {
++      pco_data *d = v ? fs_data : vs_data;
++      const uint32_t *counts = v ? hdr.fs_binding_counts : hdr.vs_binding_counts;
++
++      for (unsigned u = 0; u < PVR_MAX_DESCRIPTOR_SETS; u++) {
++         size_t n = counts[u] * sizeof(pco_binding_data);
++
++         d->common.desc_sets[u].bindings = NULL;
++         if (!counts[u])
++            continue;
++
++         d->common.desc_sets[u].bindings =
++            rzalloc_array_size(NULL, sizeof(pco_binding_data), counts[u]);
++         memcpy(d->common.desc_sets[u].bindings, p, n);
++         p += n;
++      }
++   }
++
++   *vs_bin = p;
++   *vs_bin_size = hdr.vs_bin_size;
++   p += hdr.vs_bin_size;
++   *fs_bin = hdr.fs_bin_size ? p : NULL;
++   *fs_bin_size = hdr.fs_bin_size;
++   *has_fs = hdr.has_fs;
++   *fs_passthrough = hdr.fs_passthrough;
++   *fs_varyings_used = hdr.fs_varyings_used;
++   memcpy(fs_interp, hdr.fs_interp, sizeof(hdr.fs_interp));
++
++   return true;
++}
++
+ /* Compiles and uploads shaders and PDS programs. */
+ static VkResult
+ pvr_graphics_pipeline_compile(struct pvr_device *const device,
+@@ -2982,6 +3288,66 @@ pvr_graphics_pipeline_compile(struct pvr_device *const device,
+    uint32_t vtx_dma_count = 0;
+    bool build_fs_passthrough = false;
+ 
++   /* PROTOTYPE: pipeline cache; see pvr_gfx_pipeline_cache_key(). */
++   struct vk_pipeline_cache *pcache = cache ? cache : device->vk.mem_cache;
++   const bool cacheable =
++      pcache && !pCreateInfo->renderPass &&
++      !(pCreateInfo->flags &
++        (VK_PIPELINE_CREATE_CAPTURE_STATISTICS_BIT_KHR |
++         VK_PIPELINE_CREATE_CAPTURE_INTERNAL_REPRESENTATIONS_BIT_KHR)) &&
++      !getenv("SUEZ_PVR_NO_PIPELINE_CACHE");
++   struct vk_pipeline_cache_object *cached = NULL;
++   blake3_hash cache_key;
++   pco_data cached_vs_data, cached_fs_data;
++   const void *vs_bin = NULL, *fs_bin = NULL;
++   uint32_t vs_bin_size = 0, fs_bin_size = 0;
++   const pco_data *vs_data_src = NULL, *fs_data_src = NULL;
++   bool have_fs = false;
++   uint64_t fs_varyings_used = 0;
++   uint8_t fs_interp[64] = { 0 };
++
++   if (cacheable) {
++      pvr_gfx_pipeline_cache_key(device, pCreateInfo, gfx_pipeline, state,
++                                 cache_key);
++      cached = vk_pipeline_cache_lookup_object(pcache,
++                                               cache_key,
++                                               sizeof(cache_key),
++                                               &vk_raw_data_cache_object_ops,
++                                               NULL);
++      if (getenv("SUEZ_PVR_CACHE_DEBUG")) {
++         char hex[BLAKE3_HEX_LEN];
++         _mesa_blake3_format(hex, cache_key);
++         fprintf(stderr, "pvr-gfx-cache: %s %.16s\n",
++                 cached ? "hit " : "miss", hex);
++      }
++      if (cached) {
++         const struct vk_raw_data_cache_object *raw =
++            container_of(cached, struct vk_raw_data_cache_object, base);
++
++         if (pvr_gfx_cache_deserialize(raw->data,
++                                       raw->data_size,
++                                       &cached_vs_data,
++                                       &vs_bin,
++                                       &vs_bin_size,
++                                       &cached_fs_data,
++                                       &have_fs,
++                                       &fs_bin,
++                                       &fs_bin_size,
++                                       &build_fs_passthrough,
++                                       &fs_varyings_used,
++                                       fs_interp)) {
++            vs_data_src = &cached_vs_data;
++            fs_data_src = have_fs ? &cached_fs_data : NULL;
++            if (!pCreateInfo->renderPass)
++               pvr_arch_destroy_mrt_setup(device, &mrt_setup);
++            goto compiled;
++         }
++
++         vk_pipeline_cache_object_unref(&device->vk, cached);
++         cached = NULL;
++      }
++   }
++
+    for (mesa_shader_stage stage = 0; stage < MESA_SHADER_STAGES; ++stage) {
+       size_t stage_index = gfx_pipeline->stage_indices[stage];
+ 
+@@ -3097,7 +3463,49 @@ pvr_graphics_pipeline_compile(struct pvr_device *const device,
+       pco_encode_ir(pco_ctx, *pco);
+    }
+ 
+-   pvr_vertex_state_save(gfx_pipeline, *vs);
++   vs_data_src = pco_shader_data(*vs);
++   vs_bin = pco_shader_binary_data(*vs);
++   vs_bin_size = pco_shader_binary_size(*vs);
++   have_fs = *fs != NULL;
++   if (have_fs) {
++      fs_data_src = pco_shader_data(*fs);
++      fs_bin = pco_shader_binary_data(*fs);
++      fs_bin_size = pco_shader_binary_size(*fs);
++      pvr_gfx_cache_fs_varyings(nir_shaders[MESA_SHADER_FRAGMENT],
++                                &fs_varyings_used,
++                                fs_interp);
++   }
++
++   if (cacheable && !vs_data_src->vs.xfb_info) {
++      size_t blob_size;
++      void *blob = pvr_gfx_cache_serialize(vs_data_src,
++                                           vs_bin,
++                                           vs_bin_size,
++                                           fs_data_src,
++                                           fs_bin,
++                                           fs_bin_size,
++                                           build_fs_passthrough,
++                                           fs_varyings_used,
++                                           fs_interp,
++                                           &blob_size);
++      if (blob) {
++         struct vk_raw_data_cache_object *raw =
++            vk_raw_data_cache_object_create(&device->vk,
++                                            cache_key,
++                                            sizeof(cache_key),
++                                            blob,
++                                            blob_size);
++         free(blob);
++         if (raw) {
++            struct vk_pipeline_cache_object *obj =
++               vk_pipeline_cache_add_object(pcache, &raw->base);
++            vk_pipeline_cache_object_unref(&device->vk, obj);
++         }
++      }
++   }
++
++compiled:
++   pvr_vertex_state_save(gfx_pipeline, vs_data_src);
+ 
+    if (pCreateInfo->flags & VK_PIPELINE_CREATE_CAPTURE_STATISTICS_BIT_KHR) {
+       struct pvr_stats stats = pco_get_pvr_stats(*vs);
+@@ -3126,8 +3534,8 @@ pvr_graphics_pipeline_compile(struct pvr_device *const device,
+                                           &vtx_dma_count);
+ 
+    result = pvr_gpu_upload_usc(device,
+-                               pco_shader_binary_data(*vs),
+-                               pco_shader_binary_size(*vs),
++                               vs_bin,
++                               vs_bin_size,
+                                cache_line_size,
+                                &vertex_state->shader_bo);
+    if (result != VK_SUCCESS)
+@@ -3137,8 +3545,8 @@ pvr_graphics_pipeline_compile(struct pvr_device *const device,
+    if (result != VK_SUCCESS)
+       goto err_free_vertex_bo;
+ 
+-   if (*fs) {
+-      pvr_fragment_state_save(gfx_pipeline, *fs);
++   if (have_fs) {
++      pvr_fragment_state_save(gfx_pipeline, fs_data_src);
+       fragment_state->is_passthrough = build_fs_passthrough;
+ 
+       if (pCreateInfo->flags & VK_PIPELINE_CREATE_CAPTURE_STATISTICS_BIT_KHR) {
+@@ -3161,13 +3569,13 @@ pvr_graphics_pipeline_compile(struct pvr_device *const device,
+             nir_shader_as_str(nir_shaders[MESA_SHADER_FRAGMENT], NULL);
+       }
+ 
+-      pvr_graphics_pipeline_setup_fragment_coeff_program(
+-         gfx_pipeline,
+-         nir_shaders[MESA_SHADER_FRAGMENT]);
++      pvr_graphics_pipeline_setup_fragment_coeff_program(gfx_pipeline,
++                                                         fs_varyings_used,
++                                                         fs_interp);
+ 
+       result = pvr_gpu_upload_usc(device,
+-                                  pco_shader_binary_data(*fs),
+-                                  pco_shader_binary_size(*fs),
++                                  fs_bin,
++                                  fs_bin_size,
+                                   cache_line_size,
+                                   &fragment_state->shader_bo);
+       if (result != VK_SUCCESS)
+@@ -3181,7 +3589,7 @@ pvr_graphics_pipeline_compile(struct pvr_device *const device,
+ 
+       result = pvr_pds_fragment_program_create(device,
+                                                allocator,
+-                                               *fs,
++                                               fs_data_src,
+                                                fragment_state);
+       if (result != VK_SUCCESS)
+          goto err_free_coeff_program;
+@@ -3231,6 +3639,8 @@ pvr_graphics_pipeline_compile(struct pvr_device *const device,
+    /* assert(pvr_pds_descriptor_program_variables.temp_buff_total_size == 0); */
+    /* TODO: Implement spilling with the above. */
+ 
++   if (cached)
++      vk_pipeline_cache_object_unref(&device->vk, cached);
+    ralloc_free(shader_mem_ctx);
+ 
+    return VK_SUCCESS;
+@@ -3262,8 +3672,10 @@ err_free_pipeline_xfb_state:
+ err_free_vertex_bo:
+    pvr_bo_suballoc_free(vertex_state->shader_bo);
+ err_free_build_context:
++   if (cached)
++      vk_pipeline_cache_object_unref(&device->vk, cached);
+    ralloc_free(shader_mem_ctx);
+-   if (!pCreateInfo->renderPass)
++   if (!pCreateInfo->renderPass && !cached)
+       pvr_arch_destroy_mrt_setup(device, &mrt_setup);
+    return result;
+ }
+@@ -3367,6 +3779,9 @@ pvr_graphics_pipeline_init(struct pvr_device *device,
+       &gfx_pipeline->dynamic_state;
+    struct vk_graphics_pipeline_all_state all_state;
+    struct vk_graphics_pipeline_state state = { 0 };
++
++   /* PROTOTYPE: the pipeline cache key hashes these by value. */
++   memset(&all_state, 0, sizeof(all_state));
+    struct vk_multiview_state mv_state;
+    struct vk_render_pass_state rp_state;
+    VkResult result;
+-- 
+2.55.0
+

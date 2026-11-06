@@ -1,0 +1,52 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Ryan Brue <ryanbrue.dev@gmail.com>
+Date: Thu, 5 Nov 2026 22:43:33 -0600
+Subject: [PATCH] PROTOTYPE pco: enable the preamble by default
+
+Local experiment for amazon-suez, never to be sent (Imagination declines
+LLM-generated code in src/imagination).
+
+With the vertex-preamble fix (29693961815) the preamble renders correctly
+under zink and is the largest single win on GX6250 (a wlroots colour
+layer 28.5 -> 8.6 ms). Turn it on unless SUEZ_PCO_NO_PREAMBLE is set, so
+the packaged driver needs no PCO_DEBUG in the session environment. The
+switch is part of the pipeline cache key.
+
+Generated-by: LLM
+---
+ src/imagination/pco/pco_debug.c            | 6 ++++++
+ src/imagination/vulkan/pvr_arch_pipeline.c | 1 +
+ 2 files changed, 7 insertions(+)
+
+diff --git a/src/imagination/pco/pco_debug.c b/src/imagination/pco/pco_debug.c
+index 0da01774eb1..052aa0e122d 100644
+--- a/src/imagination/pco/pco_debug.c
++++ b/src/imagination/pco/pco_debug.c
+@@ -82,6 +82,12 @@ static void pco_debug_init_once(void)
+ {
+    /* Get debug flags. */
+    pco_debug = debug_get_option_pco_debug();
++
++   /* PROTOTYPE (amazon-suez): the experimental preamble is on by default;
++    * SUEZ_PCO_NO_PREAMBLE=1 turns it off again.
++    */
++   if (!getenv("SUEZ_PCO_NO_PREAMBLE"))
++      pco_debug |= PCO_DEBUG_PREAMBLE;
+    pco_debug_print = debug_get_option_pco_debug_print();
+    pco_skip_passes = debug_get_option_pco_skip_passes();
+ 
+diff --git a/src/imagination/vulkan/pvr_arch_pipeline.c b/src/imagination/vulkan/pvr_arch_pipeline.c
+index 879b225ff0f..3bb6d705797 100644
+--- a/src/imagination/vulkan/pvr_arch_pipeline.c
++++ b/src/imagination/vulkan/pvr_arch_pipeline.c
+@@ -3041,6 +3041,7 @@ pvr_gfx_pipeline_cache_key(const struct pvr_device *device,
+    pvr_gfx_cache_hash_str(&ctx, "SUEZ_PVR_CWE");
+    pvr_gfx_cache_hash_str(&ctx, "SUEZ_PCO_ALWAYS_ISP_FB");
+    pvr_gfx_cache_hash_str(&ctx, "SUEZ_PCO_NO_FOLD_SAT");
++   pvr_gfx_cache_hash_str(&ctx, "SUEZ_PCO_NO_PREAMBLE");
+ 
+    _mesa_blake3_final(&ctx, key);
+ }
+-- 
+2.55.0
+

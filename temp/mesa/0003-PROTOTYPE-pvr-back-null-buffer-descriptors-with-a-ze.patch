@@ -1,0 +1,132 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Ryan Brue <ryanbrue.dev@gmail.com>
+Date: Fri, 30 Oct 2026 23:15:30 -0500
+Subject: [PATCH] PROTOTYPE pvr: back null buffer descriptors with a zeroed
+ buffer
+
+Local measurement prototype for amazon-suez, never to be sent. Null
+uniform/storage buffer descriptors point at a 64 KiB zeroed buffer (size
+0) instead of address 0, and UBO accesses drop out of the null-descriptor
+lowering: no branch around every UBO load, so the preamble can hoist them
+(zink requires nullDescriptor). SSBOs, images and textures stay guarded.
+---
+ src/imagination/pco/pco_nir.c                   |  6 +++++-
+ .../vulkan/pvr_arch_descriptor_set.c            | 17 +++++++++++++++--
+ src/imagination/vulkan/pvr_device.h             |  7 +++++++
+ src/imagination/vulkan/pvr_robustness.c         | 13 +++++++++++++
+ 4 files changed, 40 insertions(+), 3 deletions(-)
+
+diff --git a/src/imagination/pco/pco_nir.c b/src/imagination/pco/pco_nir.c
+index 65a193246ec..1451749f1a7 100644
+--- a/src/imagination/pco/pco_nir.c
++++ b/src/imagination/pco/pco_nir.c
+@@ -1017,10 +1017,14 @@ void pco_lower_nir(pco_ctx *ctx, nir_shader *nir, pco_data *data)
+    }
+ 
+    if (data->common.null_descriptor) {
++      /* PROTOTYPE: null UBO descriptors point at a zeroed buffer
++       * (pvr_device::null_buffer), so UBO loads are left unguarded.
++       */
+       NIR_PASS(_,
+                nir,
+                pco_nir_lower_null_descriptors,
+-               pco_nir_lower_null_descriptor_all);
++               pco_nir_lower_null_descriptor_all &
++                  ~pco_nir_lower_null_descriptor_ubo);
+    }
+ 
+    NIR_PASS(_, nir, pco_nir_lower_vk, data);
+diff --git a/src/imagination/vulkan/pvr_arch_descriptor_set.c b/src/imagination/vulkan/pvr_arch_descriptor_set.c
+index 48c09d91092..e1c6d5ca29f 100644
+--- a/src/imagination/vulkan/pvr_arch_descriptor_set.c
++++ b/src/imagination/vulkan/pvr_arch_descriptor_set.c
+@@ -29,7 +29,14 @@ write_buffer(const struct pvr_descriptor_set *set,
+    void *desc_mapping = (uint8_t *)set->mapping + desc_offset;
+ 
+    if (buffer_info->buffer == VK_NULL_HANDLE) {
+-      memset(desc_mapping, 0, sizeof(struct pvr_buffer_descriptor));
++      const struct pvr_device *device =
++         container_of(set->layout->vk.base.device, struct pvr_device, vk);
++      const struct pvr_buffer_descriptor null_desc = {
++         .addr = device->null_buffer->vma->dev_addr.addr,
++         .size = 0,
++      };
++
++      memcpy(desc_mapping, &null_desc, sizeof(null_desc));
+       return;
+    }
+ 
+@@ -61,7 +68,13 @@ write_dynamic_buffer(struct pvr_descriptor_set *set,
+       &set->dynamic_buffers[desc_offset];
+ 
+    if (buffer_info->buffer == VK_NULL_HANDLE) {
+-      memset(desc_mapping, 0, sizeof(*desc_mapping));
++      const struct pvr_device *device =
++         container_of(set->layout->vk.base.device, struct pvr_device, vk);
++
++      *desc_mapping = (struct pvr_buffer_descriptor){
++         .addr = device->null_buffer->vma->dev_addr.addr,
++         .size = 0,
++      };
+       return;
+    }
+ 
+diff --git a/src/imagination/vulkan/pvr_device.h b/src/imagination/vulkan/pvr_device.h
+index 12ae8cc34d5..9f249a9339c 100644
+--- a/src/imagination/vulkan/pvr_device.h
++++ b/src/imagination/vulkan/pvr_device.h
+@@ -58,6 +58,8 @@ struct pvr_compute_query_shader {
+ 
+ struct pvr_render_target;
+ 
++#define PVR_NULL_BUFFER_SIZE (64U * 1024U)
++
+ struct pvr_device {
+    struct vk_device vk;
+    struct pvr_instance *instance;
+@@ -143,6 +145,11 @@ struct pvr_device {
+ 
+    struct pvr_bo *robustness_buffer;
+ 
++   /* PROTOTYPE: zero-filled backing that null uniform/storage buffer
++    * descriptors point at, so that UBO loads need no null-descriptor branch.
++    */
++   struct pvr_bo *null_buffer;
++
+    struct vk_sync *presignaled_sync;
+ 
+    struct {
+diff --git a/src/imagination/vulkan/pvr_robustness.c b/src/imagination/vulkan/pvr_robustness.c
+index edfd66217ce..bc4d59dad5a 100644
+--- a/src/imagination/vulkan/pvr_robustness.c
++++ b/src/imagination/vulkan/pvr_robustness.c
+@@ -135,6 +135,18 @@ VkResult pvr_init_robustness_buffer(struct pvr_device *device)
+    if (result != VK_SUCCESS)
+       return result;
+ 
++   /* New kernel buffers are zeroed. */
++   result = pvr_bo_alloc(device,
++                         device->heaps.general_heap,
++                         PVR_NULL_BUFFER_SIZE,
++                         16,
++                         0,
++                         &device->null_buffer);
++   if (result != VK_SUCCESS) {
++      pvr_bo_free(device, device->robustness_buffer);
++      return result;
++   }
++
+    robustness_buffer_map = device->robustness_buffer->bo->map;
+ 
+ #define ROBUSTNESS_BUFFER_RGBA(format, type, zero, one)                     \
+@@ -245,6 +257,7 @@ VkResult pvr_init_robustness_buffer(struct pvr_device *device)
+ 
+ void pvr_robustness_buffer_finish(struct pvr_device *device)
+ {
++   pvr_bo_free(device, device->null_buffer);
+    pvr_bo_free(device, device->robustness_buffer);
+ }
+ 
+-- 
+2.55.0
+

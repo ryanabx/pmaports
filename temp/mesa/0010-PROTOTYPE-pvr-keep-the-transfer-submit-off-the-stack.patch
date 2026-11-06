@@ -1,0 +1,116 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Ryan Brue <ryanbrue.dev@gmail.com>
+Date: Wed, 4 Nov 2026 06:46:59 -0600
+Subject: [PATCH] PROTOTYPE pvr: keep the transfer submit off the stack
+
+Local experiment for amazon-suez, never to be sent (Imagination declines
+LLM-generated code in src/imagination).
+
+struct pvr_transfer_submit holds 16 transfer prepares, each a full 3D
+state: pvr_queue_transfer() reserved a ~380 KiB stack frame. musl gives
+new threads 128 KiB, so any transfer submitted off the main thread (zink's
+flush thread, Qt's render threads) hit the guard page and crashed. Allocate
+it per call instead.
+
+Generated-by: LLM
+---
+ .../vulkan/pvr_arch_job_transfer.c            | 52 +++++++++++++++----
+ 1 file changed, 42 insertions(+), 10 deletions(-)
+
+diff --git a/src/imagination/vulkan/pvr_arch_job_transfer.c b/src/imagination/vulkan/pvr_arch_job_transfer.c
+index df05efe7e2e..f271bdbb01a 100644
+--- a/src/imagination/vulkan/pvr_arch_job_transfer.c
++++ b/src/imagination/vulkan/pvr_arch_job_transfer.c
+@@ -5945,14 +5945,15 @@ static VkResult pvr_submit_transfer(struct pvr_transfer_ctx *ctx,
+                                                 signal_sync);
+ }
+ 
+-static VkResult pvr_queue_transfer(struct pvr_transfer_ctx *ctx,
+-                                   struct pvr_transfer_cmd *transfer_cmd,
+-                                   struct vk_sync *wait,
+-                                   struct vk_sync *signal_sync)
++static VkResult
++pvr_queue_transfer_submit(struct pvr_transfer_ctx *ctx,
++                          struct pvr_transfer_cmd *transfer_cmd,
++                          struct vk_sync *wait,
++                          struct vk_sync *signal_sync,
++                          struct pvr_transfer_submit *submit)
+ {
+    struct pvr_transfer_prep_data *prep_data = NULL;
+    struct pvr_transfer_prep_data *prev_prep_data;
+-   struct pvr_transfer_submit submit = { 0U };
+    bool finished = false;
+    uint32_t pass = 0U;
+    VkResult result;
+@@ -5979,7 +5980,7 @@ static VkResult pvr_queue_transfer(struct pvr_transfer_ctx *ctx,
+ 
+    while (!finished) {
+       prev_prep_data = prep_data;
+-      prep_data = &submit.prep_array[submit.prep_count++];
++      prep_data = &submit->prep_array[submit->prep_count++];
+ 
+       /* Clear down the memory before we write to this prep. */
+       memset(prep_data, 0U, sizeof(*prep_data));
+@@ -6005,17 +6006,17 @@ static VkResult pvr_queue_transfer(struct pvr_transfer_ctx *ctx,
+          return result;
+ 
+       /* Submit if we have finished the blit or if we are out of prepares. */
+-      if (finished || submit.prep_count == ARRAY_SIZE(submit.prep_array)) {
++      if (finished || submit->prep_count == ARRAY_SIZE(submit->prep_array)) {
+          result = pvr_submit_transfer(ctx,
+-                                      &submit,
++                                      submit,
+                                       wait,
+                                       finished ? signal_sync : NULL);
+          if (result != VK_SUCCESS)
+             return result;
+ 
+          /* Check if we need to reset prep_count. */
+-         if (submit.prep_count == ARRAY_SIZE(submit.prep_array))
+-            submit.prep_count = 0U;
++         if (submit->prep_count == ARRAY_SIZE(submit->prep_array))
++            submit->prep_count = 0U;
+       }
+ 
+       pass++;
+@@ -6024,6 +6025,37 @@ static VkResult pvr_queue_transfer(struct pvr_transfer_ctx *ctx,
+    return VK_SUCCESS;
+ }
+ 
++/* PROTOTYPE: struct pvr_transfer_submit is ~380 KiB (16 prepares, each a
++ * full 3D state), more than a musl thread's 128 KiB default stack, so a
++ * transfer submitted from any thread but the main one overflowed it. Keep it
++ * on the heap.
++ */
++static VkResult pvr_queue_transfer(struct pvr_transfer_ctx *ctx,
++                                   struct pvr_transfer_cmd *transfer_cmd,
++                                   struct vk_sync *wait,
++                                   struct vk_sync *signal_sync)
++{
++   struct pvr_transfer_submit *submit =
++      vk_zalloc(&ctx->device->vk.alloc,
++                sizeof(*submit),
++                8,
++                VK_SYSTEM_ALLOCATION_SCOPE_COMMAND);
++   VkResult result;
++
++   if (!submit)
++      return vk_error(ctx->device, VK_ERROR_OUT_OF_HOST_MEMORY);
++
++   result = pvr_queue_transfer_submit(ctx,
++                                      transfer_cmd,
++                                      wait,
++                                      signal_sync,
++                                      submit);
++
++   vk_free(&ctx->device->vk.alloc, submit);
++
++   return result;
++}
++
+ VkResult pvr_arch_transfer_job_submit(struct pvr_transfer_ctx *ctx,
+                                       struct pvr_sub_cmd_transfer *sub_cmd,
+                                       struct vk_sync *wait_sync,
+-- 
+2.55.0
+

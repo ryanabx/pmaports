@@ -1,0 +1,58 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Ryan Brue <ryanbrue.dev@gmail.com>
+Date: Wed, 4 Nov 2026 07:04:49 -0600
+Subject: [PATCH] PROTOTYPE pvr: don't advertise VK_EXT_image_2d_view_of_3d by
+ default
+
+Local experiment for amazon-suez, never to be sent (Imagination declines
+LLM-generated code in src/imagination).
+
+zink enables image2DViewOf3D/sampler2DViewOf3D when they are offered, and
+pco then lowers every 2D texture sample to a 3D sample with the slice from
+the texture meta and a per-pixel LOD (pco_nir_tex.c), in every shader. On
+GX6250 a full-screen wlroots textured layer (gles-layers, 1200x1920)
+costs 18.0 ms that way and 9.9 ms with the features off (same build,
+SUEZ_PVR_2D_VIEW_OF_3D=1 as the control). SUEZ_PVR_2D_VIEW_OF_3D=1
+advertises them again.
+
+Generated-by: LLM
+---
+ src/imagination/vulkan/pvr_physical_device.c | 15 +++++++++++++++
+ 1 file changed, 15 insertions(+)
+
+diff --git a/src/imagination/vulkan/pvr_physical_device.c b/src/imagination/vulkan/pvr_physical_device.c
+index c34971a10ca..bf9c7ac0ed1 100644
+--- a/src/imagination/vulkan/pvr_physical_device.c
++++ b/src/imagination/vulkan/pvr_physical_device.c
+@@ -242,6 +242,10 @@ static void pvr_physical_device_get_supported_extensions(
+ #endif
+       .IMG_filter_linear_2d = true,
+    };
++
++   /* PROTOTYPE: see pvr_physical_device_get_supported_features(). */
++   if (!getenv("SUEZ_PVR_2D_VIEW_OF_3D"))
++      extensions->EXT_image_2d_view_of_3d = false;
+ }
+ 
+ static void pvr_physical_device_get_supported_features(
+@@ -593,6 +597,17 @@ static void pvr_physical_device_get_supported_features(
+       /* VK_KHR_internally_synchronized_queues */
+       .internallySynchronizedQueues = true,
+    };
++
++   /* PROTOTYPE: with image2DViewOf3D enabled, pco compiles every 2D sample
++    * as a 3D one (slice from the texture meta, per-pixel LOD): a wlroots
++    * textured layer through zink costs 18.0 ms instead of 9.9 ms on GX6250.
++    * zink copes without the extension. Set
++    * SUEZ_PVR_2D_VIEW_OF_3D=1 to advertise it anyway.
++    */
++   if (!getenv("SUEZ_PVR_2D_VIEW_OF_3D")) {
++      features->image2DViewOf3D = false;
++      features->sampler2DViewOf3D = false;
++   }
+ }
+ 
+ static uint32_t get_api_version(void)
+-- 
+2.55.0
+

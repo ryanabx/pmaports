@@ -1,0 +1,221 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Ryan Brue <ryanbrue.dev@gmail.com>
+Date: Fri, 30 Oct 2026 22:38:55 -0500
+Subject: [PATCH] PROTOTYPE pvr: cache render targets for dynamic rendering
+
+Local measurement prototype for amazon-suez, never to be sent (Imagination
+declines LLM-generated code). From the 2026-10-09 fix3 prototype, rebased
+onto main: vkCmdBeginRendering() reuses the HWRT dataset and free list of
+an earlier dynamic render of the same size instead of creating and
+destroying them every time.
+---
+ src/imagination/vulkan/pvr_arch_cmd_buffer.c | 12 ++++
+ src/imagination/vulkan/pvr_arch_device.c     |  5 ++
+ src/imagination/vulkan/pvr_device.c          | 71 ++++++++++++++++++++
+ src/imagination/vulkan/pvr_device.h          | 25 +++++++
+ src/imagination/vulkan/pvr_framebuffer.h     |  4 ++
+ 5 files changed, 117 insertions(+)
+
+diff --git a/src/imagination/vulkan/pvr_arch_cmd_buffer.c b/src/imagination/vulkan/pvr_arch_cmd_buffer.c
+index 9a964be5e48..fa5ae140aa0 100644
+--- a/src/imagination/vulkan/pvr_arch_cmd_buffer.c
++++ b/src/imagination/vulkan/pvr_arch_cmd_buffer.c
+@@ -1284,6 +1284,9 @@ pvr_get_render_target(const struct pvr_renderpass_hwsetup_render *hw_render,
+       break;
+    }
+ 
++   if (rstate->shared_render_targets)
++      return &rstate->shared_render_targets[rt_idx];
++
+    return &rstate->render_targets[rt_idx];
+ }
+ 
+@@ -1782,6 +1785,15 @@ static VkResult pvr_sub_cmd_gfx_job_init(const struct pvr_device_info *dev_info,
+          spm_eot_state->pixel_event_program_data_offset;
+    }
+ 
++   if (cmd_buffer->state.current_sub_cmd->is_dynamic_render &&
++       !rstate->shared_render_targets) {
++      rstate->shared_render_targets =
++         pvr_device_get_cached_render_targets(cmd_buffer->device,
++                                              rstate->width,
++                                              rstate->height,
++                                              rstate->layers);
++   }
++
+    render_target = pvr_get_render_target(hw_render, rstate);
+    job->view_state.rt_datasets = &render_target->rt_dataset[0];
+ 
+diff --git a/src/imagination/vulkan/pvr_arch_device.c b/src/imagination/vulkan/pvr_arch_device.c
+index 7d891d80b15..f0386cf088f 100644
+--- a/src/imagination/vulkan/pvr_arch_device.c
++++ b/src/imagination/vulkan/pvr_arch_device.c
+@@ -994,6 +994,9 @@ VkResult PVR_PER_ARCH(create_device)(struct pvr_physical_device *pdevice,
+    simple_mtx_init(&device->rs_mtx, mtx_plain);
+    list_inithead(&device->render_states);
+ 
++   simple_mtx_init(&device->rt_cache_mtx, mtx_plain);
++   device->rt_cache_count = 0;
++
+    *pDevice = pvr_device_to_handle(device);
+ 
+    return VK_SUCCESS;
+@@ -1087,6 +1090,8 @@ void PVR_PER_ARCH(destroy_device)(struct pvr_device *device,
+    simple_mtx_unlock(&device->rs_mtx);
+    simple_mtx_destroy(&device->rs_mtx);
+ 
++   pvr_device_finish_rt_cache(device);
++
+    pvr_device_dummy_rt_finish(device);
+    pvr_arch_border_color_table_finish(device);
+    pvr_robustness_buffer_finish(device);
+diff --git a/src/imagination/vulkan/pvr_device.c b/src/imagination/vulkan/pvr_device.c
+index 7ba4fb89f4b..19b38e3f5da 100644
+--- a/src/imagination/vulkan/pvr_device.c
++++ b/src/imagination/vulkan/pvr_device.c
+@@ -186,6 +186,77 @@ void pvr_rstate_entry_remove(struct pvr_device *device,
+    simple_mtx_unlock(&device->rs_mtx);
+ }
+ 
++struct pvr_render_target *
++pvr_device_get_cached_render_targets(struct pvr_device *device,
++                                     uint32_t width,
++                                     uint32_t height,
++                                     uint32_t layers)
++{
++   const uint32_t count =
++      PVR_RENDER_TARGETS_PER_FRAMEBUFFER(&device->pdevice->dev_info);
++   struct pvr_render_target *render_targets = NULL;
++
++   simple_mtx_lock(&device->rt_cache_mtx);
++
++   for (uint32_t i = 0; i < device->rt_cache_count; i++) {
++      struct pvr_rt_cache_entry *entry = &device->rt_cache[i];
++
++      if (entry->width == width && entry->height == height &&
++          entry->layers == layers) {
++         render_targets = entry->render_targets;
++         goto out_unlock;
++      }
++   }
++
++   /* Full: the caller keeps its own render targets. */
++   if (device->rt_cache_count == ARRAY_SIZE(device->rt_cache))
++      goto out_unlock;
++
++   render_targets = vk_zalloc(&device->vk.alloc,
++                              sizeof(*render_targets) * count,
++                              8,
++                              VK_SYSTEM_ALLOCATION_SCOPE_DEVICE);
++   if (!render_targets)
++      goto out_unlock;
++
++   for (uint32_t i = 0; i < count; i++) {
++      if (pthread_mutex_init(&render_targets[i].mutex, NULL)) {
++         while (i--)
++            pthread_mutex_destroy(&render_targets[i].mutex);
++
++         vk_free(&device->vk.alloc, render_targets);
++         render_targets = NULL;
++         goto out_unlock;
++      }
++   }
++
++   device->rt_cache[device->rt_cache_count++] = (struct pvr_rt_cache_entry){
++      .width = width,
++      .height = height,
++      .layers = layers,
++      .render_targets = render_targets,
++   };
++
++out_unlock:
++   simple_mtx_unlock(&device->rt_cache_mtx);
++
++   return render_targets;
++}
++
++void pvr_device_finish_rt_cache(struct pvr_device *device)
++{
++   const uint32_t count =
++      PVR_RENDER_TARGETS_PER_FRAMEBUFFER(&device->pdevice->dev_info);
++
++   for (uint32_t i = 0; i < device->rt_cache_count; i++) {
++      pvr_render_targets_fini(device->rt_cache[i].render_targets, count);
++      vk_free(&device->vk.alloc, device->rt_cache[i].render_targets);
++   }
++
++   device->rt_cache_count = 0;
++   simple_mtx_destroy(&device->rt_cache_mtx);
++}
++
+ VkResult pvr_AllocateMemory(VkDevice _device,
+                             const VkMemoryAllocateInfo *pAllocateInfo,
+                             const VkAllocationCallbacks *pAllocator,
+diff --git a/src/imagination/vulkan/pvr_device.h b/src/imagination/vulkan/pvr_device.h
+index 576c7bd6cb5..12ae8cc34d5 100644
+--- a/src/imagination/vulkan/pvr_device.h
++++ b/src/imagination/vulkan/pvr_device.h
+@@ -54,6 +54,10 @@ struct pvr_compute_query_shader {
+    struct pvr_pds_upload pds_sec_code;
+ };
+ 
++#define PVR_RT_CACHE_SIZE 8U
++
++struct pvr_render_target;
++
+ struct pvr_device {
+    struct vk_device vk;
+    struct pvr_instance *instance;
+@@ -174,6 +178,19 @@ struct pvr_device {
+    simple_mtx_t rs_mtx;
+    struct list_head render_states;
+ 
++   /* Render targets shared by dynamic renders of the same size, so that
++    * vkCmdBeginRendering() does not create and destroy a HWRT dataset and a
++    * free list each time. Entries live until the device is destroyed.
++    */
++   simple_mtx_t rt_cache_mtx;
++   uint32_t rt_cache_count;
++   struct pvr_rt_cache_entry {
++      uint32_t width;
++      uint32_t height;
++      uint32_t layers;
++      struct pvr_render_target *render_targets;
++   } rt_cache[PVR_RT_CACHE_SIZE];
++
+    /* Data Source for GPU tracing */
+    struct pvr_ds_device ds;
+ };
+@@ -243,6 +260,14 @@ void pvr_rstate_entry_remove(struct pvr_device *device,
+ void pvr_render_targets_fini(struct pvr_render_target *render_targets,
+                              uint32_t render_targets_count);
+ 
++struct pvr_render_target *
++pvr_device_get_cached_render_targets(struct pvr_device *device,
++                                     uint32_t width,
++                                     uint32_t height,
++                                     uint32_t layers);
++
++void pvr_device_finish_rt_cache(struct pvr_device *device);
++
+ #ifdef PVR_PER_ARCH
+ 
+ VkResult PVR_PER_ARCH(create_device)(struct pvr_physical_device *pdevice,
+diff --git a/src/imagination/vulkan/pvr_framebuffer.h b/src/imagination/vulkan/pvr_framebuffer.h
+index 8f89cc19776..31539fd0548 100644
+--- a/src/imagination/vulkan/pvr_framebuffer.h
++++ b/src/imagination/vulkan/pvr_framebuffer.h
+@@ -48,6 +48,10 @@ struct pvr_render_state {
+ 
+    uint32_t render_targets_count;
+    struct pvr_render_target *render_targets;
++   /* For dynamic renders, render targets borrowed from the device's cache;
++    * when set they are used instead of render_targets.
++    */
++   struct pvr_render_target *shared_render_targets;
+ 
+    uint64_t scratch_buffer_size;
+    struct pvr_spm_scratch_buffer *scratch_buffer;
+-- 
+2.55.0
+

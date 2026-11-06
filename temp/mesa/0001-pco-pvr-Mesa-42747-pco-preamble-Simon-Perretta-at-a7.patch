@@ -1,0 +1,2835 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Ryan Brue <ryanbrue.dev@gmail.com>
+Date: Thu, 5 Nov 2026 22:43:41 -0600
+Subject: [PATCH] pco, pvr: Mesa !42747 (pco preamble, Simon Perretta) at
+ a7d91e7ba38, squashed
+
+Merge of the MR head a7d91e7ba38 into main 1b60c2e3bd6 (only a docs/relnotes
+conflict, resolved by keeping both), as one patch for the amazon-suez
+Mesa aport. The MR's own commits are on the MR; this is not ours.
+---
+ docs/envvars.rst                              |   3 +
+ docs/features.txt                             |   2 +-
+ docs/relnotes/new_features.txt                |   1 +
+ src/compiler/nir/nir_divergence_analysis.c    |  16 +-
+ src/imagination/common/pvr_iface.h            |   9 +-
+ src/imagination/pco/meson.build               |   1 +
+ src/imagination/pco/pco_binary.c              |   5 +
+ src/imagination/pco/pco_data.h                |   5 +
+ src/imagination/pco/pco_debug.c               |   1 +
+ src/imagination/pco/pco_end.c                 | 105 +++-
+ src/imagination/pco/pco_internal.h            |   3 +
+ src/imagination/pco/pco_legalize.c            |  20 +
+ src/imagination/pco/pco_nir.c                 |  19 +-
+ src/imagination/pco/pco_nir_preamble.c        | 204 +++++++
+ src/imagination/pco/pco_ra.c                  |  42 +-
+ src/imagination/pco/pco_trans_nir.c           |  44 +-
+ src/imagination/pdsc/meson.build              |   2 +
+ src/imagination/pdsc/pdsc_precomp.c           |   8 +
+ src/imagination/pdsc/programs/pdsc_compute.c  | 554 ++++++++++++++++++
+ src/imagination/pdsc/programs/pdsc_compute.h  |  53 ++
+ .../pdsc/programs/pdsc_set_view_index.c       |  37 ++
+ .../pdsc/programs/pdsc_set_view_index.h       |  21 +
+ src/imagination/vulkan/pds/pvr_pds.c          |  54 --
+ src/imagination/vulkan/pds/pvr_pds.h          |   7 -
+ src/imagination/vulkan/pds/pvr_pipeline_pds.c |   5 +-
+ src/imagination/vulkan/pvr_arch_cmd_buffer.c  | 194 ++++--
+ src/imagination/vulkan/pvr_arch_device.c      | 195 +++---
+ src/imagination/vulkan/pvr_arch_pipeline.c    | 263 +--------
+ .../vulkan/pvr_arch_query_compute.c           |  53 +-
+ src/imagination/vulkan/pvr_cmd_buffer.h       |   3 +
+ src/imagination/vulkan/pvr_device.h           |  12 +-
+ src/imagination/vulkan/pvr_physical_device.c  |  14 +-
+ src/imagination/vulkan/pvr_physical_device.h  |   2 +
+ src/imagination/vulkan/pvr_pipeline.h         |  13 -
+ src/imagination/vulkan/pvr_usc.c              |  22 -
+ src/imagination/vulkan/pvr_usc.h              |   3 -
+ 36 files changed, 1443 insertions(+), 552 deletions(-)
+ create mode 100644 src/imagination/pco/pco_nir_preamble.c
+ create mode 100644 src/imagination/pdsc/programs/pdsc_compute.c
+ create mode 100644 src/imagination/pdsc/programs/pdsc_compute.h
+ create mode 100644 src/imagination/pdsc/programs/pdsc_set_view_index.c
+ create mode 100644 src/imagination/pdsc/programs/pdsc_set_view_index.h
+
+diff --git a/docs/envvars.rst b/docs/envvars.rst
+index a243f7a4cf6..cb5cea439e2 100644
+--- a/docs/envvars.rst
++++ b/docs/envvars.rst
+@@ -2337,6 +2337,9 @@ PowerVR driver environment variables
+    ``no_dma_cache``
+       Disable DMA cache.
+ 
++   ``preamble``
++      Enable preamble shader.
++
+ .. envvar:: PCO_SKIP_PASSES
+ 
+    A comma-separated list of passes to skip.
+diff --git a/docs/features.txt b/docs/features.txt
+index 42857fff7e0..14f16aba7a6 100644
+--- a/docs/features.txt
++++ b/docs/features.txt
+@@ -505,7 +505,7 @@ Vulkan 1.3 -- all DONE: anv, hk, kk, lvp, nvk, panvk, radv, tu, vn, v3dv
+   VK_KHR_shader_non_semantic_info                       DONE (anv, hasvk, lvp, nvk, panvk, pvr, radv, tu, v3dv, vn)
+   VK_KHR_shader_terminate_invocation                    DONE (anv, hasvk, lvp, nvk, panvk, pvr, radv, tu, v3dv, vn)
+   VK_KHR_synchronization2                               DONE (anv, dzn, hasvk, lvp, nvk, panvk, pvr, radv, tu, v3dv, vn)
+-  VK_KHR_zero_initialize_workgroup_memory               DONE (anv, hasvk, lvp, nvk, panvk, radv, tu, v3dv, vn)
++  VK_KHR_zero_initialize_workgroup_memory               DONE (anv, hasvk, lvp, nvk, panvk, pvr, radv, tu, v3dv, vn)
+   VK_EXT_4444_formats                                   DONE (anv, hasvk, lvp, nvk, panvk, radv, tu, v3dv, vn)
+   VK_EXT_extended_dynamic_state                         DONE (anv, hasvk, lvp, nvk, panvk, pvr, radv, tu, v3dv, vn)
+   VK_EXT_extended_dynamic_state2                        DONE (anv, hasvk, lvp, nvk, panvk, pvr, radv, tu, v3dv, vn)
+diff --git a/docs/relnotes/new_features.txt b/docs/relnotes/new_features.txt
+index e02aca44bba..7d8ac4804fe 100644
+--- a/docs/relnotes/new_features.txt
++++ b/docs/relnotes/new_features.txt
+@@ -18,3 +18,4 @@ VK_{KHR,EXT}_load_store_op_none on pvr
+ GL_NV_alpha_to_coverage_dither_control on all r600 devices
+ VK_{ARM,EXT}_rasterization_order_attachment_access on v3dv
+ VK_KHR_maintenance12 on RADV
++VK_KHR_zero_initialize_workgroup_memory on pvr
+diff --git a/src/compiler/nir/nir_divergence_analysis.c b/src/compiler/nir/nir_divergence_analysis.c
+index bcb0bcba00e..1ed9a9d89e4 100644
+--- a/src/compiler/nir/nir_divergence_analysis.c
++++ b/src/compiler/nir/nir_divergence_analysis.c
+@@ -407,6 +407,7 @@ visit_intrinsic(nir_intrinsic_instr *instr, struct divergence_state *state)
+    case nir_intrinsic_load_multisampled_pan:
+    case nir_intrinsic_load_rt_conversion_pan:
+    case nir_intrinsic_subgroup_barrier_index_intel:
++   case nir_intrinsic_load_fs_meta_pco:
+       is_divergent = false;
+       break;
+ 
+@@ -883,7 +884,17 @@ visit_intrinsic(nir_intrinsic_instr *instr, struct divergence_state *state)
+    case nir_intrinsic_load_texture_scale:
+    case nir_intrinsic_load_inline_data_intel:
+    case nir_intrinsic_resource_intel:
+-   case nir_intrinsic_load_push_constant: {
++   case nir_intrinsic_load_push_constant:
++   case nir_intrinsic_load_tex_state_pco:
++   case nir_intrinsic_load_smp_state_pco:
++   case nir_intrinsic_load_tex_meta_pco:
++   case nir_intrinsic_load_smp_meta_pco:
++   case nir_intrinsic_smp_pco:
++   case nir_intrinsic_smp_coeffs_pco:
++   case nir_intrinsic_smp_raw_pco:
++   case nir_intrinsic_pack_pco:
++   case nir_intrinsic_pck_prog_pco:
++   case nir_intrinsic_unpack_pco: {
+       unsigned num_srcs = nir_intrinsic_infos[instr->intrinsic].num_srcs;
+       for (unsigned i = 0; i < num_srcs; i++) {
+          if (src_divergent(instr->src[i], state)) {
+@@ -1149,6 +1160,9 @@ visit_intrinsic(nir_intrinsic_instr *instr, struct divergence_state *state)
+    case nir_intrinsic_load_deref_transpose_amd:
+    case nir_intrinsic_load_global_tr_amd:
+    case nir_intrinsic_trace_ray_intel:
++   case nir_intrinsic_smp_write_pco:
++   case nir_intrinsic_load_instance_num_pco:
++   case nir_intrinsic_load_savmsk_vm_pco:
+       is_divergent = true;
+       break;
+ 
+diff --git a/src/imagination/common/pvr_iface.h b/src/imagination/common/pvr_iface.h
+index ce1ef4c513f..252d066c2ed 100644
+--- a/src/imagination/common/pvr_iface.h
++++ b/src/imagination/common/pvr_iface.h
+@@ -9,7 +9,7 @@
+ /**
+  * \file pvr_iface.h
+  *
+- * \brief USC program interface.
++ * \brief USC/PDS program interface.
+  */
+ 
+ /** Query availability shader data; shared registers. */
+@@ -173,6 +173,13 @@ enum pvr_idfwdf_sr_data {
+ #define PVR_SLICED_VIEW_COUNT_OFFSET 16U
+ #define PVR_SLICED_VIEW_COUNT_LENGTH 16U
+ 
++/**/
++
++/** VDM ptemps. */
++enum pvr_vdm_ptemp {
++   PVR_VDM_PTEMP_VIEW_INDEX_OUT = 4,
++};
++
+ /* PDSC XFB main patch IDs */
+ 
+ enum pvr_xfb_main_patch_id {
+diff --git a/src/imagination/pco/meson.build b/src/imagination/pco/meson.build
+index c902a17d5d0..a247798b9ac 100644
+--- a/src/imagination/pco/meson.build
++++ b/src/imagination/pco/meson.build
+@@ -20,6 +20,7 @@ libpowervr_compiler_files = files(
+   'pco_nir_compute.c',
+   'pco_nir_io.c',
+   'pco_nir_lower_null_descriptors.c',
++  'pco_nir_preamble.c',
+   'pco_nir_pvfio.c',
+   'pco_nir_sync.c',
+   'pco_nir_tex.c',
+diff --git a/src/imagination/pco/pco_binary.c b/src/imagination/pco/pco_binary.c
+index 7c9aaf0fb35..5b446bff33b 100644
+--- a/src/imagination/pco/pco_binary.c
++++ b/src/imagination/pco/pco_binary.c
+@@ -117,6 +117,11 @@ void pco_encode_ir(pco_ctx *ctx, pco_shader *shader)
+ 
+    unsigned bytes_encoded = 0;
+    pco_foreach_func_in_shader (func, shader) {
++      if (func->type == PCO_FUNC_TYPE_PREAMBLE)
++         shader->data.common.preamble_offset = bytes_encoded;
++      else if (func->type == PCO_FUNC_TYPE_ENTRYPOINT)
++         shader->data.common.entry_offset = bytes_encoded;
++
+       func->enc_offset = bytes_encoded;
+       pco_foreach_block_in_func (block, func) {
+          pco_foreach_igrp_in_block (igrp, block) {
+diff --git a/src/imagination/pco/pco_data.h b/src/imagination/pco/pco_data.h
+index ab4129b6a9e..a3ea4273821 100644
+--- a/src/imagination/pco/pco_data.h
++++ b/src/imagination/pco/pco_data.h
+@@ -206,6 +206,7 @@ typedef struct _pco_common_data {
+    unsigned temps; /** Number of allocated temp registers. */
+    unsigned vtxins; /** Number of allocated vertex input registers. */
+    unsigned interns; /** Number of allocated internal registers. */
++   unsigned preamble_temps; /** Number of allocated temps for preamble func. */
+ 
+    unsigned spilled_temps;
+    pco_range spill_info; /* addr_lo, addr_hi, block_size */
+@@ -217,6 +218,9 @@ typedef struct _pco_common_data {
+    unsigned shareds; /** Number of allocated shared registers. */
+ 
+    unsigned entry_offset; /** Offset of the shader entrypoint. */
++   unsigned preamble_offset; /** Offset of the shader preamble. */
++
++   pco_range preamble; /** Preamble shared register info. */
+ 
+    struct {
+       bool atomics; /** Whether the shader uses atomics. */
+@@ -226,6 +230,7 @@ typedef struct _pco_common_data {
+       bool point_sampler; /** Whether the shader uses a point sampler. */
+       bool ia_sampler; /** Does the shader use an input attachment sampler? */
+       bool usclib; /** Does the shader use usclib functions? */
++      bool preamble; /** Does the shader have a preamble shader? */
+    } uses;
+ 
+    bool robust_buffer_access;
+diff --git a/src/imagination/pco/pco_debug.c b/src/imagination/pco/pco_debug.c
+index 7e5f9ca951c..0da01774eb1 100644
+--- a/src/imagination/pco/pco_debug.c
++++ b/src/imagination/pco/pco_debug.c
+@@ -42,6 +42,7 @@ static const struct debug_named_value pco_debug_options[] = {
+      PCO_DEBUG_RA_SKIP_OPT,
+      "Skip attempting to allocate temps with the optimal amount during RA." },
+    { "no_dma_cache", PCO_DEBUG_NO_DMA_CACHE, "Disable DMA cache." },
++   { "preamble", PCO_DEBUG_PREAMBLE, "Enable preamble shader." },
+    DEBUG_NAMED_VALUE_END,
+ };
+ 
+diff --git a/src/imagination/pco/pco_end.c b/src/imagination/pco/pco_end.c
+index 5c2e0f5d8c6..cab9fa8e320 100644
+--- a/src/imagination/pco/pco_end.c
++++ b/src/imagination/pco/pco_end.c
+@@ -18,42 +18,97 @@
+ #include <stdbool.h>
+ 
+ /**
+- * \brief Processes end of shader instruction(s).
++ * \brief For vertex shaders, inserts a uvsw.endtask instruction at the end of
++ *        the shader, or if possible, rewrites the last instruction into a
++ *        uvsw.write.emit.endtask.
+  *
+- * \param[in,out] shader PCO shader.
++ * \param[in,out] func PCO function.
++ * \param[in,out] _last_instr Pointer to the last instruction in the shader.
+  * \return True if the pass made progress.
+  */
+-bool pco_end(pco_shader *shader)
++static
++bool
++pco_insert_uvsw_endtask(pco_func *func, pco_instr **_last_instr)
+ {
+-   /* TODO: Support for multiple end points. */
+-   pco_func *entry = pco_entrypoint(shader);
+-   pco_block *last_block = pco_func_last_block(entry);
+-   pco_instr *last_instr = pco_last_instr(last_block);
+-
+-   pco_builder b =
+-      pco_builder_create(entry, pco_cursor_after_block(last_block));
+-
+-   if (shader->stage == MESA_SHADER_VERTEX) {
+-      if (last_instr && last_instr->op == PCO_OP_UVSW_WRITE &&
+-          pco_instr_has_default_exec(last_instr) &&
+-          pco_instr_get_rpt(last_instr) == 1) {
+-         pco_instr *new_last_instr =
+-            pco_uvsw_write_emit_endtask(&b,
+-                                        last_instr->src[0],
+-                                        last_instr->src[1]);
+-         pco_instr_delete(last_instr);
+-         last_instr = new_last_instr;
+-      } else {
+-         last_instr = pco_uvsw_emit_endtask(&b);
+-      }
++   assert(func->parent_shader->stage == MESA_SHADER_VERTEX);
++
++   pco_instr *last_instr = *_last_instr;
++
++   pco_cursor cursor =
++      last_instr ? pco_cursor_after_instr(last_instr) :
++                   pco_cursor_after_block(pco_func_last_block(func));
++
++   pco_builder b = pco_builder_create(func, cursor);
++
++   if (last_instr && last_instr->op == PCO_OP_UVSW_WRITE &&
++       pco_instr_has_default_exec(last_instr) &&
++       pco_instr_get_rpt(last_instr) == 1) {
++      last_instr =
++         pco_uvsw_write_emit_endtask(&b,
++                                     last_instr->src[0],
++                                     last_instr->src[1]);
++
++      pco_instr_delete(*_last_instr);
++      *_last_instr = last_instr;
++
++      return true;
+    }
+ 
++   *_last_instr = pco_uvsw_emit_endtask(&b);
++   return true;
++}
++
++/**
++ * \brief Inserts a nop.end instruction at the end of the shader,
++ *        or if possible, sets the end op mod on the last instruction.
++ *
++ * \param[in,out] func PCO function.
++ * \param[in,out] _last_instr Pointer to the last instruction in the shader.
++ * \return True if the pass made progress.
++ */
++static
++bool
++pco_insert_end(pco_func *func, pco_instr **_last_instr)
++{
++   pco_instr *last_instr = *_last_instr;
++
++   pco_cursor cursor =
++      last_instr ? pco_cursor_after_instr(last_instr) :
++                   pco_cursor_after_block(pco_func_last_block(func));
++
++   pco_builder b = pco_builder_create(func, cursor);
++
+    if (last_instr && pco_instr_has_end(last_instr)) {
+       pco_instr_set_end(last_instr, true);
+       return true;
+    }
+ 
+-   pco_nop(&b, .end = true);
++   *_last_instr = pco_nop(&b, .end = true);
+ 
+    return true;
+ }
++
++/**
++ * \brief Processes end of shader instruction(s).
++ *
++ * \param[in,out] shader PCO shader.
++ * \return True if the pass made progress.
++ */
++bool pco_end(pco_shader *shader)
++{
++   bool progress = false;
++
++   pco_foreach_func_in_shader(func, shader) {
++      pco_block *last_block = pco_func_last_block(func);
++      pco_instr *last_instr = pco_last_instr(last_block);
++
++      if (shader->stage == MESA_SHADER_VERTEX &&
++          func->type == PCO_FUNC_TYPE_ENTRYPOINT) {
++         progress |= pco_insert_uvsw_endtask(func, &last_instr);
++      }
++
++      progress |= pco_insert_end(func, &last_instr);
++   }
++
++   return progress;
++}
+diff --git a/src/imagination/pco/pco_internal.h b/src/imagination/pco/pco_internal.h
+index c9da62db5a4..efcdb49ab3b 100644
+--- a/src/imagination/pco/pco_internal.h
++++ b/src/imagination/pco/pco_internal.h
+@@ -70,6 +70,7 @@ enum pco_debug {
+    PCO_DEBUG_RA_FORCE_SPILL = BITFIELD64_BIT(6),
+    PCO_DEBUG_RA_SKIP_OPT = BITFIELD64_BIT(7),
+    PCO_DEBUG_NO_DMA_CACHE = BITFIELD64_BIT(8),
++   PCO_DEBUG_PREAMBLE = BITFIELD64_BIT(9),
+ };
+ 
+ extern uint64_t pco_debug;
+@@ -1828,12 +1829,14 @@ bool pco_nir_lower_vs_intrinsics(nir_shader *shader);
+ bool pco_nir_lower_images(nir_shader *shader, pco_data *data, pco_ctx *ctx);
+ bool pco_nir_lower_interpolation(nir_shader *shader, pco_fs_data *fs);
+ bool pco_nir_lower_io(nir_shader *shader, pco_data *data);
++bool pco_nir_lower_preamble_to_scalar(nir_shader *shader);
+ bool pco_nir_lower_sample_mask_out(nir_shader *shader);
+ bool pco_nir_lower_shared_io_to_global(nir_shader *shader, unsigned usc_slots);
+ bool pco_nir_lower_subgroups(nir_shader *shader);
+ bool pco_nir_lower_tex(nir_shader *shader, pco_data *data, pco_ctx *ctx);
+ bool pco_nir_lower_variables(nir_shader *shader, bool inputs, bool outputs);
+ bool pco_nir_lower_vk(nir_shader *shader, pco_data *data);
++bool pco_nir_opt_preamble(nir_shader *shader, pco_data *data);
+ bool pco_nir_pfo(nir_shader *shader, pco_fs_data *fs);
+ bool pco_nir_point_size(nir_shader *shader);
+ bool pco_nir_point_size_xfb(nir_shader *shader);
+diff --git a/src/imagination/pco/pco_legalize.c b/src/imagination/pco/pco_legalize.c
+index 8935c460f9b..5c0aef2517d 100644
+--- a/src/imagination/pco/pco_legalize.c
++++ b/src/imagination/pco/pco_legalize.c
+@@ -657,6 +657,26 @@ static bool legalize_pseudo_post_ra(pco_instr *instr)
+       return true;
+    }
+ 
++   case PCO_OP_COMP: {
++      pco_builder b =
++         pco_builder_create(instr->parent_func, pco_cursor_before_instr(instr));
++
++      pco_ref dest = instr->dest[0];
++      pco_ref src = instr->src[0];
++
++      unsigned chan = pco_ref_get_imm(instr->src[1]);
++      assert(chan < pco_ref_get_chans(src));
++
++      /* Select the component/channel. */
++      src = pco_ref_chans(src, 1u);
++      src = pco_ref_offset(src, chan);
++
++      pco_mbyp(&b, dest, src);
++
++      pco_instr_delete(instr);
++      return true;
++   }
++
+    default:
+       break;
+    }
+diff --git a/src/imagination/pco/pco_nir.c b/src/imagination/pco/pco_nir.c
+index 6115d6b16fd..65a193246ec 100644
+--- a/src/imagination/pco/pco_nir.c
++++ b/src/imagination/pco/pco_nir.c
+@@ -915,6 +915,15 @@ static inline bool should_spill_shmem(const pco_ctx *ctx, unsigned shared_size)
+    return ((float)shared_size / (float)max_shmem) > PCO_SHMEM_THRESHOLD;
+ }
+ 
++static void
++nir_remove_non_entrypoints_or_preamble(nir_shader *nir)
++{
++   nir_foreach_function_safe(func, nir) {
++      if (!func->is_entrypoint && !func->is_preamble)
++         exec_node_remove(&func->node);
++   }
++}
++
+ /**
+  * \brief Lowers a NIR shader.
+  *
+@@ -1095,12 +1104,20 @@ void pco_lower_nir(pco_ctx *ctx, nir_shader *nir, pco_data *data)
+       NIR_PASS(_, nir, pco_nir_lower_vs_intrinsics);
+    }
+ 
++   if (!nir->info.internal && PCO_DEBUG(PREAMBLE)) {
++      NIR_PASS(_, nir, nir_opt_reassociate, nir_reassociate_scalar_math |
++                                            nir_reassociate_cse_heuristic);
++
++      NIR_PASS(_, nir, pco_nir_opt_preamble, data);
++      NIR_PASS(_, nir, pco_nir_lower_preamble_to_scalar);
++   }
++
+    if (data->common.uses.usclib) {
+       assert(ctx->usclib);
+ 
+       nir_link_shader_functions(nir, ctx->usclib);
+       NIR_PASS(_, nir, nir_inline_functions);
+-      nir_remove_non_entrypoints(nir);
++      nir_remove_non_entrypoints_or_preamble(nir);
+       NIR_PASS(_, nir, nir_opt_deref);
+       NIR_PASS(_, nir, nir_lower_vars_to_ssa);
+       NIR_PASS(_, nir, nir_remove_dead_derefs);
+diff --git a/src/imagination/pco/pco_nir_preamble.c b/src/imagination/pco/pco_nir_preamble.c
+new file mode 100644
+index 00000000000..cf0d8db09a1
+--- /dev/null
++++ b/src/imagination/pco/pco_nir_preamble.c
+@@ -0,0 +1,204 @@
++/*
++ * Copyright © 2026 Imagination Technologies Ltd.
++ *
++ * SPDX-License-Identifier: MIT
++ */
++
++/**
++ * \file pco_nir_preamble.c
++ *
++ * \brief PCO NIR preamble lowering passes.
++ */
++
++#include "hwdef/rogue_hw_defs.h"
++#include "nir.h"
++#include "nir_builder.h"
++#include "nir_builtin_builder.h"
++#include "pco.h"
++#include "pco_builder.h"
++#include "pco_common.h"
++#include "pco_internal.h"
++#include "usclib/pco_usclib.h"
++#include "util/macros.h"
++
++#include <assert.h>
++#include <stdbool.h>
++#include <stdio.h>
++
++/* TODO: tweak this value. */
++#define MAX_PREAMBLE_REGS 128u
++
++static void def_size(nir_def *def,
++                     unsigned *size,
++                     unsigned *align,
++                     nir_preamble_class *class)
++{
++   /* Minimum 32-bit/DWORD granularity. */
++   unsigned bit_size = def->bit_size < 32u ? 32u : def->bit_size;
++
++   /* Bit -> DWORD granularity. */
++   *size = DIV_ROUND_UP(bit_size, 32u) * def->num_components;
++   *align = 1u;
++
++   /* Use general for everything; all the image/sampler/etc. state would already
++    * be present in the same regbank as preamble regs, so we don't have to
++    * worry about them.
++    */
++   *class = nir_preamble_class_general;
++}
++
++static float instr_cost(UNUSED nir_instr *instr, UNUSED const void *data)
++{
++   /* TODO: add an actual cost calculation. */
++   return 1.0f;
++}
++
++static float rewrite_cost(UNUSED nir_def *def, UNUSED const void *data)
++{
++   /* TODO: add an actual cost calculation. */
++   return 0.0f;
++}
++
++static bool avoid_intr(const nir_intrinsic_instr *intr, UNUSED const void *data)
++{
++   switch (intr->intrinsic) {
++   /* These just copy from coeff regs anyway, no point copying to shareds. */
++   case nir_intrinsic_load_num_workgroups:
++   case nir_intrinsic_load_workgroup_id:
++      return true;
++
++   default:
++      break;
++   }
++
++   return false;
++}
++
++static bool avoid_instr(const nir_instr *instr, const void *data)
++{
++   switch (instr->type) {
++   case nir_instr_type_intrinsic:
++      return avoid_intr(nir_instr_as_intrinsic(instr), data);
++
++   default:
++      break;
++   }
++
++   return false;
++}
++
++bool pco_nir_opt_preamble(nir_shader *shader, pco_data *data)
++{
++   nir_opt_preamble_options options = {
++      .drawid_uniform = true,
++      .subgroup_size_uniform = true,
++      .load_workgroup_size_allowed = true,
++      .def_size = def_size,
++      .preamble_storage_size = {
++         [nir_preamble_class_general] = MAX_PREAMBLE_REGS,
++         [nir_preamble_class_image] = 0u,
++         [nir_preamble_class_sampler] = 0u,
++      },
++      .instr_cost_cb = instr_cost,
++      .rewrite_cost_cb = rewrite_cost,
++      .avoid_instr_cb = avoid_instr,
++      .cb_data = data,
++   };
++
++   unsigned size[nir_preamble_num_classes] = { 0u };
++   bool progress = false;
++
++   NIR_PASS(progress, shader, nir_opt_preamble, &options, size);
++   if (!progress)
++      return false;
++
++   assert(size[nir_preamble_class_general] > 0u);
++   assert(!size[nir_preamble_class_image] && !size[nir_preamble_class_sampler]);
++
++   data->common.uses.preamble = true;
++   data->common.preamble = (pco_range){
++      .count = size[nir_preamble_class_general],
++   };
++
++   return true;
++}
++
++static bool lower_vec_load_preamble(nir_builder *b, nir_intrinsic_instr *intr)
++{
++   unsigned num_components = nir_intrinsic_dest_components(intr);
++   if (num_components == 1u)
++      return false;
++
++   unsigned base = nir_intrinsic_base(intr);
++   nir_preamble_class preamble_class = nir_intrinsic_preamble_class(intr);
++
++   nir_def *loads[NIR_MAX_VEC_COMPONENTS];
++
++   for (unsigned c = 0u; c < num_components; ++c) {
++      loads[c] = nir_load_preamble(b,
++                                   1u,
++                                   32u,
++                                   .base = base + c,
++                                   .preamble_class = preamble_class);
++   }
++
++   nir_def_replace(&intr->def, nir_vec(b, loads, num_components));
++
++   return true;
++}
++
++static bool lower_vec_store_preamble(nir_builder *b, nir_intrinsic_instr *intr)
++{
++   unsigned num_components = nir_intrinsic_src_components(intr, 0);
++   if (num_components == 1u)
++      return false;
++
++   unsigned base = nir_intrinsic_base(intr);
++   nir_preamble_class preamble_class = nir_intrinsic_preamble_class(intr);
++
++   for (unsigned c = 0u; c < num_components; ++c) {
++      nir_def *chan = nir_channel(b, intr->src[0].ssa, c);
++      nir_store_preamble(b,
++                         chan,
++                         .base = base + c,
++                         .preamble_class = preamble_class);
++   }
++
++   nir_instr_remove(&intr->instr);
++
++   return true;
++}
++
++static bool lower_vec_preamble(nir_builder *b,
++                               nir_intrinsic_instr *intr,
++                               UNUSED void *cb_data)
++{
++   b->cursor = nir_before_instr(&intr->instr);
++
++   switch (intr->intrinsic) {
++   case nir_intrinsic_load_preamble:
++      return lower_vec_load_preamble(b, intr);
++
++   case nir_intrinsic_store_preamble:
++      return lower_vec_store_preamble(b, intr);
++
++   default:
++      break;
++   }
++
++   return false;
++}
++
++bool pco_nir_lower_preamble_to_scalar(nir_shader *shader)
++{
++   /* Internal shaders can use the preamble for texture/sampler state words,
++    * which shouldn't be scalarised.
++    */
++   if (shader->info.internal)
++      return false;
++
++   return nir_shader_intrinsics_pass(shader,
++                                     lower_vec_preamble,
++                                     nir_metadata_control_flow,
++                                     NULL);
++}
+diff --git a/src/imagination/pco/pco_ra.c b/src/imagination/pco/pco_ra.c
+index 1a8354f20e0..64c111aa8cf 100644
+--- a/src/imagination/pco/pco_ra.c
++++ b/src/imagination/pco/pco_ra.c
+@@ -467,7 +467,8 @@ static void spill(unsigned spill_index, pco_func *func, pco_ra_ctx *ctx)
+ static bool pco_ra_func(pco_func *func, pco_ra_ctx *ctx)
+ {
+    /* TODO: support multiple functions and calls. */
+-   assert(func->type == PCO_FUNC_TYPE_ENTRYPOINT);
++   assert(func->type == PCO_FUNC_TYPE_ENTRYPOINT ||
++          func->type == PCO_FUNC_TYPE_PREAMBLE);
+ 
+    /* TODO: loop lifetime extension.
+     * TODO: track successors/predecessors.
+@@ -571,6 +572,9 @@ static bool pco_ra_func(pco_func *func, pco_ra_ctx *ctx)
+       pco_ref src = instr->src[0];
+       unsigned offset = pco_ref_get_imm(instr->src[1]);
+ 
++      if (!pco_ref_is_ssa(dest))
++         continue;
++
+       BITSET_SET(comps, dest.val);
+ 
+       assert(pco_ref_is_ssa(src));
+@@ -738,6 +742,9 @@ static bool pco_ra_func(pco_func *func, pco_ra_ctx *ctx)
+       pco_ref dest = instr->dest[0];
+       pco_ref src_vec = instr->src[0];
+ 
++      if (!pco_ref_is_ssa(dest))
++         continue;
++
+       struct vec_override *vec_override =
+          _mesa_hash_table_u64_search(overrides, src_vec.val);
+ 
+@@ -1023,8 +1030,10 @@ static bool pco_ra_func(pco_func *func, pco_ra_ctx *ctx)
+          pco_instr_delete(instr);
+          continue;
+       } else if (instr->op == PCO_OP_COMP) {
+-         pco_instr_delete(instr);
+-         continue;
++         if (pco_ref_is_ssa(instr->dest[0])) {
++            pco_instr_delete(instr);
++            continue;
++         }
+       }
+ 
+       pco_foreach_instr_dest_ssa (pdest, instr) {
+@@ -1188,9 +1197,34 @@ bool pco_ra(pco_shader *shader)
+          alloc_max |= true;
+    }
+ 
+-   /* Perform register allocation for each function. */
+    bool progress = false;
++
++   /* Perform register allocation for the preamble function, if present. */
++   pco_func *preamble = pco_preamble(shader);
++   if (preamble) {
++      /* We don't care about utilization as there's only one instance running,
++       * use up to all of the available temps (but only temps).
++       */
++      pco_ra_ctx preamble_ctx = {
++         .state = PCO_RA_CTX_STATE_MAXIMUM,
++         .allocable_temps = max_temps,
++         .allocable_vtxins = 0u,
++         .allocable_interns = 0u,
++      };
++
++      progress |= pco_ra_func(preamble, &preamble_ctx);
++      assert(preamble_ctx.state == PCO_RA_CTX_STATE_DONE);
++
++      shader->data.common.preamble_temps = preamble->temps;
++      assert(!preamble->vtxins);
++   }
++
++   /* Perform register allocation for each function. */
+    pco_foreach_func_in_shader (func, shader) {
++      /* Skip preamble, has its own temps. */
++      if (func->type == PCO_FUNC_TYPE_PREAMBLE)
++         continue;
++
+       ctx.state = PCO_RA_CTX_STATE_OPTIMAL;
+       ctx.allocable_temps = opt_temps;
+       if (alloc_max) {
+diff --git a/src/imagination/pco/pco_trans_nir.c b/src/imagination/pco/pco_trans_nir.c
+index e78c438c8f9..ffa56d3420d 100644
+--- a/src/imagination/pco/pco_trans_nir.c
++++ b/src/imagination/pco/pco_trans_nir.c
+@@ -2542,6 +2542,30 @@ trans_blend_load(trans_ctx *tctx, nir_intrinsic_instr *intr, pco_ref dest)
+                                   &range);
+ }
+ 
++static
++pco_instr *
++trans_preamble(trans_ctx *tctx,
++               nir_intrinsic_instr *intr,
++               pco_ref dest,
++               pco_ref src,
++               bool is_load)
++{
++   const pco_common_data *common = &tctx->shader->data.common;
++   unsigned base = common->preamble.start + nir_intrinsic_base(intr);
++   unsigned chans = is_load ? pco_ref_get_chans(dest) : pco_ref_get_chans(src);
++
++   /* Internal/pre-compiled shaders use preamble in a different manner. */
++   assert(((base + chans) <= common->preamble.count) ||
++          (!common->preamble.count && tctx->shader->is_internal));
++
++   pco_ref reg = pco_ref_hwreg_vec(base, PCO_REG_CLASS_SHARED, chans);
++
++   if (is_load)
++      return pco_mov(&tctx->b, dest, reg, .rpt = chans);
++
++   return pco_mov(&tctx->b, reg, src, .rpt = chans);
++}
++
+ /**
+  * \brief Translates a NIR intrinsic instruction into PCO.
+  *
+@@ -2638,21 +2662,13 @@ static pco_instr *trans_intr(trans_ctx *tctx, nir_intrinsic_instr *intr)
+       break;
+ 
+    case nir_intrinsic_load_preamble:
+-      instr = pco_mov(&tctx->b,
+-                      dest,
+-                      pco_ref_hwreg_vec(nir_intrinsic_base(intr),
+-                                        PCO_REG_CLASS_SHARED,
+-                                        pco_ref_get_chans(dest)),
+-                      .rpt = pco_ref_get_chans(dest));
+-      break;
+-
+    case nir_intrinsic_store_preamble:
+-      instr = pco_mov(&tctx->b,
+-                      pco_ref_hwreg_vec(nir_intrinsic_base(intr),
+-                                        PCO_REG_CLASS_SHARED,
+-                                        pco_ref_get_chans(src[0])),
+-                      src[0],
+-                      .rpt = pco_ref_get_chans(src[0]));
++      instr =
++         trans_preamble(tctx,
++                        intr,
++                        dest,
++                        src[0],
++                        intr->intrinsic == nir_intrinsic_load_preamble);
+       break;
+ 
+    case nir_intrinsic_store_preamble_dynamic: {
+diff --git a/src/imagination/pdsc/meson.build b/src/imagination/pdsc/meson.build
+index 71538c095ee..2dac44685a7 100644
+--- a/src/imagination/pdsc/meson.build
++++ b/src/imagination/pdsc/meson.build
+@@ -10,6 +10,8 @@ libpowervr_pdsc_files = files(
+   'pdsc_ops.c',
+   'pdsc_print.c',
+   'pdsc_validate.c',
++  'programs/pdsc_compute.c',
++  'programs/pdsc_set_view_index.c',
+ )
+ 
+ libpowervr_pdsc = static_library(
+diff --git a/src/imagination/pdsc/pdsc_precomp.c b/src/imagination/pdsc/pdsc_precomp.c
+index cfe3365ea10..123ab74b16f 100644
+--- a/src/imagination/pdsc/pdsc_precomp.c
++++ b/src/imagination/pdsc/pdsc_precomp.c
+@@ -28,6 +28,10 @@ struct pdsc_precomp_info {
+    pdsc_precomp_fn_t fn;
+    enum pdsc_feature feature_variants;
+ };
++
++#include "programs/pdsc_compute.h"
++#include "programs/pdsc_set_view_index.h"
++
+ #include "programs/pdsc_xfb_end.h"
+ #include "programs/pdsc_xfb_init.h"
+ #include "programs/pdsc_xfb_query_begin.h"
+@@ -40,7 +44,11 @@ struct pdsc_precomp_info {
+       .fn = pdsc_##_name##_gen,              \
+       .feature_variants = _feature_variants, \
+    }
++
+ static const struct pdsc_precomp_info pdsc_precomp_infos[] = {
++   PRECOMP(set_view_index, 0),
++   PRECOMP(compute_shader, 0),
++
+    PRECOMP(xfb_end, 0),
+    PRECOMP(xfb_init, 0),
+    PRECOMP(xfb_query_begin, 0),
+diff --git a/src/imagination/pdsc/programs/pdsc_compute.c b/src/imagination/pdsc/programs/pdsc_compute.c
+new file mode 100644
+index 00000000000..0125545e5e9
+--- /dev/null
++++ b/src/imagination/pdsc/programs/pdsc_compute.c
+@@ -0,0 +1,554 @@
++/*
++ * Copyright © 2026 Imagination Technologies Ltd.
++ *
++ * SPDX-License-Identifier: MIT
++ */
++
++#include "pdsc_compute.h"
++#include "pdsc/pdsc_isa_pack.h"
++#include "pdsc/pdsc_internal.h"
++#include "common/pvr_iface.h"
++
++/* PDSC compute_shader patch IDs. */
++
++enum pvr_compute_shader_id {
++   /** Patch ID for CCS base wgid x. */
++   PVR_COMPUTE_SHADER_ID_CCS_BASE_WGID_X,
++
++   /** Patch ID for CCS base wgid y. */
++   PVR_COMPUTE_SHADER_ID_CCS_BASE_WGID_Y,
++
++   /** Patch ID for CCS base wgid z. */
++   PVR_COMPUTE_SHADER_ID_CCS_BASE_WGID_Z,
++
++   /** Patch ID for CCS doutd zero wgmem/coeffs src0. */
++   PVR_COMPUTE_SHADER_ID_CCS_ZERO_SRC0,
++
++   /** Patch ID for CCS doutd zero wgmem/coeffs src1. */
++   PVR_COMPUTE_SHADER_ID_CCS_ZERO_SRC1,
++
++   /** Patch ID for CCS doutd num wgs src0. */
++   PVR_COMPUTE_SHADER_ID_CCS_NUM_WGS_SRC0,
++
++   /** Patch ID for CCS doutd num wgs src1. */
++   PVR_COMPUTE_SHADER_ID_CCS_NUM_WGS_SRC1,
++
++   /** Patch ID for CCS doutw wgid src1: wgid x and/or y. */
++   PVR_COMPUTE_SHADER_ID_CCS_WGID_XY,
++
++   /** Patch ID for CCS doutw wgid src1: wgid z. */
++   PVR_COMPUTE_SHADER_ID_CCS_WGID_Z,
++
++   /** Patch ID for CCS doutw lid src1: lid x and/or y. */
++   PVR_COMPUTE_SHADER_ID_CCS_LID_XY,
++
++   /** Patch ID for CCS doutw lid src1: lid z. */
++   PVR_COMPUTE_SHADER_ID_CCS_LID_Z,
++
++   /** Patch ID for CCS doutu src0. */
++   PVR_COMPUTE_SHADER_ID_CCS_DOUTU,
++
++   /** Patch ID for CS doutw lid src1: lid x and/or y. */
++   PVR_COMPUTE_SHADER_ID_CS_LID_XY,
++
++   /** Patch ID for CS doutw lid src1: lid z. */
++   PVR_COMPUTE_SHADER_ID_CS_LID_Z,
++
++   /** Patch ID for CS conditional rendering ld src0. */
++   PVR_COMPUTE_SHADER_ID_CS_CR_LD_SRC0,
++
++   /** Patch ID for CS conditional rendering ld address 32-bit elem. */
++   PVR_COMPUTE_SHADER_ID_CS_CR_LD_SEL_ELEM,
++
++   /** Patch ID for CS conditional rendering negate. */
++   PVR_COMPUTE_SHADER_ID_CS_CR_NEG,
++
++   /** Patch ID for CS doutu src0. */
++   PVR_COMPUTE_SHADER_ID_CS_DOUTU,
++};
++
++/* PDSC compute_shader saved ref IDs. */
++
++enum pvr_compute_shader_ref_id {
++   /** Ref ID for CS zero load dest. */
++   PVR_COMPUTE_SHADER_REF_ID_ZERO_LD_DEST,
++};
++
++/* We could potentially have a variant for doutw_ext, but that would
++ * always waste 1 register in 128-bit mode as we're only ever writing up to
++ * three IDs, so let's not bother.
++ */
++
++pdsc_program *pdsc_compute_shader_gen(void *mem_ctx, enum pdsc_feature features)
++{
++   pdsc_program *p = pdsc_program_create(mem_ctx, features, "compute_shader");
++
++   /* First four temps in ccs. */
++   DECL_TEMP32_ALIAS(p, ccs_wgid_x, PDSC_PRE_TEMP_CCS_WGID_X);
++   DECL_TEMP32_ALIAS(p, ccs_wgid_y, PDSC_PRE_TEMP_CCS_WGID_Y);
++   DECL_TEMP32_ALIAS(p, ccs_lid_xyz, PDSC_PRE_TEMP_CCS_LID_XYZ);
++   DECL_TEMP32_ALIAS(p, ccs_wgid_z, PDSC_PRE_TEMP_CCS_WGID_Z);
++
++   /* Don't need this for now. */
++
++   /* For unpacking local id xyz in ccs. */
++   DECL_TEMP32_ALIAS(p, ccs_lid_x, PDSC_PRE_TEMP_CCS_WGID_X);
++   DECL_TEMP32_ALIAS(p, ccs_lid_y, PDSC_PRE_TEMP_CCS_WGID_Y);
++   DECL_TEMP32_ALIAS(p, ccs_lid_z, PDSC_PRE_TEMP_CCS_WGID_Z);
++
++   /* First two temps in cs. */
++   DECL_TEMP32_ALIAS(p, cs_lid_x, PDSC_PRE_TEMP_CS_LID_X);
++   DECL_TEMP32_ALIAS(p, cs_lid_yz, PDSC_PRE_TEMP_CS_LID_YZ);
++
++   /* For unpacking local id y/z in cs. */
++   DECL_TEMP32_ALIAS(p, cs_lid_y, PDSC_PRE_TEMP_CS_LID_YZ);
++   DECL_TEMP32_ALIAS(p, cs_pad, PDSC_PRE_TEMP_CS_LID_YZ + 1);
++   DECL_TEMP32_ALIAS(p, cs_lid_z, PDSC_PRE_TEMP_CS_LID_YZ + 2);
++
++   static_assert(PDSC_PRE_TEMP_CS_LID_YZ + 1 == PDSC_PRE_TEMP_CCS_LID_XYZ,
++                 "PDSC_PRE_TEMP_CS_LID_YZ + 1 != PDSC_PRE_TEMP_CCS_LID_XYZ");
++
++   static_assert(PDSC_PRE_TEMP_CS_LID_YZ + 2 == PDSC_PRE_TEMP_CCS_WGID_Z,
++                 "PDSC_PRE_TEMP_CS_LID_YZ + 2 != PDSC_PRE_TEMP_CCS_WGID_Z");
++
++   /* Setup a zero. */
++   ALLOC_TEMP64(p, tzero64);
++   pdsc_limm(p, pdsc_ref_lo32(tzero64), pdsc_ref_imm(0));
++   pdsc_limm(p, pdsc_ref_hi32(tzero64), pdsc_ref_imm(0));
++
++   /* For comparison. */
++   ALLOC_TEMP64(p, tcmp);
++
++   /* This same PDS program is used twice, once for the compute coefficient
++    * sync task, once for the compute shader task.
++    *
++    * The preloaded temps are different in each instance, and will require
++    * aliasing.
++    *
++    * If the if1 predicate is set, then we're running as the ccs task.
++    */
++
++   pdsc_instr_t not_if1 = pdsc_branch_push(p, PDSC_PRED_IF1, true);
++   {
++      /* if1 is set, didn't branch: ccs task. */
++
++      /* Base workgroup IDs. */
++      ALLOC_CONST32(p, base_wgid_x, PVR_COMPUTE_SHADER_ID_CCS_BASE_WGID_X);
++      ALLOC_CONST32(p, base_wgid_y, PVR_COMPUTE_SHADER_ID_CCS_BASE_WGID_Y);
++      ALLOC_CONST32(p, base_wgid_z, PVR_COMPUTE_SHADER_ID_CCS_BASE_WGID_Z);
++
++      /* Zero out coefficients/local/workgroup memory
++       * (if requested by the driver).
++       */
++      pdsc_doutd(p,
++                 PVR_COMPUTE_SHADER_ID_CCS_ZERO_SRC0,
++                 PVR_COMPUTE_SHADER_ID_CCS_ZERO_SRC1,
++                 false);
++
++      /* Write out num workgroups (if requested by the driver). */
++      pdsc_doutd(p,
++                 PVR_COMPUTE_SHADER_ID_CCS_NUM_WGS_SRC0,
++                 PVR_COMPUTE_SHADER_ID_CCS_NUM_WGS_SRC1,
++                 false);
++
++      /* Offset the workgroup IDs. */
++      pdsc_add32(p, ccs_wgid_x, ccs_wgid_x, base_wgid_x);
++      pdsc_add32(p, ccs_wgid_y, ccs_wgid_y, base_wgid_y);
++      pdsc_add32(p, ccs_wgid_z, ccs_wgid_z, base_wgid_z);
++
++      pdsc_ref doutw_ccs_wgid_xy = pdsc_ref_64_2x32(ccs_wgid_x, ccs_wgid_y);
++      pdsc_ref doutw_ccs_wgid__z = pdsc_ref_64_2x32(ccs_lid_xyz, ccs_wgid_z);
++
++      /* Write out the workgroup ID(s) (if requested by the driver). */
++      pdsc_doutw(p,
++                 doutw_ccs_wgid_xy,
++                 PVR_COMPUTE_SHADER_ID_CCS_WGID_XY,
++                 pdsc_ref_null(),
++                 false);
++      pdsc_doutw(p,
++                 doutw_ccs_wgid__z,
++                 PVR_COMPUTE_SHADER_ID_CCS_WGID_Z,
++                 pdsc_ref_null(),
++                 false);
++
++      /* Unpack the local ID(s). */
++      /* We just do multiple shifts so we don't need to allocate consts. */
++      pdsc_shl32(p, ccs_lid_z, ccs_lid_xyz, 2);
++      pdsc_shr32(p, ccs_lid_z, ccs_lid_z, 22);
++
++      pdsc_shl32(p, ccs_lid_y, ccs_lid_xyz, 12);
++      pdsc_shr32(p, ccs_lid_y, ccs_lid_y, 22);
++
++      pdsc_shl32(p, ccs_lid_x, ccs_lid_xyz, 22);
++      pdsc_shr32(p, ccs_lid_x, ccs_lid_x, 22);
++
++      pdsc_ref doutw_ccs_lid_xy = pdsc_ref_64_2x32(ccs_lid_x, ccs_lid_y);
++      pdsc_ref doutw_ccs_lid__z = pdsc_ref_64_2x32(ccs_lid_xyz, ccs_lid_z);
++
++      /* Write out the local IDs (if requested by the driver). */
++      pdsc_doutw(p,
++                 doutw_ccs_lid_xy,
++                 PVR_COMPUTE_SHADER_ID_CCS_LID_XY,
++                 pdsc_ref_null(),
++                 false);
++      pdsc_doutw(p,
++                 doutw_ccs_lid__z,
++                 PVR_COMPUTE_SHADER_ID_CCS_LID_Z,
++                 pdsc_ref_null(),
++                 false);
++
++      /* Skip doutu if src0 is zero/uninitialised. */
++
++      pdsc_instr_t cmp =
++         pdsc_cmp(p,
++                  tzero64,
++                  pdsc_ref_null() /* To be replaced after the doutu. */,
++                  .cop = PDSC_COP_NE);
++      /* P0 is true if doutu_src0 is non-zero. */
++
++      pdsc_instr_t not_p0 = pdsc_branch_push(p, PDSC_PRED_P0, true);
++      {
++         pdsc_instr_t doutu = pdsc_doutu(p,
++                                         PVR_COMPUTE_SHADER_ID_CCS_DOUTU,
++                                         false,
++                                         .mods.cc = true);
++         pdsc_src_set(p, cmp, 1, pdsc_src_get(p, doutu, 0));
++      }
++      pdsc_branch_pop(p, not_p0);
++
++      pdsc_halt(p);
++   }
++   pdsc_branch_pop(p, not_if1);
++   {
++      /* if1 isn't set, branched: cs task. */
++
++      /* Allocate a temp array for loading the conditional rendering buffer. */
++      ALLOC_TEMP64_ARRAY(p, ld_data64x2, 2);
++
++      pdsc_ref ld_data64[] = {
++         pdsc_ref_elem64(ld_data64x2, 0),
++         pdsc_ref_elem64(ld_data64x2, 1),
++      };
++
++      pdsc_ref ld_data32[] = {
++         pdsc_ref_lo32(ld_data64[0]),
++         pdsc_ref_hi32(ld_data64[0]),
++         pdsc_ref_lo32(ld_data64[1]),
++         pdsc_ref_hi32(ld_data64[1]),
++      };
++
++      /* Initialize to zero in case we aren't conditionally executing. */
++      pdsc_limm(p, ld_data32[0], pdsc_ref_imm(0));
++      /* pdsc_limm(p, ld_data32[1], pdsc_ref_imm(0)); */
++      /* pdsc_limm(p, ld_data32[2], pdsc_ref_imm(0)); */
++      /* pdsc_limm(p, ld_data32[3], pdsc_ref_imm(0)); */
++
++      ALLOC_CONST32(p, cr_neg, PVR_COMPUTE_SHADER_ID_CS_CR_NEG);
++
++      /* Unpack the local IDs. */
++      /* We just do multiple shifts so we don't need to allocate consts. */
++      pdsc_shr32(p, cs_lid_z, cs_lid_yz, 16);
++
++      pdsc_shl32(p, cs_lid_y, cs_lid_yz, 16);
++      pdsc_shr32(p, cs_lid_y, cs_lid_y, 16);
++
++      pdsc_ref doutw_cs_lid_xy = pdsc_ref_64_2x32(cs_lid_x, cs_lid_y);
++      pdsc_ref doutw_cs_lid_z_ = pdsc_ref_64_2x32(cs_pad, cs_lid_z);
++
++      /* Write out the local IDs (if requested by the driver). */
++      pdsc_doutw(p,
++                 doutw_cs_lid_xy,
++                 PVR_COMPUTE_SHADER_ID_CS_LID_XY,
++                 pdsc_ref_null(),
++                 false);
++      pdsc_doutw(p,
++                 doutw_cs_lid_z_,
++                 PVR_COMPUTE_SHADER_ID_CS_LID_Z,
++                 pdsc_ref_null(),
++                 false);
++
++      /* P0 is true if ld_src0 is non-zero. */
++      pdsc_instr_t cmp =
++         pdsc_cmp(p,
++                  tzero64,
++                  pdsc_ref_null() /* To be replaced after the ld. */,
++                  .cop = PDSC_COP_NE);
++
++      /* Perform load if ld_src0 is non-zero. */
++      pdsc_setc(p, PDSC_PRED_P0);
++      pdsc_instr_t ld = pdsc_ld(p,
++                                ld_data64x2,
++                                PVR_COMPUTE_SHADER_REF_ID_ZERO_LD_DEST,
++                                PVR_COMPUTE_SHADER_ID_CS_CR_LD_SRC0,
++                                false,
++                                .mods.cc = true);
++      pdsc_src_set(p, cmp, 1, pdsc_src_get(p, ld, 0));
++
++      /* At this point, ld_data64x2 will either be all zeroes, or the result of
++       * the load.
++       */
++
++      ALLOC_CONST32(p, ld_sel_elem, PVR_COMPUTE_SHADER_ID_CS_CR_LD_SEL_ELEM);
++      pdsc_mov32(p, pdsc_ref_lo32(tcmp), ld_sel_elem);
++
++      pdsc_setc(p, PDSC_PRED_P0);
++
++      /* Set ld_data32[0] (ld_data64[0].lo32) to the appropriate data word. */
++      {
++         /* if (ld_sel_elem == 0) ld_data32[0] = ld_data32[0]; */
++         /* pdsc_cmp(p, tcmp, pdsc_ref_imm(0), .cop = PDSC_COP_EQ); */
++         /* pdsc_mov32(p, ld_data32[0], ld_data32[0], .cc = true); */
++
++         /* if (ld_sel_elem == 1) ld_data32[0] = ld_data32[1]; */
++         pdsc_cmp(p, tcmp, pdsc_ref_imm(1), .cop = PDSC_COP_EQ);
++         pdsc_mov32(p, ld_data32[0], ld_data32[1], .cc = true);
++
++         /* if (ld_sel_elem == 2) ld_data32[0] = ld_data32[2]; */
++         pdsc_cmp(p, tcmp, pdsc_ref_imm(2), .cop = PDSC_COP_EQ);
++         pdsc_mov32(p, ld_data32[0], ld_data32[2], .cc = true);
++
++         /* if (ld_sel_elem == 3) ld_data32[0] = ld_data32[3]; */
++         pdsc_cmp(p, tcmp, pdsc_ref_imm(3), .cop = PDSC_COP_EQ);
++         pdsc_mov32(p, ld_data32[0], ld_data32[3], .cc = true);
++      }
++
++      /* Conditionally invert ld_data32[0] (ld_data64[0].lo32). */
++      pdsc_xor32(p, ld_data32[0], ld_data32[0], cr_neg);
++
++      /* Set ld_data32[1] (ld_data64[0].hi32) to zero. */
++      pdsc_limm(p, ld_data32[1], pdsc_ref_imm(0));
++
++      /* P0 is true if should conditionally render/execute. */
++      pdsc_cmp(p, ld_data64[0], pdsc_ref_imm(0), .cop = PDSC_COP_NE);
++
++      pdsc_instr_t not_p0 = pdsc_branch_push(p, PDSC_PRED_P0, true);
++      {
++         /* Only doutu if if0 is set (last in task). */
++         pdsc_setc(p, PDSC_PRED_IF0);
++         pdsc_doutu(p, PVR_COMPUTE_SHADER_ID_CS_DOUTU, false, .mods.cc = true);
++      }
++      pdsc_branch_pop(p, not_p0);
++
++      pdsc_halt(p);
++   }
++
++   return p;
++}
++
++void pdsc_patch_compute_shader(pdsc_program *p,
++                               struct pdsc_compute_arguments *args,
++                               uint32_t *const_buffer)
++{
++   struct pdsc_doutd_src0 ccs_zero_src0 = {
++      .slcmode = PDSC_SLC_MODE_LD_CACHED,
++      .ccpri = 0,
++      .ccslc = PDSC_CCSLC_LD_NORMAL,
++      .ccmcu = PDSC_CCMCU_LD_NORMAL,
++      .doffset = 0,
++      .sbase = args->zero_addr,
++   };
++
++   struct pdsc_doutd_src1 ccs_zero_src1 = {
++      .last_issue = false,
++      .store_dest = PDSC_STORE_DEST_COMMON,
++      .cmode = PDSC_CMODE_LD_CACHED,
++      .ao = args->zero_start,
++      .bsize = args->zero_count,
++   };
++
++   struct pdsc_doutd_src0 ccs_num_wgs_src0 = {
++      .slcmode = PDSC_SLC_MODE_LD_CACHED,
++      .ccpri = 0,
++      .ccslc = PDSC_CCSLC_LD_NORMAL,
++      .ccmcu = PDSC_CCMCU_LD_NORMAL,
++      .doffset = 0,
++      .sbase = args->num_wgs_addr,
++   };
++
++   struct pdsc_doutd_src1 ccs_num_wgs_src1 = {
++      .last_issue = false,
++      .store_dest = PDSC_STORE_DEST_COMMON,
++      .cmode = PDSC_CMODE_LD_CACHED,
++      .ao = args->num_wgs_start,
++      .bsize = args->num_wgs_count,
++   };
++
++   enum pdsc_doutw_bsize bsize_lut_xy[] = {
++      [0] = PDSC_DOUTW_BSIZE_NONE,
++      [1] = PDSC_DOUTW_BSIZE_LOWER,
++      [2] = PDSC_DOUTW_BSIZE_ALL64,
++      [3] = PDSC_DOUTW_BSIZE_ALL64,
++   };
++
++   enum pdsc_doutw_bsize bsize_lut_z[] = {
++      [0] = PDSC_DOUTW_BSIZE_NONE,
++      [1] = PDSC_DOUTW_BSIZE_NONE,
++      [2] = PDSC_DOUTW_BSIZE_NONE,
++      [3] = PDSC_DOUTW_BSIZE_UPPER,
++   };
++
++   struct pdsc_doutw_src1 ccs_wgid_xy = {
++      .last_issue = false,
++      .store_dest = PDSC_STORE_DEST_COMMON,
++      .cmode = PDSC_CMODE_LD_CACHED,
++      .ao = args->wgid_start,
++      .bsize = bsize_lut_xy[args->wgid_count],
++   };
++
++   struct pdsc_doutw_src1 ccs_wgid_z = {
++      .last_issue = false,
++      .store_dest = PDSC_STORE_DEST_COMMON,
++      .cmode = PDSC_CMODE_LD_CACHED,
++      .ao = args->wgid_start + 2,
++      .bsize = bsize_lut_z[args->wgid_count],
++   };
++
++   struct pdsc_doutw_src1 ccs_lid_xy = {
++      .last_issue = false,
++      .store_dest = PDSC_STORE_DEST_COMMON,
++      .cmode = PDSC_CMODE_LD_CACHED,
++      .ao = args->ccs_lid_start,
++      .bsize = bsize_lut_xy[args->ccs_lid_count],
++   };
++
++   struct pdsc_doutw_src1 ccs_lid_z = {
++      .last_issue = true,
++      .store_dest = PDSC_STORE_DEST_COMMON,
++      .cmode = PDSC_CMODE_LD_CACHED,
++      .ao = args->ccs_lid_start + 2,
++      .bsize = bsize_lut_z[args->ccs_lid_count],
++   };
++
++   struct pdsc_doutu_src0 ccs_doutu = {
++      .dual_phase = false,
++      .temps = args->coeff_update_shader_temps,
++      .sample_rate = PDSC_DOUTU_SAMPLE_RATE_INSTANCE,
++      .exe_off = args->coeff_update_shader_addr,
++   };
++
++   struct pdsc_doutw_src1 cs_lid_xy = {
++      .last_issue = false,
++      .store_dest = PDSC_STORE_DEST_UNIFIED,
++      .cmode = PDSC_CMODE_LD_CACHED,
++      .ao = args->cs_lid_start,
++      .bsize = bsize_lut_xy[args->cs_lid_count],
++   };
++
++   struct pdsc_doutw_src1 cs_lid_z = {
++      .last_issue = true,
++      .store_dest = PDSC_STORE_DEST_UNIFIED,
++      .cmode = PDSC_CMODE_LD_CACHED,
++      .ao = args->cs_lid_start + 2,
++      .bsize = bsize_lut_z[args->cs_lid_count],
++   };
++
++   pdsc_ref zero_ld_dest =
++      pdsc_load_ref(p, PVR_COMPUTE_SHADER_REF_ID_ZERO_LD_DEST);
++   struct pdsc_ld64_src0 cs_cr = {
++      .slcmode = PDSC_SLC_MODE_LD_CACHED,
++      .ccpri = 0,
++      .ccslc = PDSC_CCSLC_LD_NORMAL,
++      .ccmcu = PDSC_CCMCU_LD_NORMAL,
++
++      .dest = zero_ld_dest,
++
++      .cmode = PDSC_CMODE_LD_CACHED,
++      .count8 = pdsc_ref_get_chans(zero_ld_dest),
++      .srcadd = args->cond_render_addr & ~0b1111,
++   };
++
++   struct pdsc_doutu_src0 cs_doutu = {
++      .dual_phase = false,
++      .temps = args->shader_temps,
++      .sample_rate = PDSC_DOUTU_SAMPLE_RATE_INSTANCE,
++      .exe_off = args->shader_addr,
++   };
++
++   pdsc_patch patches[] = {
++      {
++         .patch_id = PVR_COMPUTE_SHADER_ID_CCS_BASE_WGID_X,
++         .value = args->global_base_group[0],
++      },
++      {
++         .patch_id = PVR_COMPUTE_SHADER_ID_CCS_BASE_WGID_Y,
++         .value = args->global_base_group[1],
++      },
++      {
++         .patch_id = PVR_COMPUTE_SHADER_ID_CCS_BASE_WGID_Z,
++         .value = args->global_base_group[2],
++      },
++
++      {
++         .patch_id = PVR_COMPUTE_SHADER_ID_CCS_ZERO_SRC0,
++         .value = pdsc_doutd_src0_pack(p, &ccs_zero_src0),
++      },
++      {
++         .patch_id = PVR_COMPUTE_SHADER_ID_CCS_ZERO_SRC1,
++         .value = pdsc_doutd_src1_pack(p, &ccs_zero_src1),
++      },
++
++      {
++         .patch_id = PVR_COMPUTE_SHADER_ID_CCS_NUM_WGS_SRC0,
++         .value = pdsc_doutd_src0_pack(p, &ccs_num_wgs_src0),
++      },
++      {
++         .patch_id = PVR_COMPUTE_SHADER_ID_CCS_NUM_WGS_SRC1,
++         .value = pdsc_doutd_src1_pack(p, &ccs_num_wgs_src1),
++      },
++
++      {
++         .patch_id = PVR_COMPUTE_SHADER_ID_CCS_WGID_XY,
++         .value = pdsc_doutw_src1_pack(p, &ccs_wgid_xy),
++      },
++      {
++         .patch_id = PVR_COMPUTE_SHADER_ID_CCS_WGID_Z,
++         .value = pdsc_doutw_src1_pack(p, &ccs_wgid_z),
++      },
++
++      {
++         .patch_id = PVR_COMPUTE_SHADER_ID_CCS_LID_XY,
++         .value = pdsc_doutw_src1_pack(p, &ccs_lid_xy),
++      },
++      {
++         .patch_id = PVR_COMPUTE_SHADER_ID_CCS_LID_Z,
++         .value = pdsc_doutw_src1_pack(p, &ccs_lid_z),
++      },
++
++      {
++         .patch_id = PVR_COMPUTE_SHADER_ID_CCS_DOUTU,
++         .value = !args->coeff_update_shader_addr
++                     ? 0
++                     : pdsc_doutu_src0_pack(p, &ccs_doutu),
++      },
++
++      {
++         .patch_id = PVR_COMPUTE_SHADER_ID_CS_LID_XY,
++         .value = pdsc_doutw_src1_pack(p, &cs_lid_xy),
++      },
++      {
++         .patch_id = PVR_COMPUTE_SHADER_ID_CS_LID_Z,
++         .value = pdsc_doutw_src1_pack(p, &cs_lid_z),
++      },
++
++      {
++         .patch_id = PVR_COMPUTE_SHADER_ID_CS_CR_LD_SRC0,
++         .value = !args->cond_render_addr ? 0 : pdsc_ld64_src0_pack(p, &cs_cr),
++      },
++      {
++         .patch_id = PVR_COMPUTE_SHADER_ID_CS_CR_LD_SEL_ELEM,
++         .value = (args->cond_render_addr >> 2) % 4,
++      },
++      {
++         .patch_id = PVR_COMPUTE_SHADER_ID_CS_CR_NEG,
++         .value = (args->cond_render_invert || !args->cond_render_addr)
++                     ? UINT32_MAX
++                     : 0,
++      },
++
++      {
++         .patch_id = PVR_COMPUTE_SHADER_ID_CS_DOUTU,
++         .value = pdsc_doutu_src0_pack(p, &cs_doutu),
++      },
++   };
++   pdsc_patch_program(p, ARRAY_SIZE(patches), patches, const_buffer);
++}
+diff --git a/src/imagination/pdsc/programs/pdsc_compute.h b/src/imagination/pdsc/programs/pdsc_compute.h
+new file mode 100644
+index 00000000000..6ba9104002f
+--- /dev/null
++++ b/src/imagination/pdsc/programs/pdsc_compute.h
+@@ -0,0 +1,53 @@
++/*
++ * Copyright © 2026 Imagination Technologies Ltd.
++ *
++ * SPDX-License-Identifier: MIT
++ */
++
++#ifndef PDSC_COMPUTE_H
++#define PDSC_COMPUTE_H
++
++#include <stdbool.h>
++#include <stdint.h>
++
++typedef struct _pdsc_program pdsc_program;
++enum pdsc_feature;
++
++pdsc_program *pdsc_compute_shader_gen(void *mem_ctx,
++                                      enum pdsc_feature features);
++
++struct pdsc_compute_arguments {
++   uint32_t global_base_group[3];
++
++   uint64_t zero_addr;
++   uint32_t zero_start;
++   uint32_t zero_count;
++
++   uint64_t num_wgs_addr;
++   uint32_t num_wgs_start;
++   uint32_t num_wgs_count;
++
++   uint32_t wgid_start;
++   uint32_t wgid_count;
++
++   uint32_t ccs_lid_start;
++   uint32_t ccs_lid_count;
++
++   uint32_t coeff_update_shader_temps;
++   uint64_t coeff_update_shader_addr;
++
++   uint32_t cs_lid_start;
++   uint32_t cs_lid_count;
++
++   uint64_t cond_render_addr;
++   bool cond_render_invert;
++
++   uint32_t shader_temps;
++   uint64_t shader_addr;
++};
++
++void pdsc_patch_compute_shader(pdsc_program *p,
++                               struct pdsc_compute_arguments *args,
++                               uint32_t *const_buffer);
++
++#endif /* PDSC_COMPUTE_H */
+diff --git a/src/imagination/pdsc/programs/pdsc_set_view_index.c b/src/imagination/pdsc/programs/pdsc_set_view_index.c
+new file mode 100644
+index 00000000000..f391f943f8c
+--- /dev/null
++++ b/src/imagination/pdsc/programs/pdsc_set_view_index.c
+@@ -0,0 +1,37 @@
++/*
++ * Copyright © 2026 Imagination Technologies Ltd.
++ *
++ * SPDX-License-Identifier: MIT
++ */
++
++#include "pdsc_set_view_index.h"
++
++#include "pdsc/pdsc_internal.h"
++#include "common/pvr_iface.h"
++
++/* PDSC set_view_index patch IDs. */
++enum pvr_set_view_index_id {
++   /** Patch ID for view index input. */
++   PVR_SET_VIEW_INDEX_ID_IN,
++};
++
++pdsc_program *pdsc_set_view_index_gen(void *mem_ctx, enum pdsc_feature features)
++{
++   pdsc_program *p = pdsc_program_create(mem_ctx, features, "set_view_index");
++
++   ALLOC_CONST32(p, view_index_in, PVR_SET_VIEW_INDEX_ID_IN);
++   DECL_PTEMP32(p, view_index_out, PVR_VDM_PTEMP_VIEW_INDEX_OUT);
++
++   pdsc_mov32(p, view_index_out, view_index_in);
++   pdsc_halt(p);
++
++   return p;
++}
++
++void pdsc_patch_set_view_index(pdsc_program *p,
++                               unsigned index,
++                               uint32_t *const_buffer)
++{
++   pdsc_patch patch = { .patch_id = PVR_SET_VIEW_INDEX_ID_IN, .value = index };
++   pdsc_patch_program(p, 1, &patch, const_buffer);
++}
+diff --git a/src/imagination/pdsc/programs/pdsc_set_view_index.h b/src/imagination/pdsc/programs/pdsc_set_view_index.h
+new file mode 100644
+index 00000000000..379d804baae
+--- /dev/null
++++ b/src/imagination/pdsc/programs/pdsc_set_view_index.h
+@@ -0,0 +1,21 @@
++/*
++ * Copyright © 2026 Imagination Technologies Ltd.
++ *
++ * SPDX-License-Identifier: MIT
++ */
++
++#ifndef PDSC_SET_VIEW_INDEX_H
++#define PDSC_SET_VIEW_INDEX_H
++
++#include <stdint.h>
++
++typedef struct _pdsc_program pdsc_program;
++enum pdsc_feature;
++
++pdsc_program *pdsc_set_view_index_gen(void *mem_ctx,
++                                      enum pdsc_feature features);
++void pdsc_patch_set_view_index(pdsc_program *p,
++                               unsigned index,
++                               uint32_t *const_buffer);
++
++#endif /* PDSC_SET_VIEW_INDEX_H */
+diff --git a/src/imagination/vulkan/pds/pvr_pds.c b/src/imagination/vulkan/pds/pvr_pds.c
+index 60f581807ed..19c2e37823f 100644
+--- a/src/imagination/vulkan/pds/pvr_pds.c
++++ b/src/imagination/vulkan/pds/pvr_pds.c
+@@ -4569,60 +4569,6 @@ uint32_t *pvr_pds_generate_stream_out_terminate_program(
+    return NULL;
+ }
+ 
+-uint32_t *pvr_pds_generate_view_index_init_program(
+-   struct pvr_pds_view_index_init_program *restrict program,
+-   uint32_t *restrict buffer,
+-   enum pvr_pds_generate_mode gen_mode)
+-{
+-   uint32_t next_temp = PVR_PDS_TEMPS_BLOCK_BASE;
+-   uint32_t temps_used = 0;
+-   uint32_t data_size = 0;
+-   uint32_t code_size = 0;
+-
+-   if (gen_mode == PDS_GENERATE_CODE_SEGMENT ||
+-       gen_mode == PDS_GENERATE_SIZES) {
+-      const bool encode = (gen_mode == PDS_GENERATE_CODE_SEGMENT);
+-#define APPEND(X)                    \
+-   if (encode) {                     \
+-      *buffer = X;                   \
+-      buffer++;                      \
+-   } else {                          \
+-      code_size += sizeof(uint32_t); \
+-   }
+-
+-      uint32_t view_index_temp = pvr_pds_get_temps(&next_temp, 1, &temps_used);
+-      uint32_t zero_temp = pvr_pds_get_temps(&next_temp, 1, &temps_used);
+-
+-      /* Load the view index into a view_index_temp. */
+-      APPEND(
+-         pvr_pds_inst_encode_limm(0, view_index_temp, program->view_index, 0));
+-
+-      /* Load the zero into a zero_temp. */
+-      APPEND(pvr_pds_inst_encode_limm(0, zero_temp, 0, 0));
+-
+-      /* Copy the temp into ptemp. */
+-      APPEND(pvr_pds_inst_encode_add32(
+-         0,
+-         0,
+-         0,
+-         view_index_temp,
+-         zero_temp,
+-         PVR_ROGUE_PDSINST_REGS32TP_PTEMP32_LOWER + PVR_PTEMP_VIEW_INDEX));
+-
+-      APPEND(pvr_pds_inst_encode_halt(0));
+-#undef APPEND
+-
+-      program->temps_used = temps_used;
+-   }
+-
+-   if (gen_mode == PDS_GENERATE_SIZES) {
+-      program->code_size = code_size;
+-      program->data_size = data_size;
+-   }
+-
+-   return buffer;
+-}
+-
+ /* DrawArrays works in several steps:
+  *
+  * 1) load data from draw_indirect buffer
+diff --git a/src/imagination/vulkan/pds/pvr_pds.h b/src/imagination/vulkan/pds/pvr_pds.h
+index fe133bce841..10ab1fd0252 100644
+--- a/src/imagination/vulkan/pds/pvr_pds.h
++++ b/src/imagination/vulkan/pds/pvr_pds.h
+@@ -823,13 +823,6 @@ uint32_t *pvr_pds_generate_stream_out_terminate_program(
+    enum pvr_pds_generate_mode gen_mode,
+    const struct pvr_device_info *dev_info);
+ 
+-#define PVR_PTEMP_VIEW_INDEX 4U
+-
+-uint32_t *pvr_pds_generate_view_index_init_program(
+-   struct pvr_pds_view_index_init_program *restrict program,
+-   uint32_t *restrict buffer,
+-   enum pvr_pds_generate_mode gen_mode);
+-
+ /* Structure representing DrawIndirect PDS programs. */
+ struct pvr_pds_drawindirect_program {
+    /* --- Input to pvr_pds_drawindirect_program --- */
+diff --git a/src/imagination/vulkan/pds/pvr_pipeline_pds.c b/src/imagination/vulkan/pds/pvr_pipeline_pds.c
+index 0b58cbab52d..50f7ad6e463 100644
+--- a/src/imagination/vulkan/pds/pvr_pipeline_pds.c
++++ b/src/imagination/vulkan/pds/pvr_pipeline_pds.c
+@@ -27,6 +27,7 @@
+ #include <stdio.h>
+ #include <string.h>
+ 
++#include "common/pvr_iface.h"
+ #include "pvr_device_info.h"
+ #include "pvr_pds.h"
+ #include "pvr_rogue_pds_defs.h"
+@@ -1465,7 +1466,7 @@ void pvr_pds_generate_vertex_primary_program(
+ 
+    if (input_program->flags & PVR_PDS_VERTEX_FLAGS_VIEW_INDEX_REQUIRED) {
+       bool last_dma = (++running_dma_count == total_dma_count);
+-      uint32_t data_mask = (PVR_PTEMP_VIEW_INDEX & 1) ? 0x2 : 0x1;
++      uint32_t data_mask = (PVR_VDM_PTEMP_VIEW_INDEX_OUT & 1) ? 0x2 : 0x1;
+ 
+       PVR_PDS_MODE_TOGGLE(
+          code,
+@@ -1475,7 +1476,7 @@ void pvr_pds_generate_vertex_primary_program(
+             last_dma,
+             false,
+             R64_C(write_view_index_control),
+-            R64_P(PVR_PTEMP_VIEW_INDEX >> 1),
++            R64_P(PVR_VDM_PTEMP_VIEW_INDEX_OUT >> 1),
+             data_mask,
+             input_program->view_index_register,
+             PVR_ROGUE_PDSINST_DOUT_FIELDS_DOUTW_SRC1_DEST_UNIFIED_STORE,
+diff --git a/src/imagination/vulkan/pvr_arch_cmd_buffer.c b/src/imagination/vulkan/pvr_arch_cmd_buffer.c
+index 98c35406965..9a964be5e48 100644
+--- a/src/imagination/vulkan/pvr_arch_cmd_buffer.c
++++ b/src/imagination/vulkan/pvr_arch_cmd_buffer.c
+@@ -87,6 +87,8 @@
+ #include "vk_synchronization.h"
+ #include "vk_util.h"
+ 
++#include "pdsc/programs/pdsc_compute.h"
++
+ /* Structure used to pass data into pvr_compute_generate_control_stream()
+  * function.
+  */
+@@ -295,6 +297,9 @@ static VkResult pvr_cmd_buffer_create(struct pvr_device *device,
+    list_inithead(&cmd_buffer->sub_cmds);
+    list_inithead(&cmd_buffer->bo_list);
+ 
++   cmd_buffer->state.cond_render_buffer_addr = 0;
++   cmd_buffer->state.cond_render_invert = true;
++
+    *pCommandBuffer = pvr_cmd_buffer_to_handle(cmd_buffer);
+ 
+    return VK_SUCCESS;
+@@ -2349,16 +2354,22 @@ pvr_csb_gfx_build_view_index_ctrl_stream(struct pvr_device *const device,
+                                          struct pvr_bo **bo,
+                                          uint32_t *stride)
+ {
++   unsigned temp_size =
++      pdsc_program_temps_used(device->pdsc_precomp_programs.set_view_index);
++   unsigned data_size = DIV_ROUND_UP(
++      pdsc_program_data_size(device->pdsc_precomp_programs.set_view_index),
++      ROGUE_VDMCTRL_PDS_STATE0_PDS_DATA_SIZE_UNIT_SIZE);
++   uint64_t code_addr =
++      device->pdsc_precomp_programs.set_view_index_code.pvr_bo->dev_addr.addr;
+    struct list_head bo_list;
+    struct pvr_csb csb;
+    VkResult result;
+ 
+    pvr_csb_init(device, PVR_CMD_STREAM_TYPE_GRAPHICS, &csb);
+ 
+-   for (uint32_t i = 0; i < PVR_MAX_MULTIVIEW; ++i) {
+-      struct pvr_pds_view_index_init_program *program =
+-         &device->view_index_init_info[i];
+-
++   for (unsigned u = 0;
++        u < ARRAY_SIZE(device->pdsc_precomp_programs.set_view_index_data);
++        ++u) {
+       pvr_csb_set_relocation_mark(&csb);
+ 
+       pvr_csb_emit (&csb, VDMCTRL_PDS_STATE0, state_update0) {
+@@ -2367,23 +2378,20 @@ pvr_csb_gfx_build_view_index_ctrl_stream(struct pvr_device *const device,
+          state_update0.usc_target = ROGUE_VDMCTRL_USC_TARGET_ALL;
+          state_update0.usc_common_size = 0;
+          state_update0.usc_unified_size = 0;
+-         state_update0.pds_temp_size = program->temps_used;
+-         state_update0.pds_data_size = DIV_ROUND_UP(
+-            PVR_DW_TO_BYTES(device->view_index_init_programs[i].data_size),
+-            ROGUE_VDMCTRL_PDS_STATE0_PDS_DATA_SIZE_UNIT_SIZE);
++         state_update0.pds_temp_size = temp_size;
++         state_update0.pds_data_size = data_size;
+       }
+ 
+       pvr_csb_emit (&csb, VDMCTRL_PDS_STATE1, state_update1) {
+          state_update1.pds_data_addr =
+-            device->view_index_init_programs[i].pvr_bo->dev_addr;
++            device->pdsc_precomp_programs.set_view_index_data[u]
++               .pvr_bo->dev_addr;
+          state_update1.sd_type = ROGUE_VDMCTRL_SD_TYPE_PDS;
+          state_update1.sd_next_type = ROGUE_VDMCTRL_SD_TYPE_USC;
+       }
+ 
+       pvr_csb_emit (&csb, VDMCTRL_PDS_STATE2, state_update2) {
+-         state_update2.pds_code_addr.addr =
+-            device->view_index_init_programs[i].pvr_bo->dev_addr.addr +
+-            PVR_DW_TO_BYTES(device->view_index_init_programs[i].data_size);
++         state_update2.pds_code_addr.addr = code_addr;
+       }
+ 
+       pvr_csb_clear_relocation_mark(&csb);
+@@ -6271,6 +6279,19 @@ static VkResult pvr_setup_descriptor_mappings(
+          break;
+       }
+ 
++      case PVR_PDS_CONST_MAP_ENTRY_TYPE_DOUTU_ADDRESS: {
++         const struct pvr_const_map_entry_doutu_address *const doutu_addr =
++            (struct pvr_const_map_entry_doutu_address *)entries;
++
++         PVR_WRITE(qword_buffer,
++                   doutu_addr->doutu_control,
++                   doutu_addr->const_offset,
++                   pds_info->data_size_in_dwords);
++
++         entries += sizeof(*doutu_addr);
++         break;
++      }
++
+       default:
+          UNREACHABLE("Unsupported map entry type.");
+       }
+@@ -6504,76 +6525,99 @@ static void pvr_compute_update_kernel(
+    const uint32_t global_base_group[static const PVR_WORKGROUP_DIMENSIONS],
+    const uint32_t global_workgroup_size[static const PVR_WORKGROUP_DIMENSIONS])
+ {
+-   const struct pvr_physical_device *pdevice = cmd_buffer->device->pdevice;
++   const struct pvr_device *device = cmd_buffer->device;
++   const struct pvr_physical_device *pdevice = device->pdevice;
+    struct pvr_cmd_buffer_state *state = &cmd_buffer->state;
+    const struct pvr_device_runtime_info *dev_runtime_info =
+       &pdevice->dev_runtime_info;
+    struct pvr_csb *csb = &sub_cmd->control_stream;
+    const struct pvr_compute_pipeline *pipeline = state->compute_pipeline;
+    const pco_data *const cs_data = &pipeline->cs_data;
+-   const struct pvr_pds_info *program_info = &pipeline->pds_cs_program_info;
+-   bool uses_wg_id = pipeline->base_workgroup_data_patching_offset != ~0u;
+-   bool uses_num_wgs = pipeline->num_workgroups_data_patching_offset != ~0u;
+-   bool base_group_set = !!global_base_group[0] || !!global_base_group[1] ||
+-                         !!global_base_group[2];
+-   uint32_t pds_data_offset = pipeline->pds_cs_program.data_offset;
+    const unsigned max_coeffs = dev_runtime_info->cdm_max_local_mem_size_regs;
+ 
+-   /* Does the PDS data segment need patching, or can the default be used? */
+-   if ((uses_wg_id && base_group_set) || uses_num_wgs) {
+-      struct pvr_pds_upload pds_data_upload;
+-      uint32_t *pds_data;
+-
+-      /* Upload and patch PDS data segment. */
+-      pvr_cmd_buffer_upload_pds_data(cmd_buffer,
+-                                     pipeline->pds_cs_data_section,
+-                                     program_info->data_size_in_dwords,
+-                                     16,
+-                                     &pds_data_upload);
+-      pds_data_offset = pds_data_upload.data_offset;
+-      pds_data = pvr_bo_suballoc_get_map_addr(pds_data_upload.pvr_bo);
+-
+-      if (uses_wg_id && base_group_set) {
+-         unsigned offset = pipeline->base_workgroup_data_patching_offset;
+-         for (unsigned u = 0; u < PVR_WORKGROUP_DIMENSIONS; ++u) {
+-            pds_data[offset + u] = global_base_group[u];
+-         }
+-      }
+-
+-      if (uses_num_wgs) {
+-         if (indirect_addr.addr) {
+-            unsigned offset =
+-               pipeline->num_workgroups_indirect_src_patching_offset;
+-
+-            uint64_t *pds_data64 =
+-               pvr_bo_suballoc_get_map_addr(pds_data_upload.pvr_bo);
+-            pds_data64[offset / 2] = indirect_addr.addr;
++   pdsc_program *compute_shader = device->pdsc_precomp_programs.compute_shader;
++   const struct pvr_pds_upload *compute_shader_code =
++      &device->pdsc_precomp_programs.compute_shader_code;
++
++   /* Upload and patch PDS data segment. */
++   struct pvr_pds_upload pds_data_upload;
++   pvr_cmd_buffer_upload_pds_data(cmd_buffer,
++                                  pdsc_program_data(compute_shader),
++                                  pdsc_program_data_size(compute_shader) /
++                                     sizeof(uint32_t),
++                                  16,
++                                  &pds_data_upload);
++
++   uint32_t *pds_data = pvr_bo_suballoc_get_map_addr(pds_data_upload.pvr_bo);
++   struct pvr_suballoc_bo *shader_bo = pipeline->shader_state.shader_bo;
++   const pco_range *sys_vals = cs_data->common.sys_vals;
++
++   pvr_dev_addr_t shader_addr =
++      PVR_DEV_ADDR_OFFSET(shader_bo->dev_addr, cs_data->common.entry_offset);
++
++   unsigned coeff_update_temps = 0u;
++   pvr_dev_addr_t coeff_update_addr = { 0 };
++   if (cs_data->common.uses.preamble) {
++      coeff_update_temps = cs_data->common.preamble_temps;
++
++      coeff_update_addr =
++         PVR_DEV_ADDR_OFFSET(shader_bo->dev_addr,
++                             cs_data->common.preamble_offset);
++   }
++
++   struct pdsc_compute_arguments args = {
++      .global_base_group[0] = global_base_group[0],
++      .global_base_group[1] = global_base_group[1],
++      .global_base_group[2] = global_base_group[2],
++      .zero_addr = device->null_state.zero_bo->vma->dev_addr.addr,
++      .zero_start = cs_data->cs.shmem.start,
++      .zero_count = (cs_data->cs.zero_shmem && !cs_data->cs.global_shmem)
++                       ? cs_data->cs.shmem.count
++                       : 0,
++      .num_wgs_start = sys_vals[SYSTEM_VALUE_NUM_WORKGROUPS].start,
++      .num_wgs_count = sys_vals[SYSTEM_VALUE_NUM_WORKGROUPS].count,
++      .wgid_start = sys_vals[SYSTEM_VALUE_WORKGROUP_ID].start,
++      .wgid_count = sys_vals[SYSTEM_VALUE_WORKGROUP_ID].count,
++      .cs_lid_start = sys_vals[SYSTEM_VALUE_LOCAL_INVOCATION_INDEX].start,
++      .cs_lid_count = sys_vals[SYSTEM_VALUE_LOCAL_INVOCATION_INDEX].count,
++      .cond_render_addr = state->cond_render_buffer_addr,
++      .cond_render_invert = state->cond_render_invert,
++      .shader_temps = cs_data->common.temps,
++      .shader_addr = shader_addr.addr,
++      .coeff_update_shader_temps = coeff_update_temps,
++      .coeff_update_shader_addr = coeff_update_addr.addr,
++   };
+ 
+-            offset = pipeline->num_workgroups_indirect_src_dma_patching_offset;
++   if (indirect_addr.addr) {
++      args.num_wgs_addr = indirect_addr.addr;
++   } else {
++      /* TODO: only upload if requested. */
++      struct pvr_suballoc_bo *num_wgs_bo;
+ 
+-            pds_data[offset] |=
+-               3 << PVR_ROGUE_PDSINST_DOUT_FIELDS_DOUTD_SRC1_BSIZE_SHIFT;
+-         }
++      /* TODO: some error checking/reporting? */
++      pvr_arch_cmd_buffer_upload_general(cmd_buffer,
++                                         global_workgroup_size,
++                                         sizeof(*global_workgroup_size) *
++                                            PVR_WORKGROUP_DIMENSIONS,
++                                         &num_wgs_bo);
+ 
+-         unsigned offset = pipeline->num_workgroups_data_patching_offset;
+-         for (unsigned u = 0; u < PVR_WORKGROUP_DIMENSIONS; ++u) {
+-            pds_data[offset + u] = global_workgroup_size[u];
+-         }
+-      }
++      args.num_wgs_addr = num_wgs_bo->dev_addr.addr;
+    }
+ 
++   pdsc_patch_compute_shader(compute_shader, &args, pds_data);
++
+    struct pvr_compute_kernel_info info = {
+       .indirect_buffer_addr = indirect_addr,
+       .usc_target = ROGUE_CDMCTRL_USC_TARGET_ANY,
+       .pds_temp_size =
+-         DIV_ROUND_UP(program_info->temps_required << 2U,
++         DIV_ROUND_UP(pdsc_program_temps_used(compute_shader) << 2U,
+                       ROGUE_CDMCTRL_KERNEL0_PDS_TEMP_SIZE_UNIT_SIZE),
+ 
+       .pds_data_size =
+-         DIV_ROUND_UP(PVR_DW_TO_BYTES(program_info->data_size_in_dwords),
++         DIV_ROUND_UP(pdsc_program_data_size(compute_shader),
+                       ROGUE_CDMCTRL_KERNEL0_PDS_DATA_SIZE_UNIT_SIZE),
+-      .pds_data_offset = pds_data_offset,
+-      .pds_code_offset = pipeline->pds_cs_program.code_offset,
++      .pds_data_offset = pds_data_upload.data_offset,
++      .pds_code_offset = compute_shader_code->code_offset,
+ 
+       .sd_type = ROGUE_CDMCTRL_SD_TYPE_NONE,
+ 
+@@ -10611,3 +10655,31 @@ void PVR_PER_ARCH(GetRenderingAreaGranularity)(
+    VK_FROM_HANDLE(pvr_device, device, _device);
+    pvr_get_render_area_granularity(device->pdevice, pGranularity);
+ }
++
++void pvr_CmdBeginConditionalRenderingEXT(
++   VkCommandBuffer commandBuffer,
++   const VkConditionalRenderingBeginInfoEXT *pConditionalRenderingBegin)
++{
++   VK_FROM_HANDLE(pvr_cmd_buffer, cmd_buffer, commandBuffer);
++   struct pvr_cmd_buffer_state *state = &cmd_buffer->state;
++
++   vk_foreach_struct_const (sType, ext, pConditionalRenderingBegin->pNext) {
++      vk_debug_ignored_stype(sType);
++   }
++
++   VK_FROM_HANDLE(pvr_buffer, buffer, pConditionalRenderingBegin->buffer);
++   state->cond_render_buffer_addr =
++      buffer->dev_addr.addr + pConditionalRenderingBegin->offset;
++
++   state->cond_render_invert = pConditionalRenderingBegin->flags &
++                               VK_CONDITIONAL_RENDERING_INVERTED_BIT_EXT;
++}
++
++void pvr_CmdEndConditionalRenderingEXT(VkCommandBuffer commandBuffer)
++{
++   VK_FROM_HANDLE(pvr_cmd_buffer, cmd_buffer, commandBuffer);
++   struct pvr_cmd_buffer_state *state = &cmd_buffer->state;
++
++   state->cond_render_buffer_addr = 0;
++   state->cond_render_invert = true;
++}
+diff --git a/src/imagination/vulkan/pvr_arch_device.c b/src/imagination/vulkan/pvr_arch_device.c
+index 89e8139512b..7d891d80b15 100644
+--- a/src/imagination/vulkan/pvr_arch_device.c
++++ b/src/imagination/vulkan/pvr_arch_device.c
+@@ -17,6 +17,8 @@
+ #include "hwdef/pvr_hw_utils.h"
+ 
+ #include "pco_uscgen_programs.h"
++#include "pdsc/pdsc_precomp_programs.h"
++#include "pdsc/programs/pdsc_set_view_index.h"
+ 
+ #include "pvr_border.h"
+ #include "pvr_clear.h"
+@@ -584,71 +586,6 @@ err_free_nop_usc_bo:
+    return result;
+ }
+ 
+-static VkResult
+-pvr_device_init_view_index_init_programs(struct pvr_device *device)
+-{
+-   uint32_t staging_buffer_size = 0;
+-   uint32_t *staging_buffer = NULL;
+-   VkResult result;
+-   unsigned i;
+-
+-   for (i = 0; i < PVR_MAX_MULTIVIEW; ++i) {
+-      struct pvr_pds_view_index_init_program *program =
+-         &device->view_index_init_info[i];
+-
+-      program->view_index = i;
+-
+-      pvr_pds_generate_view_index_init_program(program,
+-                                               NULL,
+-                                               PDS_GENERATE_SIZES);
+-
+-      if (program->data_size + program->code_size > staging_buffer_size) {
+-         staging_buffer_size = program->data_size + program->code_size;
+-
+-         staging_buffer = vk_realloc(&device->vk.alloc,
+-                                     staging_buffer,
+-                                     staging_buffer_size,
+-                                     8U,
+-                                     VK_SYSTEM_ALLOCATION_SCOPE_DEVICE);
+-
+-         if (!staging_buffer) {
+-            result = vk_error(device, VK_ERROR_OUT_OF_HOST_MEMORY);
+-            break;
+-         }
+-      }
+-
+-      pvr_pds_generate_view_index_init_program(program,
+-                                               staging_buffer,
+-                                               PDS_GENERATE_DATA_SEGMENT);
+-      pvr_pds_generate_view_index_init_program(
+-         program,
+-         &staging_buffer[program->data_size],
+-         PDS_GENERATE_CODE_SEGMENT);
+-
+-      result =
+-         pvr_gpu_upload_pds(device,
+-                            (program->data_size == 0 ? NULL : staging_buffer),
+-                            program->data_size / sizeof(uint32_t),
+-                            16U,
+-                            &staging_buffer[program->data_size],
+-                            program->code_size / sizeof(uint32_t),
+-                            16U,
+-                            16U,
+-                            &device->view_index_init_programs[i]);
+-
+-      if (result != VK_SUCCESS)
+-         break;
+-   }
+-
+-   vk_free(&device->vk.alloc, staging_buffer);
+-
+-   if (result != VK_SUCCESS)
+-      for (uint32_t u = 0; u < i; ++u)
+-         pvr_bo_suballoc_free(device->view_index_init_programs[u].pvr_bo);
+-
+-   return result;
+-}
+-
+ static void pvr_device_init_tile_buffer_state(struct pvr_device *device)
+ {
+    simple_mtx_init(&device->tile_buffer_state.mtx, mtx_plain);
+@@ -769,6 +706,110 @@ static void pvr_device_dummy_rt_finish(struct pvr_device *device)
+    pvr_render_target_dataset_destroy(device->dummy_rt.rt_dataset);
+ }
+ 
++static VkResult
++pvr_device_finish_pdsc_precomp_programs(struct pvr_device *device)
++{
++#define finish(p)                                                          \
++   do {                                                                    \
++      pvr_bo_suballoc_free(device->pdsc_precomp_programs.p##_code.pvr_bo); \
++      device->pdsc_precomp_programs.p##_code.pvr_bo = NULL;                \
++      ralloc_free(device->pdsc_precomp_programs.p);                        \
++      device->pdsc_precomp_programs.p = NULL;                              \
++   } while (0)
++
++   finish(compute_shader);
++
++   pvr_bo_suballoc_free(
++      device->pdsc_precomp_programs.set_view_index_code.pvr_bo);
++   device->pdsc_precomp_programs.set_view_index_code.pvr_bo = NULL;
++
++   for (unsigned u = 0;
++        u < ARRAY_SIZE(device->pdsc_precomp_programs.set_view_index_data);
++        ++u) {
++      pvr_bo_suballoc_free(
++         device->pdsc_precomp_programs.set_view_index_data[u].pvr_bo);
++      device->pdsc_precomp_programs.set_view_index_data[u].pvr_bo = NULL;
++   }
++
++   ralloc_free(device->pdsc_precomp_programs.set_view_index);
++   device->pdsc_precomp_programs.set_view_index = NULL;
++
++   memset(&device->pdsc_precomp_programs,
++          0,
++          sizeof(device->pdsc_precomp_programs));
++
++#undef finish
++   return VK_SUCCESS;
++}
++
++static VkResult pvr_device_upload_pdsc_program(
++   struct pvr_device *device,
++   pdsc_program **p,
++   struct pvr_pds_upload *code,
++   pdsc_program *(*precomp)(void *mem_ctx, enum pdsc_feature features))
++{
++   *p = precomp(NULL, device->pdevice->pdsc_features);
++   pdsc_finalize_program(*p);
++   return pvr_gpu_upload_pds(device,
++                             NULL,
++                             0,
++                             0,
++                             pdsc_program_code(*p),
++                             pdsc_program_code_size(*p) / sizeof(uint32_t),
++                             16,
++                             16,
++                             code);
++}
++
++static VkResult pvr_device_init_pdsc_precomp_programs(struct pvr_device *device)
++{
++   VkResult result;
++#define upload(p)                                   \
++   do {                                             \
++      result = pvr_device_upload_pdsc_program(      \
++         device,                                    \
++         &device->pdsc_precomp_programs.p,          \
++         &device->pdsc_precomp_programs.p##_code,   \
++         pdsc_precomp_##p##_variant);               \
++      if (result != VK_SUCCESS)                     \
++         goto err_pvr_finish_pdsc_precomp_programs; \
++   } while (0)
++
++   upload(set_view_index);
++   /* Patch and upload code section for each view index. */
++   for (unsigned u = 0;
++        u < ARRAY_SIZE(device->pdsc_precomp_programs.set_view_index_data);
++        ++u) {
++      pdsc_patch_set_view_index(device->pdsc_precomp_programs.set_view_index,
++                                u,
++                                NULL);
++
++      result = pvr_gpu_upload_pds(
++         device,
++         pdsc_program_data(device->pdsc_precomp_programs.set_view_index),
++         pdsc_program_data_size(device->pdsc_precomp_programs.set_view_index) /
++            sizeof(uint32_t),
++         16U,
++         NULL,
++         0U,
++         0U,
++         16U,
++         &device->pdsc_precomp_programs.set_view_index_data[u]);
++
++      if (result != VK_SUCCESS)
++         goto err_pvr_finish_pdsc_precomp_programs;
++   }
++
++   upload(compute_shader);
++#undef upload
++   return result;
++
++err_pvr_finish_pdsc_precomp_programs:
++   pvr_device_finish_pdsc_precomp_programs(device);
++
++   return result;
++}
++
+ VkResult PVR_PER_ARCH(create_device)(struct pvr_physical_device *pdevice,
+                                      const VkDeviceCreateInfo *pCreateInfo,
+                                      const VkAllocationCallbacks *pAllocator,
+@@ -881,10 +922,14 @@ VkResult PVR_PER_ARCH(create_device)(struct pvr_physical_device *pdevice,
+    if (result != VK_SUCCESS)
+       goto err_pvr_finish_null_pages;
+ 
+-   result = pvr_device_init_nop_program(device);
++   result = pvr_device_init_pdsc_precomp_programs(device);
+    if (result != VK_SUCCESS)
+       goto err_pvr_free_list_destroy;
+ 
++   result = pvr_device_init_nop_program(device);
++   if (result != VK_SUCCESS)
++      goto err_pvr_finish_pdsc_precomp_programs;
++
+    result = pvr_device_init_compute_fence_program(device);
+    if (result != VK_SUCCESS)
+       goto err_pvr_free_nop_program;
+@@ -893,13 +938,9 @@ VkResult PVR_PER_ARCH(create_device)(struct pvr_physical_device *pdevice,
+    if (result != VK_SUCCESS)
+       goto err_pvr_free_compute_fence;
+ 
+-   result = pvr_device_init_view_index_init_programs(device);
+-   if (result != VK_SUCCESS)
+-      goto err_pvr_free_compute_empty;
+-
+    result = pvr_arch_device_create_compute_query_programs(device);
+    if (result != VK_SUCCESS)
+-      goto err_pvr_free_view_index;
++      goto err_pvr_free_compute_empty;
+ 
+    result = pvr_device_init_compute_idfwdf_state(device);
+    if (result != VK_SUCCESS)
+@@ -981,10 +1022,6 @@ err_pvr_finish_compute_idfwdf:
+ err_pvr_destroy_compute_query_programs:
+    pvr_arch_device_destroy_compute_query_programs(device);
+ 
+-err_pvr_free_view_index:
+-   for (uint32_t u = 0; u < PVR_MAX_MULTIVIEW; ++u)
+-      pvr_bo_suballoc_free(device->view_index_init_programs[u].pvr_bo);
+-
+ err_pvr_free_compute_empty:
+    pvr_bo_suballoc_free(device->pds_compute_empty_program.pvr_bo);
+ 
+@@ -995,6 +1032,9 @@ err_pvr_free_nop_program:
+    pvr_bo_suballoc_free(device->nop_program.pds.pvr_bo);
+    pvr_bo_suballoc_free(device->nop_program.usc);
+ 
++err_pvr_finish_pdsc_precomp_programs:
++   pvr_device_finish_pdsc_precomp_programs(device);
++
+ err_pvr_free_list_destroy:
+    pvr_free_list_destroy(device->global_free_list);
+ 
+@@ -1058,13 +1098,10 @@ void PVR_PER_ARCH(destroy_device)(struct pvr_device *device,
+    pvr_device_finish_compute_idfwdf_state(device);
+    pvr_arch_device_destroy_compute_query_programs(device);
+    pvr_bo_suballoc_free(device->pds_compute_empty_program.pvr_bo);
+-
+-   for (uint32_t u = 0; u < PVR_MAX_MULTIVIEW; ++u)
+-      pvr_bo_suballoc_free(device->view_index_init_programs[u].pvr_bo);
+-
+    pvr_bo_suballoc_free(device->pds_compute_fence_program.pvr_bo);
+    pvr_bo_suballoc_free(device->nop_program.pds.pvr_bo);
+    pvr_bo_suballoc_free(device->nop_program.usc);
++   pvr_device_finish_pdsc_precomp_programs(device);
+    pvr_free_list_destroy(device->global_free_list);
+    pvr_finish_null_pages(device);
+    pvr_bo_suballocator_fini(&device->suballoc_vis_test);
+diff --git a/src/imagination/vulkan/pvr_arch_pipeline.c b/src/imagination/vulkan/pvr_arch_pipeline.c
+index 2e5db2f540d..857da0adb11 100644
+--- a/src/imagination/vulkan/pvr_arch_pipeline.c
++++ b/src/imagination/vulkan/pvr_arch_pipeline.c
+@@ -476,7 +476,8 @@ static VkResult pvr_pds_descriptor_program_create_and_upload(
+    const struct vk_pipeline_layout *const layout,
+    mesa_shader_stage stage,
+    pco_data *data,
+-   struct pvr_stage_allocation_descriptor_state *const descriptor_state)
++   struct pvr_stage_allocation_descriptor_state *const descriptor_state,
++   struct pvr_suballoc_bo *shader_bo)
+ {
+    const size_t const_entries_size_in_bytes = PVR_PDS_MAX_DESC_UPLOAD_BYTES;
+    struct pvr_pds_info *const pds_info = &descriptor_state->pds_info;
+@@ -629,6 +630,19 @@ static VkResult pvr_pds_descriptor_program_create_and_upload(
+ 
+    pds_info->entries_size_in_bytes = const_entries_size_in_bytes;
+ 
++   if (shader_bo && data->common.uses.preamble) {
++      const pvr_dev_addr_t exec_addr =
++         PVR_DEV_ADDR_OFFSET(shader_bo->dev_addr,
++                             data->common.preamble_offset);
++
++      program.secondary_program_present = true;
++      pvr_pds_setup_doutu(&program.secondary_task_control,
++                          exec_addr.addr,
++                          data->common.preamble_temps,
++                          ROGUE_PDSINST_DOUTU_SAMPLE_RATE_INSTANCE,
++                          false);
++   }
++
+    pvr_pds_generate_descriptor_upload_program(&program, NULL, pds_info);
+ 
+    code_size_in_dwords = pds_info->code_size_in_dwords;
+@@ -716,189 +730,6 @@ static void pvr_pds_descriptor_program_destroy(
+    pvr_bo_suballoc_free(descriptor_state->static_consts);
+ }
+ 
+-static void pvr_pds_compute_program_setup(
+-   const struct pvr_device_info *dev_info,
+-   pco_data *cs_data,
+-   struct pvr_compute_shader_state *compute_state,
+-   struct pvr_pds_compute_shader_program *const program)
+-{
+-   pco_range *sys_vals = cs_data->common.sys_vals;
+-
+-   pvr_pds_compute_shader_program_init(program);
+-
+-   if (sys_vals[SYSTEM_VALUE_LOCAL_INVOCATION_INDEX].count > 0) {
+-      program->local_input_regs[0] =
+-         sys_vals[SYSTEM_VALUE_LOCAL_INVOCATION_INDEX].start;
+-   }
+-
+-   for (unsigned u = 0; u < ARRAY_SIZE(program->work_group_input_regs); ++u) {
+-      if (sys_vals[SYSTEM_VALUE_WORKGROUP_ID].count > u) {
+-         program->work_group_input_regs[u] =
+-            sys_vals[SYSTEM_VALUE_WORKGROUP_ID].start + u;
+-      }
+-   }
+-
+-   for (unsigned u = 0; u < ARRAY_SIZE(program->num_work_groups_regs); ++u) {
+-      if (sys_vals[SYSTEM_VALUE_NUM_WORKGROUPS].count > u) {
+-         program->num_work_groups_regs[u] =
+-            sys_vals[SYSTEM_VALUE_NUM_WORKGROUPS].start + u;
+-      }
+-   }
+-
+-   program->flattened_work_groups = true;
+-   program->kick_usc = true;
+-
+-   pvr_pds_setup_doutu(&program->usc_task_control,
+-                       compute_state->shader_bo->dev_addr.addr,
+-                       cs_data->common.temps,
+-                       ROGUE_PDSINST_DOUTU_SAMPLE_RATE_INSTANCE,
+-                       false);
+-
+-   if (compute_state->coeff_update_shader_bo) {
+-      program->has_coefficient_update_task = true;
+-      pvr_pds_setup_doutu(&program->usc_task_control_coeff_update,
+-                          compute_state->coeff_update_shader_bo->dev_addr.addr,
+-                          compute_state->coeff_update_shader_temps,
+-                          ROGUE_PDSINST_DOUTU_SAMPLE_RATE_INSTANCE,
+-                          false);
+-   }
+-
+-   pvr_pds_compute_shader(program, NULL, PDS_GENERATE_SIZES, dev_info);
+-}
+-
+-/* This uploads the code segment and base data segment variant.
+- * This can be patched at dispatch time.
+- */
+-static VkResult pvr_pds_compute_program_create_and_upload(
+-   struct pvr_device *const device,
+-   const VkAllocationCallbacks *const allocator,
+-   struct pvr_compute_shader_state *compute_state,
+-   struct pvr_compute_pipeline *compute_pipeline)
+-{
+-   pco_range *sys_vals = compute_pipeline->cs_data.common.sys_vals;
+-   struct pvr_device_info *dev_info = &device->pdevice->dev_info;
+-   struct pvr_pds_compute_shader_program program;
+-   uint32_t *code_buffer;
+-   uint32_t *data_buffer;
+-   VkResult result;
+-
+-   bool uses_wg_id = sys_vals[SYSTEM_VALUE_WORKGROUP_ID].count > 0;
+-   bool uses_num_wgs = sys_vals[SYSTEM_VALUE_NUM_WORKGROUPS].count > 0;
+-
+-   pvr_pds_compute_program_setup(dev_info,
+-                                 &compute_pipeline->cs_data,
+-                                 compute_state,
+-                                 &program);
+-
+-   code_buffer = vk_alloc2(&device->vk.alloc,
+-                           allocator,
+-                           PVR_DW_TO_BYTES(program.code_size),
+-                           8,
+-                           VK_SYSTEM_ALLOCATION_SCOPE_OBJECT);
+-   if (!code_buffer)
+-      return vk_error(device, VK_ERROR_OUT_OF_HOST_MEMORY);
+-
+-   data_buffer = vk_alloc2(&device->vk.alloc,
+-                           allocator,
+-                           PVR_DW_TO_BYTES(program.code_size),
+-                           8,
+-                           VK_SYSTEM_ALLOCATION_SCOPE_OBJECT);
+-   if (!data_buffer) {
+-      vk_free2(&device->vk.alloc, allocator, code_buffer);
+-      return vk_error(device, VK_ERROR_OUT_OF_HOST_MEMORY);
+-   }
+-
+-   pvr_pds_compute_shader(&program,
+-                          &code_buffer[0],
+-                          PDS_GENERATE_CODE_SEGMENT,
+-                          dev_info);
+-
+-   pvr_pds_compute_shader(&program,
+-                          &data_buffer[0],
+-                          PDS_GENERATE_DATA_SEGMENT,
+-                          dev_info);
+-
+-   /* Initialize. */
+-   if (uses_wg_id) {
+-      unsigned offset = program.base_workgroup_constant_offset_in_dwords[0];
+-      for (unsigned u = 0; u < PVR_WORKGROUP_DIMENSIONS; ++u) {
+-         data_buffer[offset + u] = 0;
+-      }
+-   }
+-
+-   if (uses_num_wgs) {
+-      unsigned offset = program.num_workgroups_constant_offset_in_dwords[0];
+-      for (unsigned u = 0; u < PVR_WORKGROUP_DIMENSIONS; ++u) {
+-         data_buffer[offset + u] = 0;
+-      }
+-
+-      offset = program.num_workgroups_indirect_src;
+-      data_buffer[offset] = 0;
+-      data_buffer[offset + 1] = 0;
+-   }
+-
+-   /* FIXME: Figure out the define for alignment of 16. */
+-   result = pvr_gpu_upload_pds(device,
+-                               data_buffer,
+-                               program.data_size,
+-                               16,
+-                               code_buffer,
+-                               program.code_size,
+-                               16,
+-                               16,
+-                               &compute_pipeline->pds_cs_program);
+-   if (result != VK_SUCCESS) {
+-      vk_free2(&device->vk.alloc, allocator, code_buffer);
+-      vk_free2(&device->vk.alloc, allocator, data_buffer);
+-      return result;
+-   }
+-
+-   compute_pipeline->pds_cs_data_section = data_buffer;
+-
+-   /* The base workgroup and num workgroups can be patched in the
+-    * PDS data section before dispatch so we save their offsets.
+-    */
+-   compute_pipeline->base_workgroup_data_patching_offset = ~0u;
+-   if (uses_wg_id) {
+-      compute_pipeline->base_workgroup_data_patching_offset =
+-         program.base_workgroup_constant_offset_in_dwords[0];
+-   }
+-
+-   compute_pipeline->num_workgroups_data_patching_offset = ~0u;
+-   compute_pipeline->num_workgroups_indirect_src_patching_offset = ~0u;
+-   compute_pipeline->num_workgroups_indirect_src_dma_patching_offset = ~0u;
+-   if (uses_num_wgs) {
+-      compute_pipeline->num_workgroups_data_patching_offset =
+-         program.num_workgroups_constant_offset_in_dwords[0];
+-
+-      compute_pipeline->num_workgroups_indirect_src_patching_offset =
+-         program.num_workgroups_indirect_src;
+-
+-      compute_pipeline->num_workgroups_indirect_src_dma_patching_offset =
+-         program.num_workgroups_indirect_src_dma;
+-   }
+-
+-   compute_pipeline->pds_cs_program_info = (struct pvr_pds_info){
+-      .temps_required = program.highest_temp,
+-      .code_size_in_dwords = program.code_size,
+-      .data_size_in_dwords = program.data_size,
+-   };
+-
+-   vk_free2(&device->vk.alloc, allocator, code_buffer);
+-
+-   return VK_SUCCESS;
+-}
+-
+-static void
+-pvr_pds_compute_program_destroy(struct pvr_device *device,
+-                                const VkAllocationCallbacks *const allocator,
+-                                struct pvr_pds_upload *const pds_cs_program,
+-                                uint32_t *pds_cs_data_section)
+-{
+-   pvr_bo_suballoc_free(pds_cs_program->pvr_bo);
+-   vk_free2(&device->vk.alloc, allocator, pds_cs_data_section);
+-}
+-
+ /******************************************************************************
+    Generic pipeline functions
+  ******************************************************************************/
+@@ -1006,9 +837,6 @@ static VkResult pvr_compute_pipeline_compile(
+    nir_shader *nir;
+    pco_shader *cs;
+ 
+-   struct pvr_compute_shader_state *compute_state =
+-      &compute_pipeline->shader_state;
+-
+    VkResult result;
+ 
+    result =
+@@ -1083,56 +911,25 @@ static VkResult pvr_compute_pipeline_compile(
+    if (result != VK_SUCCESS)
+       goto err_free_build_context;
+ 
+-   if (compute_pipeline->cs_data.cs.zero_shmem &&
+-       !compute_pipeline->cs_data.cs.global_shmem) {
+-      uint32_t start = compute_pipeline->cs_data.cs.shmem.start;
+-      uint32_t count = compute_pipeline->cs_data.cs.shmem.count;
+-      pco_shader *zero_init_shader =
+-         pvr_usc_zero_init_wg_mem(pco_ctx, start, count);
+-
+-      compute_state->coeff_update_shader_temps =
+-         pco_shader_data(zero_init_shader)->common.temps;
+-
+-      result = pvr_gpu_upload_usc(device,
+-                                  pco_shader_binary_data(zero_init_shader),
+-                                  pco_shader_binary_size(zero_init_shader),
+-                                  cache_line_size,
+-                                  &compute_state->coeff_update_shader_bo);
+-      ralloc_free(zero_init_shader);
+-
+-      if (result != VK_SUCCESS)
+-         goto err_free_shader;
+-   }
+-
++   /* Don't pass the shader bo for compute, as the preamble shader will be
++    * processed as a coefficient update program rather than a descriptor
++    * secondary program.
++    */
+    result = pvr_pds_descriptor_program_create_and_upload(
+       device,
+       allocator,
+       layout,
+       MESA_SHADER_COMPUTE,
+       &compute_pipeline->cs_data,
+-      &compute_pipeline->descriptor_state);
++      &compute_pipeline->descriptor_state,
++      NULL);
+    if (result != VK_SUCCESS)
+-      goto err_free_coeff_update_shader;
+-
+-   result = pvr_pds_compute_program_create_and_upload(device,
+-                                                      allocator,
+-                                                      compute_state,
+-                                                      compute_pipeline);
+-   if (result != VK_SUCCESS)
+-      goto err_free_descriptor_program;
++      goto err_free_shader;
+ 
+    ralloc_free(shader_mem_ctx);
+ 
+    return VK_SUCCESS;
+ 
+-err_free_coeff_update_shader:
+-   pvr_bo_suballoc_free(compute_pipeline->shader_state.coeff_update_shader_bo);
+-
+-err_free_descriptor_program:
+-   pvr_pds_descriptor_program_destroy(device,
+-                                      allocator,
+-                                      &compute_pipeline->descriptor_state);
+-
+ err_free_shader:
+    pvr_bo_suballoc_free(compute_pipeline->shader_state.shader_bo);
+ 
+@@ -1209,14 +1006,9 @@ static void pvr_compute_pipeline_destroy(
+    const VkAllocationCallbacks *const allocator,
+    struct pvr_compute_pipeline *const compute_pipeline)
+ {
+-   pvr_pds_compute_program_destroy(device,
+-                                   allocator,
+-                                   &compute_pipeline->pds_cs_program,
+-                                   compute_pipeline->pds_cs_data_section);
+    pvr_pds_descriptor_program_destroy(device,
+                                       allocator,
+                                       &compute_pipeline->descriptor_state);
+-   pvr_bo_suballoc_free(compute_pipeline->shader_state.coeff_update_shader_bo);
+    pvr_bo_suballoc_free(compute_pipeline->shader_state.shader_bo);
+ 
+    pvr_pipeline_destroy_shader_data(&compute_pipeline->cs_data, false);
+@@ -2749,6 +2541,11 @@ static void pvr_postprocess_shader_data(pco_data *data,
+ {
+    const VkGraphicsPipelineCreateInfo *pGraphicsCreateInfo = pCreateInfo;
+ 
++   if (data->common.uses.preamble) {
++      data->common.preamble.start = data->common.shareds;
++      data->common.shareds += data->common.preamble.count;
++   }
++
+    switch (nir->info.stage) {
+    case MESA_SHADER_VERTEX: {
+       pvr_alloc_vs_sysvals(data, nir);
+@@ -3374,7 +3171,8 @@ pvr_graphics_pipeline_compile(struct pvr_device *const device,
+          layout,
+          MESA_SHADER_FRAGMENT,
+          &gfx_pipeline->fs_data,
+-         &fragment_state->descriptor_state);
++         &fragment_state->descriptor_state,
++         fragment_state->shader_bo);
+       if (result != VK_SUCCESS)
+          goto err_free_frag_program;
+ 
+@@ -3400,7 +3198,8 @@ pvr_graphics_pipeline_compile(struct pvr_device *const device,
+       layout,
+       MESA_SHADER_VERTEX,
+       &gfx_pipeline->vs_data,
+-      &vertex_state->descriptor_state);
++      &vertex_state->descriptor_state,
++      vertex_state->shader_bo);
+    if (result != VK_SUCCESS)
+       goto err_free_vertex_attrib_program;
+ 
+diff --git a/src/imagination/vulkan/pvr_arch_query_compute.c b/src/imagination/vulkan/pvr_arch_query_compute.c
+index 828f34d36ac..3da5770d05b 100644
+--- a/src/imagination/vulkan/pvr_arch_query_compute.c
++++ b/src/imagination/vulkan/pvr_arch_query_compute.c
+@@ -37,7 +37,6 @@
+ #include "pvr_device.h"
+ #include "pvr_formats.h"
+ #include "pvr_macros.h"
+-#include "pvr_pds.h"
+ #include "pvr_physical_device.h"
+ #include "pvr_pipeline.h"
+ #include "pvr_query.h"
+@@ -47,18 +46,7 @@
+ #include "vk_command_pool.h"
+ #include "vk_util.h"
+ 
+-/* TODO: multicore support/awareness. */
+-
+-static inline void pvr_init_primary_compute_pds_program(
+-   struct pvr_pds_compute_shader_program *program)
+-{
+-   pvr_pds_compute_shader_program_init(program);
+-   program->local_input_regs[0] = 0;
+-   /* Workgroup id is in reg0. */
+-   program->work_group_input_regs[0] = 0;
+-   program->flattened_work_groups = true;
+-   program->kick_usc = true;
+-}
++#include "pdsc/programs/pdsc_compute.h"
+ 
+ static VkResult
+ pvr_create_compute_secondary_prog(struct pvr_device *device,
+@@ -148,7 +136,6 @@ static VkResult pvr_create_compute_query_precomp_program(
+ {
+    const uint32_t cache_line_size =
+       pvr_get_slc_cache_line_size(&device->pdevice->dev_info);
+-   struct pvr_pds_compute_shader_program pds_primary_prog = { 0 };
+    const pco_precomp_data *precomp_data;
+    VkResult result;
+ 
+@@ -163,23 +150,34 @@ static VkResult pvr_create_compute_query_precomp_program(
+    if (result != VK_SUCCESS)
+       return result;
+ 
+-   pvr_init_primary_compute_pds_program(&pds_primary_prog);
++   pdsc_program *p = device->pdsc_precomp_programs.compute_shader;
+ 
+-   pvr_pds_setup_doutu(&pds_primary_prog.usc_task_control,
+-                       query_prog->usc_bo->dev_addr.addr,
+-                       precomp_data->temps,
+-                       ROGUE_PDSINST_DOUTU_SAMPLE_RATE_INSTANCE,
+-                       false);
++   result = pvr_gpu_upload_pds(device,
++                               pdsc_program_data(p),
++                               pdsc_program_data_size(p) / sizeof(uint32_t),
++                               16,
++                               NULL,
++                               0,
++                               0,
++                               16,
++                               &query_prog->pds_prim_code);
+ 
+-   result =
+-      pvr_arch_pds_compute_shader_create_and_upload(device,
+-                                                    &pds_primary_prog,
+-                                                    &query_prog->pds_prim_code);
+    if (result != VK_SUCCESS)
+       goto err_free_usc_bo;
+ 
+-   query_prog->primary_data_size_dw = pds_primary_prog.data_size;
+-   query_prog->primary_num_temps = pds_primary_prog.temps_used;
++   uint32_t *pds_data =
++      pvr_bo_suballoc_get_map_addr(query_prog->pds_prim_code.pvr_bo);
++
++   struct pdsc_compute_arguments args = {
++      .cs_lid_count = 1,
++      .wgid_count = 1,
++      .shader_addr = query_prog->usc_bo->dev_addr.addr,
++      .shader_temps = precomp_data->temps,
++   };
++   pdsc_patch_compute_shader(p, &args, pds_data);
++
++   query_prog->primary_data_size_dw = pdsc_program_data_size(p);
++   query_prog->primary_num_temps = pdsc_program_temps_used(p);
+ 
+    result =
+       pvr_create_compute_secondary_prog(device, const_shared_regs, query_prog);
+@@ -448,7 +446,8 @@ VkResult pvr_arch_add_query_program(struct pvr_cmd_buffer *cmd_buffer,
+       UNREACHABLE("Invalid query type");
+    }
+ 
+-   pipeline.pds_code_offset = query_prog->pds_prim_code.code_offset;
++   pipeline.pds_code_offset =
++      device->pdsc_precomp_programs.compute_shader_code.code_offset;
+    pipeline.pds_data_offset = query_prog->pds_prim_code.data_offset;
+ 
+    pipeline.pds_shared_update_code_offset =
+diff --git a/src/imagination/vulkan/pvr_cmd_buffer.h b/src/imagination/vulkan/pvr_cmd_buffer.h
+index 3221a8e1183..8cc3d0bff4c 100644
+--- a/src/imagination/vulkan/pvr_cmd_buffer.h
++++ b/src/imagination/vulkan/pvr_cmd_buffer.h
+@@ -548,6 +548,9 @@ struct pvr_cmd_buffer_state {
+ 
+    uint32_t max_shared_regs;
+ 
++   uint64_t cond_render_buffer_addr;
++   bool cond_render_invert;
++
+    /* Address of data segment for vertex attrib upload program. */
+    uint32_t pds_vertex_attrib_offset;
+ 
+diff --git a/src/imagination/vulkan/pvr_device.h b/src/imagination/vulkan/pvr_device.h
+index 5b9e96d94e2..576c7bd6cb5 100644
+--- a/src/imagination/vulkan/pvr_device.h
++++ b/src/imagination/vulkan/pvr_device.h
+@@ -25,6 +25,7 @@
+ #include "util/mesa-blake3.h"
+ 
+ #include "ds/pvr_driver_ds.h"
++#include "pdsc/pdsc.h"
+ #include "pvr_bo.h"
+ #include "pvr_common.h"
+ #include "pvr_macros.h"
+@@ -95,10 +96,6 @@ struct pvr_device {
+       struct pvr_suballoc_bo *usc;
+    } nop_program;
+ 
+-   struct pvr_pds_view_index_init_program
+-      view_index_init_info[PVR_MAX_MULTIVIEW];
+-   struct pvr_pds_upload view_index_init_programs[PVR_MAX_MULTIVIEW];
+-
+    /* Issue Data Fence, Wait for Data Fence state. */
+    struct {
+       uint32_t usc_shareds;
+@@ -159,6 +156,13 @@ struct pvr_device {
+    } dummy_rt;
+ 
+    struct {
++      pdsc_program *set_view_index;
++      struct pvr_pds_upload set_view_index_code;
++      struct pvr_pds_upload set_view_index_data[PVR_MAX_MULTIVIEW];
++
++      pdsc_program *compute_shader;
++      struct pvr_pds_upload compute_shader_code;
++
+       pdsc_program *xfb_init;
+       pdsc_program *xfb_main;
+       pdsc_program *xfb_end;
+diff --git a/src/imagination/vulkan/pvr_physical_device.c b/src/imagination/vulkan/pvr_physical_device.c
+index e688e84b3eb..c34971a10ca 100644
+--- a/src/imagination/vulkan/pvr_physical_device.c
++++ b/src/imagination/vulkan/pvr_physical_device.c
+@@ -192,6 +192,7 @@ static void pvr_physical_device_get_supported_extensions(
+       .KHR_uniform_buffer_standard_layout = true,
+       .KHR_vertex_attribute_divisor = true,
+       .KHR_workgroup_memory_explicit_layout = true,
++      .KHR_zero_initialize_workgroup_memory = true,
+       .EXT_border_color_swizzle = true,
+       .EXT_color_write_enable = true,
+       .EXT_custom_border_color = true,
+@@ -553,7 +554,7 @@ static void pvr_physical_device_get_supported_features(
+       .workgroupMemoryExplicitLayout16BitAccess = false,
+ 
+       /* Vulkan 1.3 / VK_KHR_zero_initialize_workgroup_memory */
+-      .shaderZeroInitializeWorkgroupMemory = false,
++      .shaderZeroInitializeWorkgroupMemory = true,
+ 
+       /* VK_EXT_border_color_swizzle */
+       .borderColorSwizzle = true,
+@@ -1167,6 +1168,15 @@ static inline uint64_t pvr_compute_heap_size(struct pvr_instance *instance)
+ static void
+ pvr_physical_device_setup_formats(struct pvr_physical_device *const pdevice);
+ 
++static void pvr_physical_device_init_pdsc(struct pvr_physical_device *pdevice)
++{
++   pdevice->pdsc_features = 0;
++   if (PVR_HAS_FEATURE(&pdevice->dev_info, pds_ddmadt))
++      pdevice->pdsc_features |= PDSC_FEATURE_DDMADT;
++
++   pdsc_init();
++}
++
+ VkResult pvr_physical_device_init(struct pvr_physical_device *pdevice,
+                                   struct pvr_instance *instance,
+                                   drmDevicePtr drm_render_device,
+@@ -1306,6 +1316,8 @@ VkResult pvr_physical_device_init(struct pvr_physical_device *pdevice,
+ 
+    pdevice->vk.supported_sync_types = ws->sync_types;
+ 
++   pvr_physical_device_init_pdsc(pdevice);
++
+    pdevice->pco_ctx =
+       pco_ctx_create(&pdevice->dev_info, &pdevice->dev_runtime_info, NULL);
+    if (!pdevice->pco_ctx) {
+diff --git a/src/imagination/vulkan/pvr_physical_device.h b/src/imagination/vulkan/pvr_physical_device.h
+index 20f410ba890..22877d8f24d 100644
+--- a/src/imagination/vulkan/pvr_physical_device.h
++++ b/src/imagination/vulkan/pvr_physical_device.h
+@@ -24,6 +24,7 @@
+ 
+ #include "wsi_common.h"
+ 
++#include "pdsc/pdsc.h"
+ #include "pvr_device_info.h"
+ #include "pvr_formats.h"
+ 
+@@ -68,6 +69,7 @@ struct pvr_physical_device {
+ 
+    VkPhysicalDeviceMemoryProperties memory;
+ 
++   enum pdsc_feature pdsc_features;
+    struct wsi_device wsi_device;
+ 
+    pco_ctx *pco_ctx;
+diff --git a/src/imagination/vulkan/pvr_pipeline.h b/src/imagination/vulkan/pvr_pipeline.h
+index 2709838ebd9..fb8681dfa65 100644
+--- a/src/imagination/vulkan/pvr_pipeline.h
++++ b/src/imagination/vulkan/pvr_pipeline.h
+@@ -31,10 +31,6 @@ struct pvr_pipeline_stage_state {
+ struct pvr_compute_shader_state {
+    /* Pointer to a buffer object that contains the shader binary. */
+    struct pvr_suballoc_bo *shader_bo;
+-
+-   /* Buffer object for the coefficient update shader binary. */
+-   struct pvr_suballoc_bo *coeff_update_shader_bo;
+-   uint32_t coeff_update_shader_temps;
+ };
+ 
+ struct pvr_pds_attrib_program {
+@@ -125,15 +121,6 @@ struct pvr_compute_pipeline {
+    struct pvr_compute_shader_state shader_state;
+    struct pvr_stage_allocation_descriptor_state descriptor_state;
+ 
+-   struct pvr_pds_upload pds_cs_program;
+-   struct pvr_pds_info pds_cs_program_info;
+-
+-   uint32_t *pds_cs_data_section;
+-   uint32_t base_workgroup_data_patching_offset;
+-   uint32_t num_workgroups_data_patching_offset;
+-   uint32_t num_workgroups_indirect_src_patching_offset;
+-   uint32_t num_workgroups_indirect_src_dma_patching_offset;
+-
+    /* Debug Info */
+    struct pvr_stats *cs_stats;
+    const char *cs_nir_str;
+diff --git a/src/imagination/vulkan/pvr_usc.c b/src/imagination/vulkan/pvr_usc.c
+index 7c86d013906..b4ed742e055 100644
+--- a/src/imagination/vulkan/pvr_usc.c
++++ b/src/imagination/vulkan/pvr_usc.c
+@@ -1349,28 +1349,6 @@ pco_shader *pvr_uscgen_clear_attach(pco_ctx *ctx,
+    return build_shader(ctx, b.shader, &data);
+ }
+ 
+-pco_shader *
+-pvr_usc_zero_init_wg_mem(pco_ctx *ctx, unsigned start, unsigned count)
+-{
+-   pco_data data = {
+-      .cs.shmem.start = start,
+-      .cs.shmem.count = count,
+-      .common.uses.usclib = true,
+-   };
+-
+-   nir_builder b = nir_builder_init_simple_shader(MESA_SHADER_COMPUTE,
+-                                                  pco_nir_options(),
+-                                                  "zero_init_wg_mem(%u, %u)",
+-                                                  start,
+-                                                  count);
+-
+-   usclib_zero_init_wg_mem(&b, nir_imm_int(&b, count));
+-
+-   nir_jump(&b, nir_jump_return);
+-
+-   return build_shader(ctx, b.shader, &data);
+-}
+-
+ pco_shader *pvr_uscgen_spm_load(pco_ctx *ctx, struct pvr_spm_load_props *props)
+ {
+    pco_data data = { 0 };
+diff --git a/src/imagination/vulkan/pvr_usc.h b/src/imagination/vulkan/pvr_usc.h
+index 67b3ccda361..1a3dbcc329a 100644
+--- a/src/imagination/vulkan/pvr_usc.h
++++ b/src/imagination/vulkan/pvr_usc.h
+@@ -203,9 +203,6 @@ pvr_uscgen_clear_attach_index(struct pvr_clear_attach_props *props)
+ }
+ #undef INDEX
+ 
+-pco_shader *
+-pvr_usc_zero_init_wg_mem(pco_ctx *ctx, unsigned start, unsigned count);
+-
+ /* SPM load shader generation. */
+ struct pvr_spm_load_props {
+    unsigned output_reg_count;
+-- 
+2.55.0
+
