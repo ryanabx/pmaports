@@ -97,6 +97,13 @@ options="!check"
 
 _dri_driverdir=/usr/lib/dri
 
+prepare() {
+	default_prepare
+	# main's VERSION is "27.0.0-devel", which ends up in the .pc files, and
+	# abuild rejects it as a pkgconf version.
+	echo "${pkgver%%_git*}" > VERSION
+}
+
 build() {
 	export CFLAGS="$CFLAGS -O2 -g1"
 	export CXXFLAGS="$CXXFLAGS -O2 -g1"
