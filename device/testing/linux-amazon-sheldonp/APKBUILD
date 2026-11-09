@@ -3,7 +3,7 @@
 maintainer="Ryan Brue <ryanbrue.dev@gmail.com>"
 pkgname=linux-amazon-sheldonp
 pkgver=7.4_rc1
-pkgrel=2
+pkgrel=3
 pkgdesc="Amazon Fire TV Stick 3rd Gen mainline kernel fork"
 arch="aarch64"
 _carch="arm64"
@@ -163,7 +163,7 @@ package() {
 		"$pkgdir"/usr/share/kernel/$_flavor/kernel.release
 }
 sha512sums="
-df07602ae387d2ed046e36ecaf6362295030b928774094977c77cc7488d549e266cebcbed6f78c2b9d2df711d29971b8eea8c72f1f4fe2546ea7e911b0e314e4  config-amazon-sheldonp.aarch64
+e297cdfa38e4889b25b549f3220bbb246046a48a8bf93c742d29c1525a355c0758cb59e4dd296732f13ade0e64b24cc7dcb505b973c8b35a8b8468891bb8b760  config-amazon-sheldonp.aarch64
 641a876f075c9f9c3dc182bb22ca07a2e041a84b0d8c41cc9505f3d55854a538244840501f1efa53349f4f4ef0ec0e6bf12b98736ab18375c3e3e921e7f9a736  trampoline64xz.S
 3dc0f0fcf5d36ebc3bdeb6f9e3289849fb60331be0e42c79edce188c56ed04b1fa8c787c824d9e6e72cd64173b10eab9fe263167ddeb88694e9983fb19c79eab  trampoline64xz.lds
 ddf10f3801994f9cd899a75e11b795b29f6d9959cba55314b6cc0fd0e68c59f08bd791eba4eb23ebd684b834b43c88a9cf0dbc29f41258b5e4f50f15f69f8203  xzboot.c
