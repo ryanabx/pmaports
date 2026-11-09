@@ -1,0 +1,3 @@
+# Tell the USB gadget when VBUS comes and goes; see /usr/sbin/suez-gadget-vbus.
+ACTION=="change", SUBSYSTEM=="power_supply", KERNEL=="bq24190-charger", ENV{POWER_SUPPLY_ONLINE}=="0", RUN+="/usr/sbin/suez-gadget-vbus disconnect"
+ACTION=="change", SUBSYSTEM=="power_supply", KERNEL=="bq24190-charger", ENV{POWER_SUPPLY_ONLINE}=="1", RUN+="/usr/sbin/suez-gadget-vbus connect"

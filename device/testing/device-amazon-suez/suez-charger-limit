@@ -29,8 +29,16 @@
 # 2000, 3000 mA -- and the driver rounds a request DOWN to the nearest rung.
 # The vendor's 1800 mA is not on it, so asking for 1800 gets 1500. Ask for
 # what the hardware can actually do, so the value read back is the value set.
+#
+# A charger gets the 2000 mA rung (Ryan, 2026-11-08): on his USB-C charger
+# and cable the pack took 1221 mA at 2000 against ~880 mA at 1500, screen on.
+# A charger that cannot keep up pulls VBUS down to VINDPM (4.36 V) and the
+# chip takes less by itself.
+#
+# Note that "configured" is only true while the gadget has heard of the
+# unplug; suez-gadget-vbus gives it that from the charger's events.
 HOST_UA=500000
-CHARGER_UA=1500000
+CHARGER_UA=2000000
 SETTLE=8          # seconds to wait for a host to enumerate before deciding
 
 c=/sys/class/power_supply/bq24190-charger
@@ -83,6 +91,7 @@ while :; do
 	#     asked  500000 -> readback  500000
 	#     asked  900000 -> readback  900000
 	#     asked 1500000 -> readback 1500000
+	#     asked 2000000 -> readback 2000000   (11-08)
 	#     asked 1800000 -> readback 1500000   <- not a rung, never matches
 	#
 	# Anything not on the ladder would never equal its own readback and

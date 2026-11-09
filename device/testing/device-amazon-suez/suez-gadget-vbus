@@ -1,0 +1,27 @@
+#!/bin/sh
+# Give the USB gadget the VBUS events the board cannot give it.
+#
+# The board's extcon only has the ID pin (no VBUS sense), so the USB
+# controller never learns that the cable was pulled: the gadget stays
+# "configured" after the cable moves from a PC to a wall charger, and
+# suez-charger-limit, which takes "configured" to mean a data host, keeps the
+# 500 mA limit. Measured 2026-11-08: on a wall charger the gadget still read
+# "configured" two hours after the PC was unplugged, with the pack
+# discharging at -287 mA; a soft disconnect brought it to "not attached",
+# the limit rose and the pack took +1029 mA.
+#
+# So on a charger "online 0" event, soft-disconnect the gadget; on "online 1",
+# connect it again, so that a host on the new cable enumerates it afresh and
+# anything else leaves it unattached. Only connect when it is not configured:
+# the charger also reports changes of charge state, and reconnecting a
+# configured gadget would drop a working link.
+for u in /sys/class/udc/*; do
+	[ -w "$u/soft_connect" ] || continue
+	case $1 in
+	disconnect)
+		echo disconnect > "$u/soft_connect" ;;
+	connect)
+		[ "$(cat "$u/state")" = configured ] || echo connect > "$u/soft_connect" ;;
+	esac
+done
+exit 0
