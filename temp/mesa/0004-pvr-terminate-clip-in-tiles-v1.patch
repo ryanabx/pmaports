@@ -1,0 +1,64 @@
+From 985c0d17695dd5aa8492722de6cc3594108024dd Mon Sep 17 00:00:00 2001
+From: Ryan Brue <ryanbrue.dev@gmail.com>
+Date: Mon, 9 Nov 2026 21:15:43 -0600
+Subject: [PATCH] LOCAL: pvr: terminate clip in tiles on parameter format v1
+
+Local test patch for the GE8300 (22.68.54.30) on amazon-sheldonp; not to
+be sent. The PPP terminate state's clip_right/clip_bottom are documented
+in 32 pixel blocks, but the GE8300's TE (simple parameter format v1, 16x16
+tiles) reads them in tiles: with 32 pixel blocks it marked every region
+past ceil(tiles / 2) in each axis as off-screen and the ISP never
+rendered them.
+
+Assisted-by: LLM
+Signed-off-by: Ryan Brue <ryanbrue.dev@gmail.com>
+---
+ src/imagination/vulkan/pvr_arch_framebuffer.c | 25 ++++++++++---------
+ 1 file changed, 13 insertions(+), 12 deletions(-)
+
+diff --git a/src/imagination/vulkan/pvr_arch_framebuffer.c b/src/imagination/vulkan/pvr_arch_framebuffer.c
+index e0bc3378a8d..d614d2185b1 100644
+--- a/src/imagination/vulkan/pvr_arch_framebuffer.c
++++ b/src/imagination/vulkan/pvr_arch_framebuffer.c
+@@ -33,8 +33,17 @@ VkResult PVR_PER_ARCH(ppp_state_create)(struct pvr_device *device,
+                                         struct pvr_suballoc_bo **const bo_out,
+                                         size_t *const size_out)
+ {
+-   const uint32_t cache_line_size =
+-      pvr_get_slc_cache_line_size(&device->pdevice->dev_info);
++   const struct pvr_device_info *dev_info = &device->pdevice->dev_info;
++   const uint32_t cache_line_size = pvr_get_slc_cache_line_size(dev_info);
++   /* On simple parameter format v1 (GE8300, 16x16 tiles) the TE takes the
++    * terminate clip in tiles, not in the 32 pixel blocks of the other cores.
++    */
++   const uint32_t block_size =
++      PVR_HAS_FEATURE(dev_info, simple_internal_parameter_format) &&
++            PVR_GET_FEATURE_VALUE(dev_info, simple_parameter_format_version,
++                                  0) == 1
++         ? PVR_GET_FEATURE_VALUE(dev_info, tile_size_x, 16)
++         : ROGUE_TA_STATE_TERMINATE0_CLIP_RIGHT_BLOCK_SIZE_IN_PIXELS;
+    uint32_t ppp_state[3];
+    VkResult result;
+ 
+@@ -43,16 +52,8 @@ VkResult PVR_PER_ARCH(ppp_state_create)(struct pvr_device *device,
+    }
+ 
+    pvr_csb_pack (&ppp_state[1], TA_STATE_TERMINATE0, term0) {
+-      term0.clip_right =
+-         DIV_ROUND_UP(
+-            width,
+-            ROGUE_TA_STATE_TERMINATE0_CLIP_RIGHT_BLOCK_SIZE_IN_PIXELS) -
+-         1;
+-      term0.clip_bottom =
+-         DIV_ROUND_UP(
+-            height,
+-            ROGUE_TA_STATE_TERMINATE0_CLIP_BOTTOM_BLOCK_SIZE_IN_PIXELS) -
+-         1;
++      term0.clip_right = DIV_ROUND_UP(width, block_size) - 1;
++      term0.clip_bottom = DIV_ROUND_UP(height, block_size) - 1;
+    }
+ 
+    pvr_csb_pack (&ppp_state[2], TA_STATE_TERMINATE1, term1) {
+-- 
+2.56.0
+
