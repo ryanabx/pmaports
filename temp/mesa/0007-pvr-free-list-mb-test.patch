@@ -1,0 +1,52 @@
+From 9e5a7143912fe0d391ee3f8c0985ef44296fab6f Mon Sep 17 00:00:00 2001
+From: Ryan Brue <ryanbrue.dev@gmail.com>
+Date: Mon, 9 Nov 2026 21:36:49 -0600
+Subject: [PATCH] LOCAL TEST: pvr: PVR_FREE_LIST_MB sets the initial global
+ free list
+
+Local experiment for the GE8300 on amazon-sheldonp; not to be sent. When
+the TA runs out of parameter memory the firmware tries to pause the PM
+(PM_PAGE_MANAGEOP) to grow the free list, the pause is never
+acknowledged, the GPU is reset and a page fault follows. Allow a larger
+initial free list to test whether that is the only problem.
+
+Assisted-by: LLM
+Signed-off-by: Ryan Brue <ryanbrue.dev@gmail.com>
+---
+ src/imagination/vulkan/pvr_arch_device.c | 13 +++++++++++++
+ 1 file changed, 13 insertions(+)
+
+diff --git a/src/imagination/vulkan/pvr_arch_device.c b/src/imagination/vulkan/pvr_arch_device.c
+index 89e8139512b..e60aae4fe97 100644
+--- a/src/imagination/vulkan/pvr_arch_device.c
++++ b/src/imagination/vulkan/pvr_arch_device.c
+@@ -13,6 +13,7 @@
+ #include "pvr_device.h"
+ 
+ #include "vk_log.h"
++#include "util/u_debug.h"
+ 
+ #include "hwdef/pvr_hw_utils.h"
+ 
+@@ -864,6 +865,18 @@ VkResult PVR_PER_ARCH(create_device)(struct pvr_physical_device *pdevice,
+       initial_free_list_size = PVR_SECONDARY_DEVICE_FREE_LIST_INITAL_SIZE;
+    }
+ 
++   /* LOCAL TEST: PVR_FREE_LIST_MB overrides the initial global free list
++    * size. On the GE8300 the firmware cannot pause the PM to grow a free
++    * list, so an out-of-memory TA locks up; start big instead.
++    */
++   {
++      const int64_t mb = debug_get_num_option("PVR_FREE_LIST_MB", 0);
++
++      if (mb > 0)
++         initial_free_list_size =
++            MIN2((uint64_t)mb * 1024U * 1024U, PVR_GLOBAL_FREE_LIST_MAX_SIZE);
++   }
++
+    /* Call as early as possible so we're allocated as low an address as
+     * possible for the zero page.
+     */
+-- 
+2.56.0
+
