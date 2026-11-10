@@ -1,7 +1,7 @@
 From 339a3a1441aa323d4bc6322b15477cfc3ea504f3 Mon Sep 17 00:00:00 2001
 From: Ryan Brue <ryanbrue.dev@gmail.com>
 Date: Mon, 9 Nov 2026 23:33:25 -0600
-Subject: [PATCH] LOCAL DEBUG: pvr: PVR_LOG_ALLOC logs images and memory
+Subject: [PATCH 1/2] LOCAL DEBUG: pvr: PVR_LOG_ALLOC logs images and memory
  allocations
 
 Debug aid for amazon-sheldonp; never sent. To find what pins 165 MiB of
@@ -72,6 +72,33 @@ index 869fa99719e..74f7e26ade7 100644
     *pImage = pvr_image_to_handle(image);
  
     return VK_SUCCESS;
+-- 
+2.56.0
+
+From da989749b5960e6ba9c8d8f5e92fc485fdc68b4e Mon Sep 17 00:00:00 2001
+From: Ryan Brue <ryanbrue.dev@gmail.com>
+Date: Mon, 9 Nov 2026 23:41:52 -0600
+Subject: [PATCH 2/2] LOCAL DEBUG: pvr: fix PVR_LOG_ALLOC image size field
+
+Assisted-by: LLM
+Signed-off-by: Ryan Brue <ryanbrue.dev@gmail.com>
+---
+ src/imagination/vulkan/pvr_image.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/src/imagination/vulkan/pvr_image.c b/src/imagination/vulkan/pvr_image.c
+index 74f7e26ade7..ee20d375849 100644
+--- a/src/imagination/vulkan/pvr_image.c
++++ b/src/imagination/vulkan/pvr_image.c
+@@ -320,7 +320,7 @@ VkResult pvr_CreateImage(VkDevice _device,
+               image->vk.extent.depth, image->vk.format, image->vk.mip_levels,
+               image->vk.array_layers, image->vk.samples, image->vk.tiling,
+               image->memlayout, image->vk.usage,
+-              (uint64_t)image->size / 1024);
++              (uint64_t)image->total_size / 1024);
+    }
+ 
+    *pImage = pvr_image_to_handle(image);
 -- 
 2.56.0
 
