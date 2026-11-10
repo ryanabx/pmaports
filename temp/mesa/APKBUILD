@@ -6,7 +6,7 @@
 maintainer="Ryan Brue <ryanbrue.dev@gmail.com>"
 pkgname=mesa
 pkgver=27.0.0_git20261109
-pkgrel=4
+pkgrel=5
 _commit="1c87c60187064c60a10378fa79e20debf0941f97"
 pkgdesc="Mesa DRI OpenGL library (amazon-sheldonp PowerVR test build)"
 url="https://www.mesa3d.org"
@@ -71,6 +71,7 @@ source="mesa-$_commit.tar.gz::https://gitlab.freedesktop.org/mesa/mesa/-/archive
 	0002-pvr-transfer-submit-on-heap.patch
 	0003-pvr-debug-dump-region-headers.patch
 	0004-pvr-terminate-clip-in-tiles-v1.patch
+	0005-pvr-isp-merge-values-v1.patch
 	"
 builddir="$srcdir/mesa-$_commit"
 options="!check"
@@ -199,4 +200,5 @@ ffab38eb80eb9344488951e8e69990813fbca3ff112224bd24bd81371d02721b3b28af60cec61550
 1b6170e358528584602c517e6d92a1a45833e44036c2b51fada1a5f1e713895f49510ee98bd003e34dac16ecc8b41df47149cd97a2d8bab026aa9cbe69679770  0002-pvr-transfer-submit-on-heap.patch
 e4f2e8a395076f4e97fa712240256e4f1f424c1697b8039d319d2381726a630f3fbac431ba17452e456ee010d80d6950356df516063d90c0b1afcdd56f9e818a  0003-pvr-debug-dump-region-headers.patch
 284d1a0ba6615ce91ea1632c8d8302533a73b8e57a3847ee6f9318f215239e8f007d04ad514ddd7c5fb7d04e5d9e206c54b6dcc4b3d9ff6253625430e7a06cb7  0004-pvr-terminate-clip-in-tiles-v1.patch
+7b8386e2ad5d131e1f4f90f9aec593a5b7dd8c03dea96f17421c25eb06885c30def285899db12ebbe8918d1bed8c069f589fa64457e0d8700b8343a5d1186aec  0005-pvr-isp-merge-values-v1.patch
 "
