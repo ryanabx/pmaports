@@ -1,7 +1,7 @@
 From 339a3a1441aa323d4bc6322b15477cfc3ea504f3 Mon Sep 17 00:00:00 2001
 From: Ryan Brue <ryanbrue.dev@gmail.com>
 Date: Mon, 9 Nov 2026 23:33:25 -0600
-Subject: [PATCH 1/2] LOCAL DEBUG: pvr: PVR_LOG_ALLOC logs images and memory
+Subject: [PATCH 1/3] LOCAL DEBUG: pvr: PVR_LOG_ALLOC logs images and memory
  allocations
 
 Debug aid for amazon-sheldonp; never sent. To find what pins 165 MiB of
@@ -78,7 +78,7 @@ index 869fa99719e..74f7e26ade7 100644
 From da989749b5960e6ba9c8d8f5e92fc485fdc68b4e Mon Sep 17 00:00:00 2001
 From: Ryan Brue <ryanbrue.dev@gmail.com>
 Date: Mon, 9 Nov 2026 23:41:52 -0600
-Subject: [PATCH 2/2] LOCAL DEBUG: pvr: fix PVR_LOG_ALLOC image size field
+Subject: [PATCH 2/3] LOCAL DEBUG: pvr: fix PVR_LOG_ALLOC image size field
 
 Assisted-by: LLM
 Signed-off-by: Ryan Brue <ryanbrue.dev@gmail.com>
@@ -99,6 +99,38 @@ index 74f7e26ade7..ee20d375849 100644
     }
  
     *pImage = pvr_image_to_handle(image);
+-- 
+2.56.0
+
+From d953e09915f144fe002f7b21475ef9f7a15084d8 Mon Sep 17 00:00:00 2001
+From: Ryan Brue <ryanbrue.dev@gmail.com>
+Date: Mon, 9 Nov 2026 23:47:44 -0600
+Subject: [PATCH 3/3] LOCAL DEBUG: pvr: PVR_LOG_ALLOC usage is 64-bit
+
+Assisted-by: LLM
+Signed-off-by: Ryan Brue <ryanbrue.dev@gmail.com>
+---
+ src/imagination/vulkan/pvr_image.c | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/src/imagination/vulkan/pvr_image.c b/src/imagination/vulkan/pvr_image.c
+index ee20d375849..c993f0b08c4 100644
+--- a/src/imagination/vulkan/pvr_image.c
++++ b/src/imagination/vulkan/pvr_image.c
+@@ -315,11 +315,11 @@ VkResult pvr_CreateImage(VkDevice _device,
+    if (debug_get_bool_option("PVR_LOG_ALLOC", false)) {
+       fprintf(stderr,
+               "pvr-alloc: image %ux%ux%u fmt %d mips %u layers %u samples %u "
+-              "tiling %d layout %d usage 0x%x size %" PRIu64 " KiB\n",
++              "tiling %d layout %d usage 0x%" PRIx64 " size %" PRIu64 " KiB\n",
+               image->vk.extent.width, image->vk.extent.height,
+               image->vk.extent.depth, image->vk.format, image->vk.mip_levels,
+               image->vk.array_layers, image->vk.samples, image->vk.tiling,
+-              image->memlayout, image->vk.usage,
++              image->memlayout, (uint64_t)image->vk.usage,
+               (uint64_t)image->total_size / 1024);
+    }
+ 
 -- 
 2.56.0
 
