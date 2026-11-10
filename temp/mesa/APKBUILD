@@ -6,7 +6,7 @@
 maintainer="Ryan Brue <ryanbrue.dev@gmail.com>"
 pkgname=mesa
 pkgver=27.0.0_git20261109
-pkgrel=8
+pkgrel=9
 _commit="1c87c60187064c60a10378fa79e20debf0941f97"
 pkgdesc="Mesa DRI OpenGL library (amazon-sheldonp PowerVR test build)"
 url="https://www.mesa3d.org"
@@ -75,6 +75,8 @@ source="mesa-$_commit.tar.gz::https://gitlab.freedesktop.org/mesa/mesa/-/archive
 	0007-pvr-free-list-mb-test.patch
 	0008-pvr-no-dbias-int-test.patch
 	0009-pvr-zls-format-test.patch
+	0010-pvr-no-d24-attachments-v1.patch
+	0011-pvr-free-list-16mb-v1.patch
 	"
 builddir="$srcdir/mesa-$_commit"
 options="!check"
@@ -207,4 +209,6 @@ e4f2e8a395076f4e97fa712240256e4f1f424c1697b8039d319d2381726a630f3fbac431ba17452e
 f04259c6bb30a6f549cc40c6d19467220c62f61f4b4a9ff38515118a107a6855a4ad60efe894fe3ec1ed0bf6313c5ae9831062b88f788c07075ab47732c108f1  0007-pvr-free-list-mb-test.patch
 27301b176df15b794d2b203dd1e5bc030073d20014dc8ff3db786b66d78fc6f1d3cfacefe129afc3943fa18b2745e8dd48e594545cd31c9b44d73a26b0eb9712  0008-pvr-no-dbias-int-test.patch
 3e52fc4af206cafc54d032e4676b5bfa8ca68acc50c611736e4158b9b8ca06462c0f0c9e42482a06c8a8f6c50a04d4a9d83f87bce13140024d37fe247848ee5e  0009-pvr-zls-format-test.patch
+6474da4c997084a0ec7fe4206af527fb6c70b1592da0cb39a76f832bffd27e621687be3317bf3afbb69b21b821d766615e799d40ff2aa5e095d5a51922ef9135  0010-pvr-no-d24-attachments-v1.patch
+837ccd0a1ea9d01faaa0cc97eb660f7ebb758beec312104b6730c8bdc45a15a9e8522139c392c3444ee69c682b690e39472934c443db8a7d5256166d48cdfd31  0011-pvr-free-list-16mb-v1.patch
 "
