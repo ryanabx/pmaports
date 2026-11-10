@@ -6,7 +6,7 @@
 maintainer="Ryan Brue <ryanbrue.dev@gmail.com>"
 pkgname=mesa
 pkgver=27.0.0_git20261109
-pkgrel=1
+pkgrel=2
 _commit="1c87c60187064c60a10378fa79e20debf0941f97"
 pkgdesc="Mesa DRI OpenGL library (amazon-sheldonp PowerVR test build)"
 url="https://www.mesa3d.org"
@@ -68,6 +68,7 @@ makedepends="
 	"
 source="mesa-$_commit.tar.gz::https://gitlab.freedesktop.org/mesa/mesa/-/archive/$_commit/mesa-$_commit.tar.gz
 	0001-pvr-format-v1-single-macrotile.patch
+	0002-pvr-transfer-submit-on-heap.patch
 	"
 builddir="$srcdir/mesa-$_commit"
 options="!check"
@@ -193,4 +194,5 @@ _vulkan() {
 sha512sums="
 a616e838d97ae8111f8af74d1f41d3df83696446404ec6f47a4259fb3a256434c9f6310128b2dd9c6ca55ca0511d8b80db850bbcdb4fefec452763fc40bff0f3  mesa-1c87c60187064c60a10378fa79e20debf0941f97.tar.gz
 ffab38eb80eb9344488951e8e69990813fbca3ff112224bd24bd81371d02721b3b28af60cec61550786580f4135f4c8f4258422de3142790f6acb381b674d261  0001-pvr-format-v1-single-macrotile.patch
+1b6170e358528584602c517e6d92a1a45833e44036c2b51fada1a5f1e713895f49510ee98bd003e34dac16ecc8b41df47149cd97a2d8bab026aa9cbe69679770  0002-pvr-transfer-submit-on-heap.patch
 "
