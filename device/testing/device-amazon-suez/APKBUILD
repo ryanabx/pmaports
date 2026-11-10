@@ -3,7 +3,7 @@ maintainer="Ryan Brue <ryanbrue.dev@gmail.com>"
 pkgname=device-amazon-suez
 pkgdesc="Amazon Fire HD 10 (2017)"
 pkgver=5
-pkgrel=13
+pkgrel=14
 url="https://postmarketos.org"
 license="MIT"
 arch="aarch64"
@@ -283,7 +283,7 @@ package() {
 	install -Dm644 "$srcdir"/pipewire-pulse.service \
 		"$pkgdir"/etc/systemd/user/pipewire-pulse.service
 
-	# phosh, and the user's phoc, on the A72s; see the file.
+	# The user's phoc on the A72s; see the file.
 	install -Dm644 "$srcdir"/suez-bigcore.conf \
 		"$pkgdir"/usr/lib/systemd/user/mobi.phosh.Shell.service.d/50-suez-bigcore.conf
 }
@@ -310,7 +310,7 @@ cc39763190e092d761ecc454368df9db9b7ddc300ef05c563bd9b3cafadc711801cadd8b4ab64fee
 1671b2b0e341133cf3ac07c25752c9ac412ab6a77d8d393f9ab315d01dfd8b688d8abb269991d7168b4677fbfdac97aee7b6fba496a3d111ed3467419ebf31e9  deviceinfo
 d89fa6205d2ec177514a6e47877f27c7c69745d30994e36597ac6940c114a71868940d7050ba67dc5a260dc338ca5d789c521e35c37d7f2d3645762ab02101a9  modules-initfs
 ed206890b81cc15ac38a64e0b94c97762210e3c7f6b6d6f7312b7fe779dc19bd68cb651452c9ff94d4cee7b5270ca15af73cfed7a65013975c248f41aee316cb  pipewire-pulse.service
-89d5fda0e817515679deac5c19c102cb2e7a61e9d812010a91e572a02d0d12ca8b17e46b427363545df25439b84741e80ae86cfb20695903b40ed04185c3cb22  suez-bigcore.conf
+f2b37ddc7e80ed906d7803d61cb10ec0ee122823fb2181ddd930f9a6fbc56e1a0f96ef2478cfb385d69cb0ff9923a8f0287c3143a649246c1dc861420c5f0d9c  suez-bigcore.conf
 aa90b0ab336022f313a75b8a207b788482587c979f7d3798e9d93f05056e098c9f731926394d91110c86a2a8f1bc615f441273e6d73588a84d000101648c7d93  suez-boot-deadline.conf
 fbd09c39cdfb2b441b7c85364784f265bd53826d6c0680b8b253fc9e01d74984c0816c1627fc8d311b223012109f520a12e99ac9db6728ccc95d3ddf3c88d5c2  suez-boot-ok
 d2c153cb3af543a68ce8be24073a803fab66cd9561d003842658e77f7841abf4279bd83a21916a904ac528337cca856b93de2fc74573fb87c81b5a9af9d923d3  suez-boot-ok.service
