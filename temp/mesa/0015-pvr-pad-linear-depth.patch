@@ -1,0 +1,41 @@
+From 046d8c587c932df75e3027a6676b65ba1325e15b Mon Sep 17 00:00:00 2001
+From: Ryan Brue <ryanbrue.dev@gmail.com>
+Date: Tue, 10 Nov 2026 00:11:23 -0600
+Subject: [PATCH] LOCAL: pvr: pad linear depth/stencil images to whole tiles
+
+Local patch for amazon-sheldonp; not to be sent. With 1080p
+depth/stencil buffers linear, the ZLS store of the last (partial) tile
+row ran past the image: fragment-DM page faults just past the buffer.
+
+Assisted-by: LLM
+Signed-off-by: Ryan Brue <ryanbrue.dev@gmail.com>
+---
+ src/imagination/vulkan/pvr_image.c | 12 ++++++++++++
+ 1 file changed, 12 insertions(+)
+
+diff --git a/src/imagination/vulkan/pvr_image.c b/src/imagination/vulkan/pvr_image.c
+index 6c1cd5495f0..d2db702d5ca 100644
+--- a/src/imagination/vulkan/pvr_image.c
++++ b/src/imagination/vulkan/pvr_image.c
+@@ -130,6 +130,18 @@ static void pvr_image_plane_init_physical_extent(
+       plane->physical_extent.width =
+          align(plane->physical_extent.width, pbe_stride_align);
+ 
++      /* LOCAL: linear depth/stencil (pvr_image_prefer_linear()) is loaded
++       * and stored by the ZLS in whole tiles; pad to 32 pixels so the last
++       * tile row and column stay inside the image.
++       */
++      if (image->vk.tiling == VK_IMAGE_TILING_OPTIMAL &&
++          vk_format_is_depth_or_stencil(image->vk.format)) {
++         plane->physical_extent.width =
++            align(plane->physical_extent.width, 32);
++         plane->physical_extent.height =
++            align(plane->physical_extent.height, 32);
++      }
++
+       if (image->vk.tiling == VK_IMAGE_TILING_DRM_FORMAT_MODIFIER_EXT) {
+          const VkImageDrmFormatModifierExplicitCreateInfoEXT *explicit_mod =
+             vk_find_struct_const(
+-- 
+2.56.0
+
