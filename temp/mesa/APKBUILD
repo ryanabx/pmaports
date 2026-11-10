@@ -6,7 +6,7 @@
 maintainer="Ryan Brue <ryanbrue.dev@gmail.com>"
 pkgname=mesa
 pkgver=27.0.0_git20261109
-pkgrel=10
+pkgrel=11
 _commit="1c87c60187064c60a10378fa79e20debf0941f97"
 pkgdesc="Mesa DRI OpenGL library (amazon-sheldonp PowerVR test build)"
 url="https://www.mesa3d.org"
@@ -78,6 +78,7 @@ source="mesa-$_commit.tar.gz::https://gitlab.freedesktop.org/mesa/mesa/-/archive
 	0010-pvr-no-d24-attachments-v1.patch
 	0011-pvr-free-list-16mb-v1.patch
 	0012-pvr-linear-large-npot-images.patch
+	0013-pvr-debug-log-alloc.patch
 	"
 builddir="$srcdir/mesa-$_commit"
 options="!check"
@@ -213,4 +214,5 @@ f04259c6bb30a6f549cc40c6d19467220c62f61f4b4a9ff38515118a107a6855a4ad60efe894fe3e
 6474da4c997084a0ec7fe4206af527fb6c70b1592da0cb39a76f832bffd27e621687be3317bf3afbb69b21b821d766615e799d40ff2aa5e095d5a51922ef9135  0010-pvr-no-d24-attachments-v1.patch
 837ccd0a1ea9d01faaa0cc97eb660f7ebb758beec312104b6730c8bdc45a15a9e8522139c392c3444ee69c682b690e39472934c443db8a7d5256166d48cdfd31  0011-pvr-free-list-16mb-v1.patch
 3fbf2a442d89913ef7bf11567815cc54cd6cd6f69e646b9ca7f4aaa7308bbd1d119c3daa10a12e1d548316541e09ea362a2da68889b8fd2d635062ecb66259b3  0012-pvr-linear-large-npot-images.patch
+9a5b6c36e6639b54172bd1df6b666fe1ef7eff69d980c68755aabff131f970cc71a786a3318a2b842eb4828623cbaae5c9b7720c30ad90ed5f8fa8f60f39a235  0013-pvr-debug-log-alloc.patch
 "
