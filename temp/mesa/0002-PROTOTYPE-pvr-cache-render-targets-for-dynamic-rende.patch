@@ -17,7 +17,7 @@ destroying them every time.
  5 files changed, 117 insertions(+)
 
 diff --git a/src/imagination/vulkan/pvr_arch_cmd_buffer.c b/src/imagination/vulkan/pvr_arch_cmd_buffer.c
-index 9a964be5e48..fa5ae140aa0 100644
+index 1ac8f4b90df..d037b675c56 100644
 --- a/src/imagination/vulkan/pvr_arch_cmd_buffer.c
 +++ b/src/imagination/vulkan/pvr_arch_cmd_buffer.c
 @@ -1284,6 +1284,9 @@ pvr_get_render_target(const struct pvr_renderpass_hwsetup_render *hw_render,
@@ -217,5 +217,5 @@ index 8f89cc19776..31539fd0548 100644
     uint64_t scratch_buffer_size;
     struct pvr_spm_scratch_buffer *scratch_buffer;
 -- 
-2.55.0
+2.56.0
 

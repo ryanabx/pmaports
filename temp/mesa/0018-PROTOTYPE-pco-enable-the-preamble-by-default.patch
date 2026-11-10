@@ -36,10 +36,10 @@ index 0da01774eb1..052aa0e122d 100644
     pco_skip_passes = debug_get_option_pco_skip_passes();
  
 diff --git a/src/imagination/vulkan/pvr_arch_pipeline.c b/src/imagination/vulkan/pvr_arch_pipeline.c
-index 879b225ff0f..3bb6d705797 100644
+index 764f1a62f1f..1775f22f248 100644
 --- a/src/imagination/vulkan/pvr_arch_pipeline.c
 +++ b/src/imagination/vulkan/pvr_arch_pipeline.c
-@@ -3041,6 +3041,7 @@ pvr_gfx_pipeline_cache_key(const struct pvr_device *device,
+@@ -3048,6 +3048,7 @@ pvr_gfx_pipeline_cache_key(const struct pvr_device *device,
     pvr_gfx_cache_hash_str(&ctx, "SUEZ_PVR_CWE");
     pvr_gfx_cache_hash_str(&ctx, "SUEZ_PCO_ALWAYS_ISP_FB");
     pvr_gfx_cache_hash_str(&ctx, "SUEZ_PCO_NO_FOLD_SAT");
@@ -48,5 +48,5 @@ index 879b225ff0f..3bb6d705797 100644
     _mesa_blake3_final(&ctx, key);
  }
 -- 
-2.55.0
+2.56.0
 

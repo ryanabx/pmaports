@@ -102,10 +102,10 @@ index e28d2b0d960..f0744f10c6d 100644
                                               lower_alpha_to_one,
                                               nir_metadata_control_flow,
 diff --git a/src/imagination/vulkan/pvr_arch_pipeline.c b/src/imagination/vulkan/pvr_arch_pipeline.c
-index 857da0adb11..4de685b4de0 100644
+index bdcbc2a1dc2..a259fa21d11 100644
 --- a/src/imagination/vulkan/pvr_arch_pipeline.c
 +++ b/src/imagination/vulkan/pvr_arch_pipeline.c
-@@ -2503,9 +2503,30 @@ pvr_preprocess_shader_data(pco_data *data,
+@@ -2510,9 +2510,30 @@ pvr_preprocess_shader_data(pco_data *data,
        pvr_init_fs_blend(data, state->cb);
        pvr_init_fs_tile_buffers(data);
  
@@ -140,5 +140,5 @@ index 857da0adb11..4de685b4de0 100644
        if (BITSET_TEST(state->dynamic, MESA_VK_DYNAMIC_CB_COLOR_WRITE_ENABLES) ||
            (state->cb && state->cb->color_write_enables !=
 -- 
-2.55.0
+2.56.0
 

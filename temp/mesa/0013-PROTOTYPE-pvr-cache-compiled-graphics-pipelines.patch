@@ -71,7 +71,7 @@ index bd2a5ea049b..120055d86af 100644
     vk_free(&device->vk.alloc, device);
  }
 diff --git a/src/imagination/vulkan/pvr_arch_pipeline.c b/src/imagination/vulkan/pvr_arch_pipeline.c
-index 4de685b4de0..18b11c6edb3 100644
+index a259fa21d11..d3ba12e5e48 100644
 --- a/src/imagination/vulkan/pvr_arch_pipeline.c
 +++ b/src/imagination/vulkan/pvr_arch_pipeline.c
 @@ -127,12 +127,11 @@ static VkResult pvr_pds_coeff_program_create_and_upload(
@@ -88,7 +88,7 @@ index 4de685b4de0..18b11c6edb3 100644
     uint32_t staging_buffer_size;
     uint32_t *staging_buffer;
  
-@@ -1133,12 +1132,11 @@ pvr_graphics_pipeline_destroy(struct pvr_device *const device,
+@@ -1140,12 +1139,11 @@ pvr_graphics_pipeline_destroy(struct pvr_device *const device,
  }
  
  static void pvr_vertex_state_save(struct pvr_graphics_pipeline *gfx_pipeline,
@@ -102,7 +102,7 @@ index 4de685b4de0..18b11c6edb3 100644
     memcpy(&gfx_pipeline->vs_data, shader_data, sizeof(*shader_data));
  
     /* This ends up unused since we'll use the temp_usage for the PDS program we
-@@ -1149,12 +1147,11 @@ static void pvr_vertex_state_save(struct pvr_graphics_pipeline *gfx_pipeline,
+@@ -1156,12 +1154,11 @@ static void pvr_vertex_state_save(struct pvr_graphics_pipeline *gfx_pipeline,
  }
  
  static void pvr_fragment_state_save(struct pvr_graphics_pipeline *gfx_pipeline,
@@ -116,7 +116,7 @@ index 4de685b4de0..18b11c6edb3 100644
     memcpy(&gfx_pipeline->fs_data, shader_data, sizeof(*shader_data));
  
     if (shader_data->fs.uses.depth_feedback)
-@@ -1293,17 +1290,19 @@ static void pvr_graphics_pipeline_setup_vertex_dma(
+@@ -1300,17 +1297,19 @@ static void pvr_graphics_pipeline_setup_vertex_dma(
     }
  }
  
@@ -139,7 +139,7 @@ index 4de685b4de0..18b11c6edb3 100644
     pco_vs_data *vs_data = &gfx_pipeline->vs_data.vs;
     pco_fs_data *fs_data = &gfx_pipeline->fs_data.fs;
  
-@@ -1354,10 +1353,6 @@ static void pvr_graphics_pipeline_setup_fragment_coeff_program(
+@@ -1361,10 +1360,6 @@ static void pvr_graphics_pipeline_setup_fragment_coeff_program(
     }
  
     u_foreach_bit64 (varying, varyings_used) {
@@ -150,7 +150,7 @@ index 4de685b4de0..18b11c6edb3 100644
        pco_range *cf_range = &fs_data->varyings[varying];
        assert(cf_range->count > 0);
        assert(!(cf_range->start % ROGUE_USC_COEFFICIENT_SET_SIZE));
-@@ -1397,7 +1392,7 @@ static void pvr_graphics_pipeline_setup_fragment_coeff_program(
+@@ -1404,7 +1399,7 @@ static void pvr_graphics_pipeline_setup_fragment_coeff_program(
           douti_src.f16 = false;
           douti_src.f16_offset = douti_src.f32_offset;
  
@@ -159,7 +159,7 @@ index 4de685b4de0..18b11c6edb3 100644
           case INTERP_MODE_SMOOTH:
              douti_src.perspective = true;
              FALLTHROUGH;
-@@ -2899,6 +2894,317 @@ static bool pvr_build_fs_passthrough(bool no_fragment_shader,
+@@ -2906,6 +2901,317 @@ static bool pvr_build_fs_passthrough(bool no_fragment_shader,
     return is_arch_rogue && no_fragment_shader;
  }
  
@@ -477,7 +477,7 @@ index 4de685b4de0..18b11c6edb3 100644
  /* Compiles and uploads shaders and PDS programs. */
  static VkResult
  pvr_graphics_pipeline_compile(struct pvr_device *const device,
-@@ -2982,6 +3288,66 @@ pvr_graphics_pipeline_compile(struct pvr_device *const device,
+@@ -2989,6 +3295,66 @@ pvr_graphics_pipeline_compile(struct pvr_device *const device,
     uint32_t vtx_dma_count = 0;
     bool build_fs_passthrough = false;
  
@@ -544,7 +544,7 @@ index 4de685b4de0..18b11c6edb3 100644
     for (mesa_shader_stage stage = 0; stage < MESA_SHADER_STAGES; ++stage) {
        size_t stage_index = gfx_pipeline->stage_indices[stage];
  
-@@ -3097,7 +3463,49 @@ pvr_graphics_pipeline_compile(struct pvr_device *const device,
+@@ -3104,7 +3470,49 @@ pvr_graphics_pipeline_compile(struct pvr_device *const device,
        pco_encode_ir(pco_ctx, *pco);
     }
  
@@ -593,9 +593,9 @@ index 4de685b4de0..18b11c6edb3 100644
 +compiled:
 +   pvr_vertex_state_save(gfx_pipeline, vs_data_src);
  
-    if (pCreateInfo->flags & VK_PIPELINE_CREATE_CAPTURE_STATISTICS_BIT_KHR) {
-       struct pvr_stats stats = pco_get_pvr_stats(*vs);
-@@ -3126,8 +3534,8 @@ pvr_graphics_pipeline_compile(struct pvr_device *const device,
+    if (pCreateInfo->flags & VK_PIPELINE_CREATE_CAPTURE_STATISTICS_BIT_KHR ||
+        gfx_pipeline->base.pipeline_flags &
+@@ -3137,8 +3545,8 @@ pvr_graphics_pipeline_compile(struct pvr_device *const device,
                                            &vtx_dma_count);
  
     result = pvr_gpu_upload_usc(device,
@@ -606,7 +606,7 @@ index 4de685b4de0..18b11c6edb3 100644
                                 cache_line_size,
                                 &vertex_state->shader_bo);
     if (result != VK_SUCCESS)
-@@ -3137,8 +3545,8 @@ pvr_graphics_pipeline_compile(struct pvr_device *const device,
+@@ -3148,8 +3556,8 @@ pvr_graphics_pipeline_compile(struct pvr_device *const device,
     if (result != VK_SUCCESS)
        goto err_free_vertex_bo;
  
@@ -616,8 +616,8 @@ index 4de685b4de0..18b11c6edb3 100644
 +      pvr_fragment_state_save(gfx_pipeline, fs_data_src);
        fragment_state->is_passthrough = build_fs_passthrough;
  
-       if (pCreateInfo->flags & VK_PIPELINE_CREATE_CAPTURE_STATISTICS_BIT_KHR) {
-@@ -3161,13 +3569,13 @@ pvr_graphics_pipeline_compile(struct pvr_device *const device,
+       if (pCreateInfo->flags & VK_PIPELINE_CREATE_CAPTURE_STATISTICS_BIT_KHR ||
+@@ -3176,13 +3584,13 @@ pvr_graphics_pipeline_compile(struct pvr_device *const device,
              nir_shader_as_str(nir_shaders[MESA_SHADER_FRAGMENT], NULL);
        }
  
@@ -636,7 +636,7 @@ index 4de685b4de0..18b11c6edb3 100644
                                    cache_line_size,
                                    &fragment_state->shader_bo);
        if (result != VK_SUCCESS)
-@@ -3181,7 +3589,7 @@ pvr_graphics_pipeline_compile(struct pvr_device *const device,
+@@ -3196,7 +3604,7 @@ pvr_graphics_pipeline_compile(struct pvr_device *const device,
  
        result = pvr_pds_fragment_program_create(device,
                                                 allocator,
@@ -645,7 +645,7 @@ index 4de685b4de0..18b11c6edb3 100644
                                                 fragment_state);
        if (result != VK_SUCCESS)
           goto err_free_coeff_program;
-@@ -3231,6 +3639,8 @@ pvr_graphics_pipeline_compile(struct pvr_device *const device,
+@@ -3246,6 +3654,8 @@ pvr_graphics_pipeline_compile(struct pvr_device *const device,
     /* assert(pvr_pds_descriptor_program_variables.temp_buff_total_size == 0); */
     /* TODO: Implement spilling with the above. */
  
@@ -654,7 +654,7 @@ index 4de685b4de0..18b11c6edb3 100644
     ralloc_free(shader_mem_ctx);
  
     return VK_SUCCESS;
-@@ -3262,8 +3672,10 @@ err_free_pipeline_xfb_state:
+@@ -3277,8 +3687,10 @@ err_free_pipeline_xfb_state:
  err_free_vertex_bo:
     pvr_bo_suballoc_free(vertex_state->shader_bo);
  err_free_build_context:
@@ -666,7 +666,7 @@ index 4de685b4de0..18b11c6edb3 100644
        pvr_arch_destroy_mrt_setup(device, &mrt_setup);
     return result;
  }
-@@ -3367,6 +3779,9 @@ pvr_graphics_pipeline_init(struct pvr_device *device,
+@@ -3382,6 +3794,9 @@ pvr_graphics_pipeline_init(struct pvr_device *device,
        &gfx_pipeline->dynamic_state;
     struct vk_graphics_pipeline_all_state all_state;
     struct vk_graphics_pipeline_state state = { 0 };
@@ -677,5 +677,5 @@ index 4de685b4de0..18b11c6edb3 100644
     struct vk_render_pass_state rp_state;
     VkResult result;
 -- 
-2.55.0
+2.56.0
 

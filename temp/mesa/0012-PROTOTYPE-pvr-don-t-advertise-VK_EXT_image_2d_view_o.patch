@@ -21,7 +21,7 @@ Generated-by: LLM
  1 file changed, 15 insertions(+)
 
 diff --git a/src/imagination/vulkan/pvr_physical_device.c b/src/imagination/vulkan/pvr_physical_device.c
-index c34971a10ca..bf9c7ac0ed1 100644
+index f5b138f4667..f025ac22bd1 100644
 --- a/src/imagination/vulkan/pvr_physical_device.c
 +++ b/src/imagination/vulkan/pvr_physical_device.c
 @@ -242,6 +242,10 @@ static void pvr_physical_device_get_supported_extensions(
@@ -54,5 +54,5 @@ index c34971a10ca..bf9c7ac0ed1 100644
  
  static uint32_t get_api_version(void)
 -- 
-2.55.0
+2.56.0
 

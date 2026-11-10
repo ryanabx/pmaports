@@ -81,10 +81,10 @@ index f0744f10c6d..f164b89e367 100644
     /* Drop depth writes and discard cond if early fragment tests. */
     if (shader->info.fs.early_fragment_tests) {
 diff --git a/src/imagination/vulkan/pvr_arch_pipeline.c b/src/imagination/vulkan/pvr_arch_pipeline.c
-index 3a1dddf6350..0f088fa1c2d 100644
+index 1f8edb9acbc..d197b7b0ae8 100644
 --- a/src/imagination/vulkan/pvr_arch_pipeline.c
 +++ b/src/imagination/vulkan/pvr_arch_pipeline.c
-@@ -3039,6 +3039,7 @@ pvr_gfx_pipeline_cache_key(const struct pvr_device *device,
+@@ -3046,6 +3046,7 @@ pvr_gfx_pipeline_cache_key(const struct pvr_device *device,
     pvr_gfx_cache_hash_str(&ctx, "PVR_DEBUG");
     pvr_gfx_cache_hash_str(&ctx, "SUEZ_PVR_2D_VIEW_OF_3D");
     pvr_gfx_cache_hash_str(&ctx, "SUEZ_PVR_CWE");
@@ -93,5 +93,5 @@ index 3a1dddf6350..0f088fa1c2d 100644
     _mesa_blake3_final(&ctx, key);
  }
 -- 
-2.55.0
+2.56.0
 

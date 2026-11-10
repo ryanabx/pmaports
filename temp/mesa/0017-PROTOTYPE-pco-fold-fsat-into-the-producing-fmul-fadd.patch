@@ -112,10 +112,10 @@ index 58bd41b4270..e6173336451 100644
     /* TODO: Track whether there are any comp instructions referencing hw
      * registers resulting from the previous passes, and only run
 diff --git a/src/imagination/vulkan/pvr_arch_pipeline.c b/src/imagination/vulkan/pvr_arch_pipeline.c
-index 0f088fa1c2d..879b225ff0f 100644
+index d197b7b0ae8..764f1a62f1f 100644
 --- a/src/imagination/vulkan/pvr_arch_pipeline.c
 +++ b/src/imagination/vulkan/pvr_arch_pipeline.c
-@@ -3040,6 +3040,7 @@ pvr_gfx_pipeline_cache_key(const struct pvr_device *device,
+@@ -3047,6 +3047,7 @@ pvr_gfx_pipeline_cache_key(const struct pvr_device *device,
     pvr_gfx_cache_hash_str(&ctx, "SUEZ_PVR_2D_VIEW_OF_3D");
     pvr_gfx_cache_hash_str(&ctx, "SUEZ_PVR_CWE");
     pvr_gfx_cache_hash_str(&ctx, "SUEZ_PCO_ALWAYS_ISP_FB");
@@ -124,5 +124,5 @@ index 0f088fa1c2d..879b225ff0f 100644
     _mesa_blake3_final(&ctx, key);
  }
 -- 
-2.55.0
+2.56.0
 

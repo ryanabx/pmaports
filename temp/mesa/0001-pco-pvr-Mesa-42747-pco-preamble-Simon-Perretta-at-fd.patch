@@ -1,12 +1,12 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Ryan Brue <ryanbrue.dev@gmail.com>
-Date: Thu, 5 Nov 2026 22:43:41 -0600
+Date: Tue, 10 Nov 2026 12:54:45 -0600
 Subject: [PATCH] pco, pvr: Mesa !42747 (pco preamble, Simon Perretta) at
- a7d91e7ba38, squashed
+ fd9a9c1cf7a, squashed
 
-Merge of the MR head a7d91e7ba38 into main 1b60c2e3bd6 (only a docs/relnotes
-conflict, resolved by keeping both), as one patch for the amazon-suez
-Mesa aport. The MR's own commits are on the MR; this is not ours.
+The MR head fd9a9c1cf7a (rebased by its author onto main 5304cac24b0),
+as one patch for the amazon-suez Mesa aport. The MR's own commits are on
+the MR; this is not ours.
 ---
  docs/envvars.rst                              |   3 +
  docs/features.txt                             |   2 +-
@@ -52,10 +52,10 @@ Mesa aport. The MR's own commits are on the MR; this is not ours.
  create mode 100644 src/imagination/pdsc/programs/pdsc_set_view_index.h
 
 diff --git a/docs/envvars.rst b/docs/envvars.rst
-index a243f7a4cf6..cb5cea439e2 100644
+index 8da1f8d10b5..99acefc41ea 100644
 --- a/docs/envvars.rst
 +++ b/docs/envvars.rst
-@@ -2337,6 +2337,9 @@ PowerVR driver environment variables
+@@ -2333,6 +2333,9 @@ PowerVR driver environment variables
     ``no_dma_cache``
        Disable DMA cache.
  
@@ -66,7 +66,7 @@ index a243f7a4cf6..cb5cea439e2 100644
  
     A comma-separated list of passes to skip.
 diff --git a/docs/features.txt b/docs/features.txt
-index 42857fff7e0..14f16aba7a6 100644
+index 8d7e5fa1a13..cac687970e5 100644
 --- a/docs/features.txt
 +++ b/docs/features.txt
 @@ -505,7 +505,7 @@ Vulkan 1.3 -- all DONE: anv, hk, kk, lvp, nvk, panvk, radv, tu, vn, v3dv
@@ -79,16 +79,16 @@ index 42857fff7e0..14f16aba7a6 100644
    VK_EXT_extended_dynamic_state                         DONE (anv, hasvk, lvp, nvk, panvk, pvr, radv, tu, v3dv, vn)
    VK_EXT_extended_dynamic_state2                        DONE (anv, hasvk, lvp, nvk, panvk, pvr, radv, tu, v3dv, vn)
 diff --git a/docs/relnotes/new_features.txt b/docs/relnotes/new_features.txt
-index e02aca44bba..7d8ac4804fe 100644
+index e8b0809c8bb..5c3c3372caa 100644
 --- a/docs/relnotes/new_features.txt
 +++ b/docs/relnotes/new_features.txt
-@@ -18,3 +18,4 @@ VK_{KHR,EXT}_load_store_op_none on pvr
- GL_NV_alpha_to_coverage_dither_control on all r600 devices
- VK_{ARM,EXT}_rasterization_order_attachment_access on v3dv
- VK_KHR_maintenance12 on RADV
+@@ -27,3 +27,4 @@ VK_EXT_depth_clip_control on dzn
+ GL_OES_sample_shading on v3d
+ GL_OES_sample_variables on v3d
+ GL_OES_shader_multisample_interpolation on v3d
 +VK_KHR_zero_initialize_workgroup_memory on pvr
 diff --git a/src/compiler/nir/nir_divergence_analysis.c b/src/compiler/nir/nir_divergence_analysis.c
-index bcb0bcba00e..1ed9a9d89e4 100644
+index 809b97338ab..95219d95218 100644
 --- a/src/compiler/nir/nir_divergence_analysis.c
 +++ b/src/compiler/nir/nir_divergence_analysis.c
 @@ -407,6 +407,7 @@ visit_intrinsic(nir_intrinsic_instr *instr, struct divergence_state *state)
@@ -99,9 +99,9 @@ index bcb0bcba00e..1ed9a9d89e4 100644
        is_divergent = false;
        break;
  
-@@ -883,7 +884,17 @@ visit_intrinsic(nir_intrinsic_instr *instr, struct divergence_state *state)
-    case nir_intrinsic_load_texture_scale:
+@@ -885,7 +886,17 @@ visit_intrinsic(nir_intrinsic_instr *instr, struct divergence_state *state)
     case nir_intrinsic_load_inline_data_intel:
+    case nir_intrinsic_load_push_data_intel:
     case nir_intrinsic_resource_intel:
 -   case nir_intrinsic_load_push_constant: {
 +   case nir_intrinsic_load_push_constant:
@@ -118,7 +118,7 @@ index bcb0bcba00e..1ed9a9d89e4 100644
        unsigned num_srcs = nir_intrinsic_infos[instr->intrinsic].num_srcs;
        for (unsigned i = 0; i < num_srcs; i++) {
           if (src_divergent(instr->src[i], state)) {
-@@ -1149,6 +1160,9 @@ visit_intrinsic(nir_intrinsic_instr *instr, struct divergence_state *state)
+@@ -1151,6 +1162,9 @@ visit_intrinsic(nir_intrinsic_instr *instr, struct divergence_state *state)
     case nir_intrinsic_load_deref_transpose_amd:
     case nir_intrinsic_load_global_tr_amd:
     case nir_intrinsic_trace_ray_intel:
@@ -129,7 +129,7 @@ index bcb0bcba00e..1ed9a9d89e4 100644
        break;
  
 diff --git a/src/imagination/common/pvr_iface.h b/src/imagination/common/pvr_iface.h
-index ce1ef4c513f..252d066c2ed 100644
+index f0a2fc47e1c..dbb3f847620 100644
 --- a/src/imagination/common/pvr_iface.h
 +++ b/src/imagination/common/pvr_iface.h
 @@ -9,7 +9,7 @@
@@ -1651,7 +1651,7 @@ index 0b58cbab52d..50f7ad6e463 100644
              input_program->view_index_register,
              PVR_ROGUE_PDSINST_DOUT_FIELDS_DOUTW_SRC1_DEST_UNIFIED_STORE,
 diff --git a/src/imagination/vulkan/pvr_arch_cmd_buffer.c b/src/imagination/vulkan/pvr_arch_cmd_buffer.c
-index 98c35406965..9a964be5e48 100644
+index e4bd2227a5c..1ac8f4b90df 100644
 --- a/src/imagination/vulkan/pvr_arch_cmd_buffer.c
 +++ b/src/imagination/vulkan/pvr_arch_cmd_buffer.c
 @@ -87,6 +87,8 @@
@@ -1898,7 +1898,7 @@ index 98c35406965..9a964be5e48 100644
  
        .sd_type = ROGUE_CDMCTRL_SD_TYPE_NONE,
  
-@@ -10611,3 +10655,31 @@ void PVR_PER_ARCH(GetRenderingAreaGranularity)(
+@@ -10624,3 +10668,31 @@ void PVR_PER_ARCH(GetRenderingAreaGranularity)(
     VK_FROM_HANDLE(pvr_device, device, _device);
     pvr_get_render_area_granularity(device->pdevice, pGranularity);
  }
@@ -2194,7 +2194,7 @@ index 89e8139512b..7d891d80b15 100644
     pvr_finish_null_pages(device);
     pvr_bo_suballocator_fini(&device->suballoc_vis_test);
 diff --git a/src/imagination/vulkan/pvr_arch_pipeline.c b/src/imagination/vulkan/pvr_arch_pipeline.c
-index 2e5db2f540d..857da0adb11 100644
+index 4457fad2e7a..bdcbc2a1dc2 100644
 --- a/src/imagination/vulkan/pvr_arch_pipeline.c
 +++ b/src/imagination/vulkan/pvr_arch_pipeline.c
 @@ -476,7 +476,8 @@ static VkResult pvr_pds_descriptor_program_create_and_upload(
@@ -2427,7 +2427,7 @@ index 2e5db2f540d..857da0adb11 100644
     VkResult result;
  
     result =
-@@ -1083,56 +911,25 @@ static VkResult pvr_compute_pipeline_compile(
+@@ -1087,56 +915,25 @@ static VkResult pvr_compute_pipeline_compile(
     if (result != VK_SUCCESS)
        goto err_free_build_context;
  
@@ -2491,7 +2491,7 @@ index 2e5db2f540d..857da0adb11 100644
  err_free_shader:
     pvr_bo_suballoc_free(compute_pipeline->shader_state.shader_bo);
  
-@@ -1209,14 +1006,9 @@ static void pvr_compute_pipeline_destroy(
+@@ -1216,14 +1013,9 @@ static void pvr_compute_pipeline_destroy(
     const VkAllocationCallbacks *const allocator,
     struct pvr_compute_pipeline *const compute_pipeline)
  {
@@ -2506,7 +2506,7 @@ index 2e5db2f540d..857da0adb11 100644
     pvr_bo_suballoc_free(compute_pipeline->shader_state.shader_bo);
  
     pvr_pipeline_destroy_shader_data(&compute_pipeline->cs_data, false);
-@@ -2749,6 +2541,11 @@ static void pvr_postprocess_shader_data(pco_data *data,
+@@ -2756,6 +2548,11 @@ static void pvr_postprocess_shader_data(pco_data *data,
  {
     const VkGraphicsPipelineCreateInfo *pGraphicsCreateInfo = pCreateInfo;
  
@@ -2518,7 +2518,7 @@ index 2e5db2f540d..857da0adb11 100644
     switch (nir->info.stage) {
     case MESA_SHADER_VERTEX: {
        pvr_alloc_vs_sysvals(data, nir);
-@@ -3374,7 +3171,8 @@ pvr_graphics_pipeline_compile(struct pvr_device *const device,
+@@ -3389,7 +3186,8 @@ pvr_graphics_pipeline_compile(struct pvr_device *const device,
           layout,
           MESA_SHADER_FRAGMENT,
           &gfx_pipeline->fs_data,
@@ -2528,7 +2528,7 @@ index 2e5db2f540d..857da0adb11 100644
        if (result != VK_SUCCESS)
           goto err_free_frag_program;
  
-@@ -3400,7 +3198,8 @@ pvr_graphics_pipeline_compile(struct pvr_device *const device,
+@@ -3415,7 +3213,8 @@ pvr_graphics_pipeline_compile(struct pvr_device *const device,
        layout,
        MESA_SHADER_VERTEX,
        &gfx_pipeline->vs_data,
@@ -2636,10 +2636,10 @@ index 828f34d36ac..3da5770d05b 100644
  
     pipeline.pds_shared_update_code_offset =
 diff --git a/src/imagination/vulkan/pvr_cmd_buffer.h b/src/imagination/vulkan/pvr_cmd_buffer.h
-index 3221a8e1183..8cc3d0bff4c 100644
+index 36e9c5c033d..376cc27aaa9 100644
 --- a/src/imagination/vulkan/pvr_cmd_buffer.h
 +++ b/src/imagination/vulkan/pvr_cmd_buffer.h
-@@ -548,6 +548,9 @@ struct pvr_cmd_buffer_state {
+@@ -551,6 +551,9 @@ struct pvr_cmd_buffer_state {
  
     uint32_t max_shared_regs;
  
@@ -2687,7 +2687,7 @@ index 5b9e96d94e2..576c7bd6cb5 100644
        pdsc_program *xfb_main;
        pdsc_program *xfb_end;
 diff --git a/src/imagination/vulkan/pvr_physical_device.c b/src/imagination/vulkan/pvr_physical_device.c
-index e688e84b3eb..c34971a10ca 100644
+index 7b0c441229a..f5b138f4667 100644
 --- a/src/imagination/vulkan/pvr_physical_device.c
 +++ b/src/imagination/vulkan/pvr_physical_device.c
 @@ -192,6 +192,7 @@ static void pvr_physical_device_get_supported_extensions(
@@ -2707,7 +2707,7 @@ index e688e84b3eb..c34971a10ca 100644
  
        /* VK_EXT_border_color_swizzle */
        .borderColorSwizzle = true,
-@@ -1167,6 +1168,15 @@ static inline uint64_t pvr_compute_heap_size(struct pvr_instance *instance)
+@@ -1166,6 +1167,15 @@ static inline uint64_t pvr_compute_heap_size(struct pvr_instance *instance)
  static void
  pvr_physical_device_setup_formats(struct pvr_physical_device *const pdevice);
  
@@ -2723,7 +2723,7 @@ index e688e84b3eb..c34971a10ca 100644
  VkResult pvr_physical_device_init(struct pvr_physical_device *pdevice,
                                    struct pvr_instance *instance,
                                    drmDevicePtr drm_render_device,
-@@ -1306,6 +1316,8 @@ VkResult pvr_physical_device_init(struct pvr_physical_device *pdevice,
+@@ -1305,6 +1315,8 @@ VkResult pvr_physical_device_init(struct pvr_physical_device *pdevice,
  
     pdevice->vk.supported_sync_types = ws->sync_types;
  
@@ -2831,5 +2831,5 @@ index 67b3ccda361..1a3dbcc329a 100644
  struct pvr_spm_load_props {
     unsigned output_reg_count;
 -- 
-2.55.0
+2.56.0
 
