@@ -1,0 +1,38 @@
+v4l2codecs: map MediaTek's single-allocation MS21 to NV12_16L32S
+
+Experiment, 2026-11-02 (docs/notes/vdec-chroma-offset.md, "The MS21
+experiment"): against gst-plugins-bad 1.28.7. MS21 is listed before MM21,
+so the GStreamer-to-V4L2 lookup picks it; a driver without MS21 would get
+MM21 back from S_FMT. Upstream it would need choosing from what the
+driver enumerates.
+
+Build on the stick without installing anything: unpack Alpine's
+gstreamer-dev, gst-plugins-base-dev, gst-plugins-bad-dev, glib-dev and
+libgudev-dev (the installed runtime's versions) into /tmp/gstdev, add
+gst-libs/gst/codecs/*.h from the release tarball (not installed by the
+-dev package), and compile sys/v4l2codecs/*.c with a small config.h
+against the installed .so.0 libraries; then GST_PLUGIN_SYSTEM_PATH to a
+directory with every system plugin but v4l2codecs, plus this one, and
+GST_REGISTRY to a private file.
+
+--- a/sys/v4l2codecs/gstv4l2format.c
++++ b/sys/v4l2codecs/gstv4l2format.c
+@@ -26,6 +26,10 @@
+ #define GST_CAT_DEFAULT gstv4l2codecs_debug
+ GST_DEBUG_CATEGORY_EXTERN (gstv4l2codecs_debug);
+ 
++#ifndef V4L2_PIX_FMT_MS21
++#define V4L2_PIX_FMT_MS21 v4l2_fourcc('M', 'S', '2', '1')       /* MediaTek 8-bit block mode with one plane */
++#endif
++
+ #ifndef V4L2_PIX_FMT_NC12
+ #define V4L2_PIX_FMT_NC12 v4l2_fourcc('N', 'C', '1', '2')       /* Y/CbCr 4:2:0 (128b cols) */
+ #endif
+@@ -50,6 +54,7 @@
+   {V4L2_PIX_FMT_NV15,             GST_VIDEO_FORMAT_NV12_10LE40,     DRM_FORMAT_INVALID, DRM_FORMAT_MOD_INVALID, 0},
+   {V4L2_PIX_FMT_P010,             GST_VIDEO_FORMAT_P010_10LE,       DRM_FORMAT_INVALID, DRM_FORMAT_MOD_INVALID, 0},
+   {V4L2_PIX_FMT_YUYV,             GST_VIDEO_FORMAT_YUY2,            DRM_FORMAT_INVALID, DRM_FORMAT_MOD_INVALID, 0},
++  {V4L2_PIX_FMT_MS21,             GST_VIDEO_FORMAT_NV12_16L32S,     DRM_FORMAT_INVALID, DRM_FORMAT_MOD_INVALID, 0},
+   {V4L2_PIX_FMT_MM21,             GST_VIDEO_FORMAT_NV12_16L32S,     DRM_FORMAT_INVALID, DRM_FORMAT_MOD_INVALID, 0},
+   {V4L2_PIX_FMT_SUNXI_TILED_NV12, GST_VIDEO_FORMAT_NV12_32L32,      DRM_FORMAT_INVALID, DRM_FORMAT_MOD_INVALID, 0},
+   {V4L2_PIX_FMT_NV12_4L4,         GST_VIDEO_FORMAT_NV12_4L4,        DRM_FORMAT_INVALID, DRM_FORMAT_MOD_INVALID, 0},
