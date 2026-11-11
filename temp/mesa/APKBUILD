@@ -6,7 +6,7 @@
 maintainer="Ryan Brue <ryanbrue.dev@gmail.com>"
 pkgname=mesa
 pkgver=27.0.0_git20261109
-pkgrel=18
+pkgrel=19
 _commit="1c87c60187064c60a10378fa79e20debf0941f97"
 pkgdesc="Mesa DRI OpenGL library (amazon-sheldonp PowerVR test build)"
 url="https://www.mesa3d.org"
@@ -84,6 +84,7 @@ source="mesa-$_commit.tar.gz::https://gitlab.freedesktop.org/mesa/mesa/-/archive
 	0016-zink-release-expired-bos-per-frame.patch
 	0017-pvr-debug-log-tq.patch
 	0018-pvr-tq-abs-test.patch
+	0019-pvr-heap-at-zero.patch
 	"
 builddir="$srcdir/mesa-$_commit"
 options="!check"
@@ -225,4 +226,5 @@ e9772f368ef07549ae11f7552bf23a4060d208696bbb69aeefa66943a7b47e17ab2ac4cb6cb09c95
 cb15e8bcfa7811caaed97365ba72205727c103b64593e35055c4d765dcf5c1afa432bee583026d807e6da0d2f646f767fe681939cd442bced8f9cc863541cc12  0016-zink-release-expired-bos-per-frame.patch
 5b787f096956682a656bdab1f8c47fcb1577535662426600a7c24c215c5acb3f4003231eac5ac13c87498f11e87020e6693cc0109c821eb72f7d11056a0d5553  0017-pvr-debug-log-tq.patch
 af5e6a0a59518b489434521cf473f33c6471c624753b068b45912b7235ffede7bdac271210ff38151158d542a51c3aede80ec0b032a093b678a456b23d0a65a2  0018-pvr-tq-abs-test.patch
+460536aa102c953a1d7faa3056afc68f97ec678f6bf72f620ca2cea3901d575d81642e638c2c0fd6421f17aafe79c00cec08bb2c8fc6eb2fae9386cb7e744d6f  0019-pvr-heap-at-zero.patch
 "
