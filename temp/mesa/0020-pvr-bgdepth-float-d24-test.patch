@@ -1,0 +1,56 @@
+From 2433027f3449ffd6d4dbf922372d336a7bbfa616 Mon Sep 17 00:00:00 2001
+From: Ryan Brue <ryanbrue.dev@gmail.com>
+Date: Wed, 11 Nov 2026 00:12:06 -0600
+Subject: [PATCH] LOCAL TEST: pvr: PVR_TEST_BGDEPTH_FLOAT and PVR_ALLOW_D24
+
+Signed-off-by: Ryan Brue <ryanbrue.dev@gmail.com>
+---
+ src/imagination/vulkan/pvr_arch_job_render.c | 9 +++++++++
+ src/imagination/vulkan/pvr_formats.c         | 3 +++
+ 2 files changed, 12 insertions(+)
+
+diff --git a/src/imagination/vulkan/pvr_arch_job_render.c b/src/imagination/vulkan/pvr_arch_job_render.c
+index f64a71412a3..20aa59be561 100644
+--- a/src/imagination/vulkan/pvr_arch_job_render.c
++++ b/src/imagination/vulkan/pvr_arch_job_render.c
+@@ -1138,6 +1138,15 @@ static void pvr_frag_state_stream_init(struct pvr_render_ctx *ctx,
+        *  - zload_format is set to a sensible default above, and
+        *  - job->depth_clear_value is set to a sensible default in that case.
+        */
++      /* LOCAL TEST: PVR_TEST_BGDEPTH_FLOAT=1 writes the background depth as
++       * a float whatever the ZLS format (imagination/linux-firmware#17: on a
++       * GE8300 D16/D24 depth tests pass only with fui(1.0) here).
++       */
++      if (debug_get_bool_option("PVR_TEST_BGDEPTH_FLOAT", false)) {
++         value.value = fui(depth_clear);
++         break;
++      }
++
+       switch (zload_format) {
+       case ROGUE_CR_ZLS_FORMAT_TYPE_F32Z:
+       case ROGUE_CR_ZLS_FORMAT_TYPE_F64Z:
+diff --git a/src/imagination/vulkan/pvr_formats.c b/src/imagination/vulkan/pvr_formats.c
+index fd7cedcf4c7..e2f4903eb43 100644
+--- a/src/imagination/vulkan/pvr_formats.c
++++ b/src/imagination/vulkan/pvr_formats.c
+@@ -47,6 +47,7 @@
+ #include "util/half_float.h"
+ #include "util/log.h"
+ #include "util/macros.h"
++#include "util/u_debug.h"
+ #include "util/u_math.h"
+ #include "vk_enum_defines.h"
+ #include "vk_enum_to_str.h"
+@@ -320,7 +321,9 @@ pvr_get_image_format_features2(struct pvr_physical_device *pdevice,
+     * don't offer the 24-bit depth formats as attachments there; zink then
+     * picks D32_SFLOAT(_S8_UINT). D16 stays: Vulkan requires it.
+     */
++   /* LOCAL TEST: PVR_ALLOW_D24=1 offers them anyway. */
+    const bool skip_int_depth =
++      !debug_get_bool_option("PVR_ALLOW_D24", false) &&
+       PVR_GET_FEATURE_VALUE(&pdevice->dev_info,
+                             simple_parameter_format_version,
+                             0) == 1 &&
+-- 
+2.56.0
+
