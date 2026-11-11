@@ -1,0 +1,19 @@
+# Run plasma-keyboard only while a text field wants input (osk-on-demand).
+# It pins ~70-120 MiB of GPU memory while running, on a 1 GiB device.
+# Opt out: systemctl --user disable --now osk-on-demand (kwinrc's
+# InputMethod goes back to the session default when it stops).
+
+[Unit]
+Description=Start the on-screen keyboard only when a text field needs it
+After=plasma-kwin_wayland.service
+PartOf=graphical-session.target
+
+[Service]
+ExecStart=/usr/bin/osk-on-demand
+Environment=OSK_IDLE=120
+Environment=OSK_DESKTOP_FILE=/usr/share/applications/plasma-keyboard-lowmem.desktop
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=plasma-workspace.target

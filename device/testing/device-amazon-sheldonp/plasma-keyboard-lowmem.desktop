@@ -1,0 +1,13 @@
+# plasma-keyboard with a 1024x1024 QtQuick texture atlas (sheldonp).
+# Qt sizes the atlas from the window's first buffer, which on a 1.35-scaled
+# 1080p output is 2844x1600 (buffer scale 2 before the fractional scale
+# arrives), so the default atlas is 4096x2048 = 32 MiB of pinned GPU memory.
+# 1024x1024 renders the keyboard the same (checked on screen, 2026-11-10).
+# Used by osk-on-demand (OSK_DESKTOP_FILE).
+[Desktop Entry]
+Name=Plasma Keyboard (low memory)
+Exec=env QSG_ATLAS_WIDTH=1024 QSG_ATLAS_HEIGHT=1024 plasma-keyboard
+Type=Application
+X-KDE-Wayland-VirtualKeyboard=true
+Icon=input-keyboard-virtual
+NoDisplay=true

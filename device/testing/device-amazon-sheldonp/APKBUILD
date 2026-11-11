@@ -3,7 +3,7 @@ maintainer="Ryan Brue <ryanbrue.dev@gmail.com>"
 pkgname=device-amazon-sheldonp
 pkgdesc="Amazon Fire TV Stick 3rd Gen (mainline)"
 pkgver=1
-pkgrel=5
+pkgrel=6
 url="https://postmarketos.org"
 license="MIT"
 arch="aarch64"
@@ -12,10 +12,14 @@ depends="
 	linux-amazon-sheldonp
 	mkbootimg
 	postmarketos-base
+	kconfig
+	py3-gobject3
+	python3
 "
 makedepends="devicepkg-dev"
 source="deviceinfo kernel-cmdline.conf unudhcpd.conf unudhcpd.confd
-	usb-signaller-developer-mode.conf 61-amazon-fire-tv-remote.hwdb"
+	usb-signaller-developer-mode.conf 61-amazon-fire-tv-remote.hwdb
+	osk-on-demand.py osk-on-demand.service plasma-keyboard-lowmem.desktop"
 
 build() {
 	devicepkg_build $startdir $pkgname
@@ -33,6 +37,23 @@ package() {
 	# The Fire TV remote's Select and Back keys
 	install -Dm644 "$srcdir"/61-amazon-fire-tv-remote.hwdb \
 		"$pkgdir"/usr/lib/udev/hwdb.d/61-amazon-fire-tv-remote.hwdb
+
+	# GPU memory is pinned and scarce (844 MiB in all): run the on-screen
+	# keyboard only while a text field wants it, with a small Qt atlas.
+	install -Dm755 "$srcdir"/osk-on-demand.py "$pkgdir"/usr/bin/osk-on-demand
+	install -Dm644 "$srcdir"/osk-on-demand.service \
+		"$pkgdir"/usr/lib/systemd/user/osk-on-demand.service
+	mkdir -p "$pkgdir"/usr/lib/systemd/user/plasma-workspace.target.wants
+	ln -s ../osk-on-demand.service \
+		"$pkgdir"/usr/lib/systemd/user/plasma-workspace.target.wants/osk-on-demand.service
+	install -Dm644 "$srcdir"/plasma-keyboard-lowmem.desktop \
+		"$pkgdir"/usr/share/applications/plasma-keyboard-lowmem.desktop
+	# xwaylandvideobridge (screen sharing for X11 apps; there are none here)
+	# kept Xwayland running at ~120 MiB of GPU memory plus its own 51 MiB:
+	# mask its autostart unit. Undo: rm this link.
+	mkdir -p "$pkgdir"/etc/systemd/user
+	ln -s /dev/null \
+		"$pkgdir"/etc/systemd/user/app-org.kde.xwaylandvideobridge@autostart.service
 }
 sha512sums="
 59fdd507e3e0f1de7d458aeb5f6cfb140f8dd6d9e43c576f8c748f2f3496384559a3cc7b0d07d0fc0f382ddbabf2c910e1553a7c0527c3ca508167578a402ee8  deviceinfo
@@ -41,4 +62,7 @@ fcd72a0ce0ddf35cfd44e8ec62828738668f8dafd2da92b6832ab9dd413e1cafb2604320bab48b70
 742504673aaf2840fa5acc376a4a89d53bc6f25df34c15d72be40a3e086536bbc7ab0175203fccfcc478166ca5aa61dc530de627f293df536a7292e371a278e1  unudhcpd.confd
 762774ebb719b8f0ee389adaed68e957bc8a90167e9be042b7ca28de191b102f0a79340df13d11f45c46561a22eaaaec81937e334c9cec5edbe51857111a1e9b  usb-signaller-developer-mode.conf
 6c5d7fac266eb639487f7559c2bc2621310e0975dd68721f629c53dc84a06311f6224e9eb9b92bb3a38a9b50e6badb7179504dc83e9ece0332cb7e7aac409c7c  61-amazon-fire-tv-remote.hwdb
+f7d11e953cc952a4cb98679c6fee5bce1d3994bbd940739b64a3974a134e459162112be6173a2bd26e27aa05e5266374739992242caa2db4450d224e059aed89  osk-on-demand.py
+67a8b691318fe8be30ce53875e1516c94a60ff35a2729a1945dc417be5a1b9c37fb9a410def83d8ad8591c7c6fc12eb93e2f0f6af9213359531b02563711aba9  osk-on-demand.service
+30d6e29896a1aa9a6314a67414aa582f9282598c455f8bd0ccf46b2da032b87ae41e6728749ded9949a2ed6d44c118171b301e9e867b37152d9a894db514aaa5  plasma-keyboard-lowmem.desktop
 "
