@@ -6,7 +6,7 @@
 maintainer="Ryan Brue <ryanbrue.dev@gmail.com>"
 pkgname=mesa
 pkgver=27.0.0_git20261109
-pkgrel=16
+pkgrel=17
 _commit="1c87c60187064c60a10378fa79e20debf0941f97"
 pkgdesc="Mesa DRI OpenGL library (amazon-sheldonp PowerVR test build)"
 url="https://www.mesa3d.org"
@@ -82,6 +82,7 @@ source="mesa-$_commit.tar.gz::https://gitlab.freedesktop.org/mesa/mesa/-/archive
 	0014-pvr-linear-depth-too.patch
 	0015-pvr-pad-linear-depth.patch
 	0016-zink-release-expired-bos-per-frame.patch
+	0017-pvr-debug-log-tq.patch
 	"
 builddir="$srcdir/mesa-$_commit"
 options="!check"
@@ -221,4 +222,5 @@ bd2e52617a73bce6cf59d5a4b8200a8cbb43d47c8bad44dd107f54b2245e701be62e65c40e4f4fa3
 e9772f368ef07549ae11f7552bf23a4060d208696bbb69aeefa66943a7b47e17ab2ac4cb6cb09c958b9d21d5833db736813aa2f9fbcd6126c4ad32f9a4323d19  0014-pvr-linear-depth-too.patch
 82a999505402e538f03a3a32da80ccb82f896e56a5f1e3fdcc9ab4b0c4ef0fbe66f6287e35591d6d92008659fe1e0302bcb08ce2d754a83902bd7ec34f82f89a  0015-pvr-pad-linear-depth.patch
 cb15e8bcfa7811caaed97365ba72205727c103b64593e35055c4d765dcf5c1afa432bee583026d807e6da0d2f646f767fe681939cd442bced8f9cc863541cc12  0016-zink-release-expired-bos-per-frame.patch
+5b787f096956682a656bdab1f8c47fcb1577535662426600a7c24c215c5acb3f4003231eac5ac13c87498f11e87020e6693cc0109c821eb72f7d11056a0d5553  0017-pvr-debug-log-tq.patch
 "
