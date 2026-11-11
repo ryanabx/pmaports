@@ -3,7 +3,7 @@ maintainer="Ryan Brue <ryanbrue.dev@gmail.com>"
 pkgname=device-amazon-sheldonp
 pkgdesc="Amazon Fire TV Stick 3rd Gen (mainline)"
 pkgver=1
-pkgrel=6
+pkgrel=7
 url="https://postmarketos.org"
 license="MIT"
 arch="aarch64"
@@ -19,7 +19,8 @@ depends="
 makedepends="devicepkg-dev"
 source="deviceinfo kernel-cmdline.conf unudhcpd.conf unudhcpd.confd
 	usb-signaller-developer-mode.conf 61-amazon-fire-tv-remote.hwdb
-	osk-on-demand.py osk-on-demand.service plasma-keyboard-lowmem.desktop"
+	osk-on-demand.py osk-on-demand.service plasma-keyboard-lowmem.desktop
+	plasmashell-lowmem.conf"
 
 build() {
 	devicepkg_build $startdir $pkgname
@@ -48,6 +49,10 @@ package() {
 		"$pkgdir"/usr/lib/systemd/user/plasma-workspace.target.wants/osk-on-demand.service
 	install -Dm644 "$srcdir"/plasma-keyboard-lowmem.desktop \
 		"$pkgdir"/usr/share/applications/plasma-keyboard-lowmem.desktop
+	# plasmashell without a depth/stencil buffer and with a 1024x1024
+	# atlas: 103 -> 78 MiB of GPU memory (see the file).
+	install -Dm644 "$srcdir"/plasmashell-lowmem.conf \
+		"$pkgdir"/usr/lib/systemd/user/plasma-plasmashell.service.d/lowmem.conf
 	# xwaylandvideobridge (screen sharing for X11 apps; there are none here)
 	# kept Xwayland running at ~120 MiB of GPU memory plus its own 51 MiB:
 	# mask its autostart unit. Undo: rm this link.
@@ -65,4 +70,5 @@ fcd72a0ce0ddf35cfd44e8ec62828738668f8dafd2da92b6832ab9dd413e1cafb2604320bab48b70
 f7d11e953cc952a4cb98679c6fee5bce1d3994bbd940739b64a3974a134e459162112be6173a2bd26e27aa05e5266374739992242caa2db4450d224e059aed89  osk-on-demand.py
 67a8b691318fe8be30ce53875e1516c94a60ff35a2729a1945dc417be5a1b9c37fb9a410def83d8ad8591c7c6fc12eb93e2f0f6af9213359531b02563711aba9  osk-on-demand.service
 30d6e29896a1aa9a6314a67414aa582f9282598c455f8bd0ccf46b2da032b87ae41e6728749ded9949a2ed6d44c118171b301e9e867b37152d9a894db514aaa5  plasma-keyboard-lowmem.desktop
+78752b068de66dac13b217e45fd564048f025db5e36be3caa6820f244fc224a759f38523fce5fbe16541b9ce4bb7e98f271083ee39788bcebc92f81c0d0f5486  plasmashell-lowmem.conf
 "
