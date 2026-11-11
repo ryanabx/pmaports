@@ -1,0 +1,33 @@
+From dae107dc8250bfc1f5ba65f67c7f2ff4d688d394 Mon Sep 17 00:00:00 2001
+From: Ryan Brue <ryanbrue.dev@gmail.com>
+Date: Wed, 11 Nov 2026 12:22:39 -0600
+Subject: [PATCH] LOCAL: pvr: offer 24-bit depth attachments again on format v1
+ (PVR_NO_D24=1 hides them)
+
+Signed-off-by: Ryan Brue <ryanbrue.dev@gmail.com>
+---
+ src/imagination/vulkan/pvr_formats.c | 7 +++++--
+ 1 file changed, 5 insertions(+), 2 deletions(-)
+
+diff --git a/src/imagination/vulkan/pvr_formats.c b/src/imagination/vulkan/pvr_formats.c
+index e2f4903eb43..4aa44379c2e 100644
+--- a/src/imagination/vulkan/pvr_formats.c
++++ b/src/imagination/vulkan/pvr_formats.c
+@@ -321,9 +321,12 @@ pvr_get_image_format_features2(struct pvr_physical_device *pdevice,
+     * don't offer the 24-bit depth formats as attachments there; zink then
+     * picks D32_SFLOAT(_S8_UINT). D16 stays: Vulkan requires it.
+     */
+-   /* LOCAL TEST: PVR_ALLOW_D24=1 offers them anyway. */
++   /* LOCAL: offered again since local patch 23 (a float ZLS load format
++    * for unloaded integer depth) made D16/D24/D24S8 match llvmpipe;
++    * PVR_NO_D24=1 hides them as before.
++    */
+    const bool skip_int_depth =
+-      !debug_get_bool_option("PVR_ALLOW_D24", false) &&
++      debug_get_bool_option("PVR_NO_D24", false) &&
+       PVR_GET_FEATURE_VALUE(&pdevice->dev_info,
+                             simple_parameter_format_version,
+                             0) == 1 &&
+-- 
+2.56.0
+

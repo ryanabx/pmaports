@@ -6,7 +6,7 @@
 maintainer="Ryan Brue <ryanbrue.dev@gmail.com>"
 pkgname=mesa
 pkgver=27.0.0_git20261109
-pkgrel=22
+pkgrel=24
 _commit="1c87c60187064c60a10378fa79e20debf0941f97"
 pkgdesc="Mesa DRI OpenGL library (amazon-sheldonp PowerVR test build)"
 url="https://www.mesa3d.org"
@@ -88,6 +88,8 @@ source="mesa-$_commit.tar.gz::https://gitlab.freedesktop.org/mesa/mesa/-/archive
 	0020-pvr-bgdepth-float-d24-test.patch
 	0021-pvr-debug-log-tq-cs.patch
 	0022-pvr-one-row-buffer-copy-even-stride.patch
+	0023-pvr-v1-unloaded-integer-depth-float-zload.patch
+	0024-pvr-v1-offer-d24-again.patch
 	"
 builddir="$srcdir/mesa-$_commit"
 options="!check"
@@ -233,4 +235,6 @@ af5e6a0a59518b489434521cf473f33c6471c624753b068b45912b7235ffede7bdac271210ff3815
 eadc6e6641f87ca30b3ec337149d2d456ab214baef676de8cc265ba0c552b2cad071e607c4d5299276edde5021e9f6ef84bf43d33f2cf651128d2802417f3c03  0020-pvr-bgdepth-float-d24-test.patch
 9bb841f17f15a34ffaba66f26b6113422ed6e0a7e4b9e356ef08f500915ff063f08a102b65e92defdd93c33d160d724ef29287c6847a9b59ac91f2da03b63e6b  0021-pvr-debug-log-tq-cs.patch
 0471702e0dcba9d04d0e26ba3872ca9fd6f877ea10f962aa08d87e90716bb6bfc256996da7745f4d5b8ae633ec3c59d3713bee14376fe4876cd508c6113e0d51  0022-pvr-one-row-buffer-copy-even-stride.patch
+461ab9fe03e0615f6ef12835be89fdb3e595cefe3a432669ad104d346069cd364d76b54054f0a0e575ce2739334db992b00ab54d9922611d1d57b9444ef08586  0023-pvr-v1-unloaded-integer-depth-float-zload.patch
+66eebaee6d5cb36defb425ea15d153a415c4964b54d84e1871405e7ad61a10c80b7ca68defcd21f21d21fe019fb4deb870599c887c1a3009e96cb0f9fb704852  0024-pvr-v1-offer-d24-again.patch
 "
