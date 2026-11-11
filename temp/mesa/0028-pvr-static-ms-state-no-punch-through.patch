@@ -1,0 +1,137 @@
+From 723d7dffeb365d297d06217e348433a87013613e Mon Sep 17 00:00:00 2001
+From: Ryan Brue <ryanbrue.dev@gmail.com>
+Date: Wed, 11 Nov 2026 16:05:28 -0600
+Subject: [PATCH] LOCAL: pvr: static multisample and color-write state; sample
+ and A2C checks only when needed (PVR_FULL_DYNAMIC_FS=1 restores)
+
+Signed-off-by: Ryan Brue <ryanbrue.dev@gmail.com>
+---
+ src/imagination/pco/pco_nir.c                | 16 ++++++++++++--
+ src/imagination/vulkan/pvr_arch_pipeline.c   |  8 +++++++
+ src/imagination/vulkan/pvr_physical_device.c | 22 ++++++++++++++------
+ 3 files changed, 38 insertions(+), 8 deletions(-)
+
+diff --git a/src/imagination/pco/pco_nir.c b/src/imagination/pco/pco_nir.c
+index 6115d6b16fd..2132d57a1a8 100644
+--- a/src/imagination/pco/pco_nir.c
++++ b/src/imagination/pco/pco_nir.c
+@@ -17,6 +17,7 @@
+ #include "pco_internal.h"
+ #include "pvr_limits.h"
+ 
++#include "util/u_debug.h"
+ #include <stdio.h>
+ 
+ /* TODO: Spill only if needed rather than requiring on a threshold. */
+@@ -1061,7 +1062,10 @@ void pco_lower_nir(pco_ctx *ctx, nir_shader *nir, pco_data *data)
+    NIR_PASS(_, nir, pco_nir_lower_tex, data, ctx);
+ 
+    if (nir->info.stage == MESA_SHADER_FRAGMENT) {
+-      if (!internal)
++      /* LOCAL: only when the pipeline enables it (see pvr_physical_device.c). */
++      const bool full_dynamic_fs =
++         debug_get_bool_option("PVR_FULL_DYNAMIC_FS", false);
++      if (!internal && (data->fs.uses.alpha_to_coverage || full_dynamic_fs))
+          NIR_PASS(_, nir, pco_nir_lower_alpha_to_coverage);
+ 
+       NIR_PASS(_, nir, nir_lower_blend, &data->fs.blend_opts);
+@@ -1072,7 +1076,15 @@ void pco_lower_nir(pco_ctx *ctx, nir_shader *nir, pco_data *data)
+       };
+       NIR_PASS(_, nir, nir_opt_peephole_select, &peep_opts);
+       NIR_PASS(_, nir, pco_nir_lower_interpolation, &data->fs);
+-      if (!internal)
++      /* LOCAL: the sample check discards, which makes the object
++       * punch-through; leave it out when single-sampled (known statically)
++       * and the shader writes no sample mask and doesn't run per sample.
++       */
++      if (!internal &&
++          (full_dynamic_fs || data->fs.rasterization_samples != 1 ||
++           nir->info.fs.uses_sample_shading ||
++           (nir->info.outputs_written &
++            BITFIELD64_BIT(FRAG_RESULT_SAMPLE_MASK))))
+          NIR_PASS(_, nir, pco_nir_lower_sample_mask_out);
+       NIR_PASS(_, nir, pco_nir_pfo, &data->fs);
+       NIR_PASS(_, nir, nir_lower_is_helper_invocation);
+diff --git a/src/imagination/vulkan/pvr_arch_pipeline.c b/src/imagination/vulkan/pvr_arch_pipeline.c
+index 4457fad2e7a..8256c3b36ed 100644
+--- a/src/imagination/vulkan/pvr_arch_pipeline.c
++++ b/src/imagination/vulkan/pvr_arch_pipeline.c
+@@ -55,6 +55,7 @@
+ #include "pvr_types.h"
+ #include "pvr_usc.h"
+ 
++#include "util/u_debug.h"
+ #include "util/log.h"
+ #include "util/macros.h"
+ #include "util/ralloc.h"
+@@ -2722,6 +2723,13 @@ pvr_preprocess_shader_data(pco_data *data,
+       if (state->ms)
+          data->fs.uses.alpha_to_coverage = state->ms->alpha_to_coverage_enable;
+ 
++      /* LOCAL: the static sample count, so the compiler can leave out the
++       * sample-mask check (0 = unknown, keep it).
++       */
++      data->fs.rasterization_samples = 0;
++      if (state->ms && !BITSET_TEST(state->dynamic, MESA_VK_DYNAMIC_MS_RASTERIZATION_SAMPLES))
++         data->fs.rasterization_samples = state->ms->rasterization_samples;
++
+       if (BITSET_TEST(state->dynamic, MESA_VK_DYNAMIC_CB_COLOR_WRITE_ENABLES) ||
+           (state->cb && state->cb->color_write_enables !=
+                            BITFIELD_MASK(MESA_VK_MAX_COLOR_ATTACHMENTS))) {
+diff --git a/src/imagination/vulkan/pvr_physical_device.c b/src/imagination/vulkan/pvr_physical_device.c
+index 7b0c441229a..3af31a4d12d 100644
+--- a/src/imagination/vulkan/pvr_physical_device.c
++++ b/src/imagination/vulkan/pvr_physical_device.c
+@@ -16,6 +16,7 @@
+ 
+ #include "git_sha1.h"
+ 
++#include "util/u_debug.h"
+ #include "util/disk_cache.h"
+ #include "util/ralloc.h"
+ #include "util/os_misc.h"
+@@ -193,7 +194,8 @@ static void pvr_physical_device_get_supported_extensions(
+       .KHR_vertex_attribute_divisor = true,
+       .KHR_workgroup_memory_explicit_layout = true,
+       .EXT_border_color_swizzle = true,
+-      .EXT_color_write_enable = true,
++      /* LOCAL: off unless PVR_FULL_DYNAMIC_FS=1, see the features. */
++      .EXT_color_write_enable = debug_get_bool_option("PVR_FULL_DYNAMIC_FS", false),
+       .EXT_custom_border_color = true,
+       .EXT_debug_marker = true,
+       .EXT_depth_clamp_zero_one = true,
+@@ -418,7 +420,7 @@ static void pvr_physical_device_get_supported_features(
+       .uniformBufferStandardLayout = true,
+ 
+       /* VK_EXT_color_write_enable */
+-      .colorWriteEnable = true,
++      .colorWriteEnable = debug_get_bool_option("PVR_FULL_DYNAMIC_FS", false),
+ 
+       /* Vulkan 1.3 / VK_EXT_extended_dynamic_state */
+       .extendedDynamicState = true,
+@@ -432,10 +434,18 @@ static void pvr_physical_device_get_supported_features(
+       .extendedDynamicState3TessellationDomainOrigin = false,
+       .extendedDynamicState3DepthClampEnable = false,
+       .extendedDynamicState3PolygonMode = false,
+-      .extendedDynamicState3RasterizationSamples = true,
+-      .extendedDynamicState3SampleMask = true,
+-      .extendedDynamicState3AlphaToCoverageEnable = true,
+-      .extendedDynamicState3AlphaToOneEnable = true,
++      /* LOCAL: these four, and color write enable, are applied in every
++       * application fragment shader when dynamic: a sample-mask check that
++       * ends in a discard, alpha-to-coverage, and a framebuffer read to keep
++       * disabled attachments. A discard makes every object punch-through,
++       * and on a GE8300 a flat-coloured 1080p triangle cost ~6.5 ms of GPU
++       * time. Static, the compiler adds them only when the pipeline needs
++       * them. PVR_FULL_DYNAMIC_FS=1 advertises them again.
++       */
++      .extendedDynamicState3RasterizationSamples = debug_get_bool_option("PVR_FULL_DYNAMIC_FS", false),
++      .extendedDynamicState3SampleMask = debug_get_bool_option("PVR_FULL_DYNAMIC_FS", false),
++      .extendedDynamicState3AlphaToCoverageEnable = debug_get_bool_option("PVR_FULL_DYNAMIC_FS", false),
++      .extendedDynamicState3AlphaToOneEnable = debug_get_bool_option("PVR_FULL_DYNAMIC_FS", false),
+       .extendedDynamicState3LogicOpEnable = false,
+       .extendedDynamicState3ColorBlendEnable = false,
+       .extendedDynamicState3ColorBlendEquation = false,
+-- 
+2.56.0
+

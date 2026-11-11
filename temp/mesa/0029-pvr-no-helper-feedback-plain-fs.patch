@@ -1,0 +1,47 @@
+From 71796ff25c8609484a6419d2ff47aa4d0027d4a1 Mon Sep 17 00:00:00 2001
+From: Ryan Brue <ryanbrue.dev@gmail.com>
+Date: Wed, 11 Nov 2026 16:19:55 -0600
+Subject: [PATCH] LOCAL: pvr: no helper-invocation ISP feedback for plain
+ single-sampled shaders
+
+Signed-off-by: Ryan Brue <ryanbrue.dev@gmail.com>
+---
+ src/imagination/pco/pco_nir_pvfio.c | 15 +++++++++++++++
+ 1 file changed, 15 insertions(+)
+
+diff --git a/src/imagination/pco/pco_nir_pvfio.c b/src/imagination/pco/pco_nir_pvfio.c
+index e28d2b0d960..c2e4046d699 100644
+--- a/src/imagination/pco/pco_nir_pvfio.c
++++ b/src/imagination/pco/pco_nir_pvfio.c
+@@ -10,6 +10,7 @@
+  * \brief PCO NIR per-vertex/fragment input/output passes.
+  */
+ 
++#include "util/u_debug.h"
+ #include "compiler/glsl_types.h"
+ #include "compiler/shader_enums.h"
+ #include "nir.h"
+@@ -556,6 +557,20 @@ static bool lower_isp_fb(nir_builder *b, struct pfo_state *state)
+ 
+    nir_def *discard_cond = nir_is_helper_invocation(b, 1);
+ 
++   /* LOCAL: a single-sampled shader with no discard, demote, alpha to
++    * coverage or per-sample execution only becomes a helper when the API
++    * sample mask clears sample 0; dropping that condition keeps the object
++    * out of punch-through (GE8300: a flat-coloured 1080p triangle 2.9 ms of
++    * GPU time with it). PVR_FULL_DYNAMIC_FS=1 keeps it.
++    */
++   if (!debug_get_bool_option("PVR_FULL_DYNAMIC_FS", false) &&
++       state->fs->rasterization_samples == 1 &&
++       !shader->info.fs.uses_discard &&
++       !shader->info.fs.uses_sample_shading &&
++       !state->fs->uses.alpha_to_coverage) {
++      discard_cond = NULL;
++   }
++
+    /* Drop depth writes and discard cond if early fragment tests. */
+    if (shader->info.fs.early_fragment_tests) {
+       state->depth_feedback_src = NULL;
+-- 
+2.56.0
+
