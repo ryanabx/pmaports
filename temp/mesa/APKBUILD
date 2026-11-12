@@ -6,7 +6,7 @@
 maintainer="Ryan Brue <ryanbrue.dev@gmail.com>"
 pkgname=mesa
 pkgver=27.0.0_git20261109
-pkgrel=31
+pkgrel=36
 _commit="1c87c60187064c60a10378fa79e20debf0941f97"
 pkgdesc="Mesa DRI OpenGL library (amazon-sheldonp PowerVR test build)"
 url="https://www.mesa3d.org"
@@ -97,6 +97,11 @@ source="mesa-$_commit.tar.gz::https://gitlab.freedesktop.org/mesa/mesa/-/archive
 	0029-pvr-no-helper-feedback-plain-fs.patch
 	0030-pco-test-no-null-tex.patch
 	0031-pvr-null-tex-dummy.patch
+	0032-pvr-pipeline-cache.patch
+	0033-pvr-sampler-2d-view-of-3d.patch
+	0034-pvr-pipeline-cache-pco-debug-print.patch
+	0035-pco-smp-data-used-comps.patch
+	0036-pco-smp-data-used-comps-build-fix.patch
 	"
 builddir="$srcdir/mesa-$_commit"
 options="!check"
@@ -251,4 +256,9 @@ b25721efd4bb99cb3a3a13e8eeac47e11873442f11d161692a2869bc583c49be1c66be2aee47b871
 b106f26193a74900ab39f03625780d531cd23a268a891c64cbb5f7ccda3cdc8ac95c38a1a305d0e559750b1d5a4b69d5fca484955f4b6c0029fd2c08561ed106  0029-pvr-no-helper-feedback-plain-fs.patch
 62344ef667a66cebe4822389f182489421aeef3bb856b1c5337f13736c7ccd97b3ee2da7480b56000f2dd7ed8bdac9ba17a1e919e43bb28fdb05d903946be6ca  0030-pco-test-no-null-tex.patch
 291f232b6f926327169e25c36cd922b620934fa5b09ec4827aa685229e47d13953538f2a96e58c5b4d604134f4c9a9ad4a544f1e4a9be49f2e0e9586a2e29940  0031-pvr-null-tex-dummy.patch
+136c894faf8d1fd05fa746d87eb1885d5eea098054a260a12125e600d3a9a5c0f9bbc1d1f37b7e74f8a2a4bca03bda55156e517d49ce19f3d2c0b3bef1b27e6a  0032-pvr-pipeline-cache.patch
+cfa98c91061e2c5db8ddeec0b4826257d86f1b43008a506c301df3919cd7ce8b7cb89353a457c5117c7fa266409f2954e3b673f8bfe52c90aa3e8fb8b8a93784  0033-pvr-sampler-2d-view-of-3d.patch
+4609d49db5fa24024903c817f2eccd294febca55ea7eb134e15878d03d7d506592d6ec69f2d9e347add09a552737e82c8d268f26371c8d93d8c9715318d3a8aa  0034-pvr-pipeline-cache-pco-debug-print.patch
+b3caf3d938d736817f2054e6984c87e13401ee24a0ea5fd1f0f324be97715d57225bb08fa5866c19c54d4eb05fe1630a595c31ec2aa2c39e3dcabb458991455b  0035-pco-smp-data-used-comps.patch
+41dc692c0330dfb734d5d1391be07c7a538074e981a89566a9313d3c7f713612fe302aa6e60f4b3dfeec08001b8a2f3df572f026ab30a0ff2af56d78251987c1  0036-pco-smp-data-used-comps-build-fix.patch
 "

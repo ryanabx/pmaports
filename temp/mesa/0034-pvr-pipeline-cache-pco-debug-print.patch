@@ -1,0 +1,38 @@
+From 3ec72f085036471a530e7530d32c7e48eca3ea43 Mon Sep 17 00:00:00 2001
+From: Ryan Brue <ryanbrue.dev@gmail.com>
+Date: Wed, 11 Nov 2026 21:36:16 -0600
+Subject: [PATCH 1/2] LOCAL: pvr: no pipeline cache with PCO_DEBUG_PRINT set
+
+A cache hit compiles nothing, so the shaders weren't printed.
+
+Signed-off-by: Ryan Brue <ryanbrue.dev@gmail.com>
+---
+ src/imagination/vulkan/pvr_arch_pipeline.c | 8 +++++---
+ 1 file changed, 5 insertions(+), 3 deletions(-)
+
+diff --git a/src/imagination/vulkan/pvr_arch_pipeline.c b/src/imagination/vulkan/pvr_arch_pipeline.c
+index a534cd3b9ea..49478bf2b0b 100644
+--- a/src/imagination/vulkan/pvr_arch_pipeline.c
++++ b/src/imagination/vulkan/pvr_arch_pipeline.c
+@@ -1296,13 +1296,15 @@ static const struct vk_pipeline_cache_object_ops pvr_pipeline_cache_entry_ops =
+ };
+ 
+ /* Off when compiler debug or test switches are set: they change the code
+- * without changing the key.
++ * without changing the key (or, for PCO_DEBUG_PRINT, print only when the
++ * shader is compiled).
+  */
+ static bool pvr_pipeline_cache_allowed(VkPipelineCreateFlags2KHR flags)
+ {
+    static const char *const switches[] = {
+-      "PVR_NO_PIPELINE_CACHE", "PCO_DEBUG",          "PCO_SKIP_PASSES",
+-      "PVR_FULL_DYNAMIC_FS",   "PVR_NULL_TEX_CHECK", "PVR_TEST_NO_NULL_TEX",
++      "PVR_NO_PIPELINE_CACHE", "PCO_DEBUG",          "PCO_DEBUG_PRINT",
++      "PCO_SKIP_PASSES",       "PVR_FULL_DYNAMIC_FS", "PVR_NULL_TEX_CHECK",
++      "PVR_TEST_NO_NULL_TEX",
+    };
+ 
+    if (flags & (VK_PIPELINE_CREATE_2_CAPTURE_STATISTICS_BIT_KHR |
+-- 
+2.56.0
+

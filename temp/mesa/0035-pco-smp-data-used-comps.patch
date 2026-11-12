@@ -1,0 +1,97 @@
+From fbf6dc8d0b8e16a4540f767ff27700f83d7e81c8 Mon Sep 17 00:00:00 2001
+From: Ryan Brue <ryanbrue.dev@gmail.com>
+Date: Wed, 11 Nov 2026 21:46:33 -0600
+Subject: [PATCH 2/2] LOCAL: pco: emit only the used components of sample data
+ vecs
+
+Sample intrinsics take a 16-wide data operand padded with undefs; only
+the first "range" components are real. The translation emitted the
+whole vec16, so register allocation gave a two-coordinate texture
+sample 16 consecutive temps and zeroed 14 of them before each sample
+(32 temps for a plain textured quad). When every use of a vec is the
+data operand of a sample, emit only the components the largest range
+reads.
+
+Signed-off-by: Ryan Brue <ryanbrue.dev@gmail.com>
+---
+ src/imagination/pco/pco_trans_nir.c | 56 +++++++++++++++++++++++++++--
+ 1 file changed, 54 insertions(+), 2 deletions(-)
+
+diff --git a/src/imagination/pco/pco_trans_nir.c b/src/imagination/pco/pco_trans_nir.c
+index e78c438c8f9..2ddb9bf8aac 100644
+--- a/src/imagination/pco/pco_trans_nir.c
++++ b/src/imagination/pco/pco_trans_nir.c
+@@ -3740,6 +3740,49 @@ trans_conv(trans_ctx *tctx, nir_op op, pco_ref dest, pco_ref src)
+  * \param[in] alu The nir alu instruction.
+  * \return The PCO instruction.
+  */
++/**
++ * \brief LOCAL: how many components of a vec are read, if all its uses are
++ * sample data operands (which are 16 wide in NIR, but only the first
++ * "range" components are real; the rest are undef padding).
++ *
++ * Without this, the padding became zeroed registers: a vec2 of coordinates
++ * took 16 consecutive temps and 14 movs before every texture sample.
++ *
++ * \param[in] def The vec's NIR def.
++ * \return The number of components to emit.
++ */
++static unsigned smp_data_used_comps(const nir_def *def)
++{
++   unsigned used = 0;
++
++   nir_foreach_use_including_if (src, def) {
++      if (nir_src_is_if(src))
++         return def->num_components;
++
++      nir_instr *parent = nir_src_parent_instr(src);
++      if (parent->type != nir_instr_type_intrinsic)
++         return def->num_components;
++
++      nir_intrinsic_instr *intr = nir_instr_as_intrinsic(parent);
++      switch (intr->intrinsic) {
++      case nir_intrinsic_smp_pco:
++      case nir_intrinsic_smp_coeffs_pco:
++      case nir_intrinsic_smp_raw_pco:
++      case nir_intrinsic_smp_write_pco:
++         if (src != &intr->src[0])
++            return def->num_components;
++
++         used = MAX2(used, nir_intrinsic_range(intr));
++         break;
++
++      default:
++         return def->num_components;
++      }
++   }
++
++   return used ? MIN2(used, def->num_components) : def->num_components;
++}
++
+ static pco_instr *trans_alu(trans_ctx *tctx, nir_alu_instr *alu)
+ {
+    const nir_op_info *info = &nir_op_infos[alu->op];
+@@ -4175,9 +4218,18 @@ static pco_instr *trans_alu(trans_ctx *tctx, nir_alu_instr *alu)
+    case nir_op_vec4:
+    case nir_op_vec5:
+    case nir_op_vec8:
+-   case nir_op_vec16:
+-      instr = pco_trans_nir_vec(tctx, dest, num_srcs, src);
++   case nir_op_vec16: {
++      /* At least a vec2: a one-component vec would just be a mov. */
++      const unsigned used =
++         MAX2(MIN2(num_srcs, smp_data_used_comps(&alu->def)), 2);
++
++      instr = pco_trans_nir_vec(tctx,
++                                used < num_srcs ? pco_ref_chans(dest, used)
++                                                : dest,
++                                used,
++                                src);
+       break;
++   }
+ 
+    case nir_op_mov:
+       instr = pco_mov(&tctx->b, dest, src[0]);
+-- 
+2.56.0
+

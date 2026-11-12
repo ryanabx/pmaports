@@ -1,0 +1,28 @@
+From 8a96199517e5ad6afbac36b0749a265d9e2521cc Mon Sep 17 00:00:00 2001
+From: Ryan Brue <ryanbrue.dev@gmail.com>
+Date: Wed, 11 Nov 2026 21:53:27 -0600
+Subject: [PATCH] LOCAL: pco: fix the build of the sample data vec trimming
+
+nir_src_parent_instr() is nir_src_use_instr() in this tree.
+
+Signed-off-by: Ryan Brue <ryanbrue.dev@gmail.com>
+---
+ src/imagination/pco/pco_trans_nir.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/src/imagination/pco/pco_trans_nir.c b/src/imagination/pco/pco_trans_nir.c
+index 2ddb9bf8aac..effcee26095 100644
+--- a/src/imagination/pco/pco_trans_nir.c
++++ b/src/imagination/pco/pco_trans_nir.c
+@@ -3759,7 +3759,7 @@ static unsigned smp_data_used_comps(const nir_def *def)
+       if (nir_src_is_if(src))
+          return def->num_components;
+ 
+-      nir_instr *parent = nir_src_parent_instr(src);
++      nir_instr *parent = nir_src_use_instr(src);
+       if (parent->type != nir_instr_type_intrinsic)
+          return def->num_components;
+ 
+-- 
+2.56.0
+
