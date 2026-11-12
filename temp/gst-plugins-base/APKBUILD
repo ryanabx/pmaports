@@ -1,0 +1,105 @@
+# LOCAL (sheldonp): Alpine's gst-plugins-base 1.28.7 plus a glcolorconvert
+# shader fix (0100) for tiled NV12 on Mesa; no LTO (qemu-user deadlock), no
+# tests. pkgrel 10 so it wins over Alpine's r0.
+maintainer="team/alpine-desktop <achill@achill.org>"
+pkgname=gst-plugins-base
+pkgver=1.28.7
+pkgrel=10
+# NOTE: Upgrade together with the whole GStreamer suite &
+# only to even-numbered versions (e.g. 1.18.x, 1.20.x)!
+pkgdesc="GStreamer streaming media framework base plug-ins"
+url="https://gstreamer.freedesktop.org"
+arch="aarch64"  # LOCAL: the stick only
+license="GPL-2.0-or-later AND LGPL-2.0-or-later"
+subpackages="$pkgname-dbg $pkgname-dev $pkgname-doc $pkgname-lang"
+replaces="gst-plugins-base1 gst-plugins-bad"
+options="!check"
+makedepends="
+	alsa-lib-dev
+	cdparanoia-dev
+	expat-dev
+	glib-dev
+	gobject-introspection-dev
+	graphene-dev
+	gstreamer-dev
+	libice-dev
+	libogg-dev
+	libsm-dev
+	libtheora-dev
+	libvorbis-dev
+	libxv-dev
+	mesa-dev
+	meson
+	opus-dev
+	orc-compiler
+	orc-dev
+	pango-dev
+	perl
+	wayland-dev
+	wayland-protocols
+	"
+checkdepends="font-dejavu"
+source="https://gstreamer.freedesktop.org/src/gst-plugins-base/gst-plugins-base-$pkgver.tar.xz
+	0100-glcolorconvert-tile-offset-int.patch
+	"
+ldpath="/usr/lib/gstreamer-1.0"
+
+case "$CARCH" in
+# FIXME 32bit: too many tests fail
+# riscv64, s390x: too many tests timeout
+arm*|x86|riscv64|s390x) options="$options !check" ;;
+esac
+
+# secfixes:
+#   1.26.2-r0:
+#     - CVE-2025-47807
+#     - CVE-2025-47808
+#     - CVE-2025-47806
+#   1.24.10-r0:
+#     - CVE-2024-47542
+#     - CVE-2024-47600
+#     - CVE-2024-47538
+#     - CVE-2024-47541
+#     - CVE-2024-47607
+#     - CVE-2024-47615
+#     - CVE-2024-47835
+#   1.18.4-r0:
+#     - CVE-2021-3522
+#   1.16.0-r0:
+#     - CVE-2019-9928
+
+build() {
+	CFLAGS="$CFLAGS -O2" \
+	CXXFLAGS="$CXXFLAGS -O2" \
+	CPPFLAGS="$CPPFLAGS -O2" \
+	abuild-meson \
+		-Db_lto=false \
+		-Dalsa=enabled \
+		-Dintrospection=enabled \
+		-Dpackage-origin="https://alpinelinux.org" \
+		-Dpackage-name="GStreamer base plug-ins (Alpine Linux)" \
+		-Dtests="$(want_check && echo enabled || echo disabled)" \
+		. output
+	meson compile -C output
+}
+
+check() {
+	XDG_RUNTIME_DIR="$tmpdir" \
+	GST_GL_WINDOW=surfaceless \
+	CK_TIMEOUT_MULTIPLIER=20 \
+	meson test -t 10 --print-errorlogs -C output
+}
+
+package() {
+	DESTDIR="$pkgdir" meson install --no-rebuild -C output
+}
+
+doc() {
+	default_doc
+	replaces="${pkgname}1-doc"
+}
+
+sha512sums="
+f9ac8868970ff839d04bb6ea97b6e0eef98856637bc36c1afaa8785bfca371d9b7428db254a0007101b76791f872340f995d48077b8d35f446d3a81f0f046ed3  gst-plugins-base-1.28.7.tar.xz
+578baff4be33b3f6a03e0a73494a8dcaa95b5a53f51553219de130138677d66181c81a1e530c14c5f5e2948c79939e2d15e100aa34ec2f1a1d0d717f46210ea2  0100-glcolorconvert-tile-offset-int.patch
+"

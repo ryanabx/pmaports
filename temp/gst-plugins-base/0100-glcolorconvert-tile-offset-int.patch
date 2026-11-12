@@ -1,0 +1,21 @@
+glcolorconvert: pass an int, not an ivec2, to frag_to_tile()
+
+The tiled semi-planar (NV12_16L32S, NV12_4L4, ...) to RGB shader calls
+frag_to_tile(..., int need_offset) with ivec2(mod(...)) for the chroma
+plane. GLSL has no implicit ivec2-to-int conversion, so Mesa's compiler
+rejects the shader ("no matching function for call to frag_to_tile(ivec2,
+ivec2, ivec2, int, int, ivec2)") and glcolorconvert fails on every
+buffer. Found on a MediaTek MT8695 (decoder output NV12_16L32S, Mesa
+zink), 2026-11-11; the same line is in GStreamer main.
+
+--- a/gst-libs/gst/gl/gstglcolorconvert.c	2026-11-11 20:25:00.151419441 -0600
++++ b/gst-libs/gst/gl/gstglcolorconvert.c	2026-11-11 20:25:00.152831924 -0600
+@@ -465,7 +465,7 @@
+     "  yuva.x = texelFetch(Ytex, texel, 0).r;\n"
+     "\n"
+     "  ivec2 chroma_tcoord = ivec2(tile_coord.x, tile_coord.y / fy);\n"
+-    "  texel = frag_to_tile(chroma_tcoord, delta_coord / 2, chroma_dim, iwidth / 2, tiles_per_row, ivec2(mod(float(tile_coord.y), float(fy))));\n"
++    "  texel = frag_to_tile(chroma_tcoord, delta_coord / 2, chroma_dim, iwidth / 2, tiles_per_row, int(mod(float(tile_coord.y), float(fy))));\n"
+     "  yuva.yz = texelFetch(UVtex, texel, 0).%c%c;\n"
+     "  yuva.a = 1.0;\n"
+     "\n"
