@@ -13,6 +13,7 @@ license="GPL-2.0-or-later LGPL-2.0-or-later"
 replaces="gst-plugins-bad1"
 # chromaprint causes a circular dependency:
 # pipewire -> libcamera -> here -> chromaprint -> ffmpeg -> sdl2 -> pipewire
+options="!check"
 makedepends="
 	alsa-lib-dev
 	aom-dev
@@ -124,11 +125,13 @@ esac
 #     - CVE-2023-37328
 
 build() {
+	# LOCAL: no LTO (its links deadlocked under qemu-user when cross-built
+	# on 2026-11-11) and no tests (options !check), for a quicker build.
 	CFLAGS="$CFLAGS -O2" \
 	CXXFLAGS="$CXXFLAGS -O2" \
 	CPPFLAGS="$CPPFLAGS -O2" \
 	abuild-meson \
-		-Db_lto=true \
+		-Db_lto=false \
 		-Dpackage-origin="https://alpinelinux.org" \
 		-Dpackage-name="GStreamer bad plug-ins (Alpine Linux)" \
 		-Dintrospection=enabled \
