@@ -6,7 +6,7 @@
 maintainer="Ryan Brue <ryanbrue.dev@gmail.com>"
 pkgname=mesa
 pkgver=27.0.0_git20261109
-pkgrel=36
+pkgrel=37
 _commit="1c87c60187064c60a10378fa79e20debf0941f97"
 pkgdesc="Mesa DRI OpenGL library (amazon-sheldonp PowerVR test build)"
 url="https://www.mesa3d.org"
@@ -102,6 +102,7 @@ source="mesa-$_commit.tar.gz::https://gitlab.freedesktop.org/mesa/mesa/-/archive
 	0034-pvr-pipeline-cache-pco-debug-print.patch
 	0035-pco-smp-data-used-comps.patch
 	0036-pco-smp-data-used-comps-build-fix.patch
+	0037-zink-debug-log-swapchain.patch
 	"
 builddir="$srcdir/mesa-$_commit"
 options="!check"
@@ -261,4 +262,5 @@ cfa98c91061e2c5db8ddeec0b4826257d86f1b43008a506c301df3919cd7ce8b7cb89353a457c511
 4609d49db5fa24024903c817f2eccd294febca55ea7eb134e15878d03d7d506592d6ec69f2d9e347add09a552737e82c8d268f26371c8d93d8c9715318d3a8aa  0034-pvr-pipeline-cache-pco-debug-print.patch
 b3caf3d938d736817f2054e6984c87e13401ee24a0ea5fd1f0f324be97715d57225bb08fa5866c19c54d4eb05fe1630a595c31ec2aa2c39e3dcabb458991455b  0035-pco-smp-data-used-comps.patch
 41dc692c0330dfb734d5d1391be07c7a538074e981a89566a9313d3c7f713612fe302aa6e60f4b3dfeec08001b8a2f3df572f026ab30a0ff2af56d78251987c1  0036-pco-smp-data-used-comps-build-fix.patch
+31fcd26b6db229d5eb683e3fb20f00504255b5a91941e03fe9a217256551fc7c054ddb51b1eed9ad9b90f42d66e66ed09ea54afbfb528dbcbb2b3c624d2aaffc  0037-zink-debug-log-swapchain.patch
 "
