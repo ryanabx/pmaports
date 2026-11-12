@@ -1,0 +1,38 @@
+From 66ef41c45d4be030273e49cfa3ea3eb9dea98898 Mon Sep 17 00:00:00 2001
+From: Ryan Brue <ryanbrue.dev@gmail.com>
+Date: Wed, 11 Nov 2026 20:42:34 -0600
+Subject: [PATCH] LOCAL TEST: pco: PVR_TEST_NO_NULL_TEX skips the texture null
+ check
+
+Signed-off-by: Ryan Brue <ryanbrue.dev@gmail.com>
+---
+ src/imagination/pco/pco_nir.c | 13 +++++++++----
+ 1 file changed, 9 insertions(+), 4 deletions(-)
+
+diff --git a/src/imagination/pco/pco_nir.c b/src/imagination/pco/pco_nir.c
+index 2132d57a1a8..9f177acae60 100644
+--- a/src/imagination/pco/pco_nir.c
++++ b/src/imagination/pco/pco_nir.c
+@@ -1009,10 +1009,15 @@ void pco_lower_nir(pco_ctx *ctx, nir_shader *nir, pco_data *data)
+    }
+ 
+    if (data->common.null_descriptor) {
+-      NIR_PASS(_,
+-               nir,
+-               pco_nir_lower_null_descriptors,
+-               pco_nir_lower_null_descriptor_all);
++      /* LOCAL TEST: PVR_TEST_NO_NULL_TEX=1 leaves out the null check on
++       * texture reads, to measure what it costs (null textures then read
++       * garbage or fault).
++       */
++      pco_nir_lower_null_descriptor_options null_opts =
++         pco_nir_lower_null_descriptor_all;
++      if (debug_get_bool_option("PVR_TEST_NO_NULL_TEX", false))
++         null_opts &= ~pco_nir_lower_null_descriptor_texture;
++      NIR_PASS(_, nir, pco_nir_lower_null_descriptors, null_opts);
+    }
+ 
+    NIR_PASS(_, nir, pco_nir_lower_vk, data);
+-- 
+2.56.0
+

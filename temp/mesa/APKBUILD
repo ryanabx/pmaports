@@ -6,7 +6,7 @@
 maintainer="Ryan Brue <ryanbrue.dev@gmail.com>"
 pkgname=mesa
 pkgver=27.0.0_git20261109
-pkgrel=29
+pkgrel=30
 _commit="1c87c60187064c60a10378fa79e20debf0941f97"
 pkgdesc="Mesa DRI OpenGL library (amazon-sheldonp PowerVR test build)"
 url="https://www.mesa3d.org"
@@ -95,6 +95,7 @@ source="mesa-$_commit.tar.gz::https://gitlab.freedesktop.org/mesa/mesa/-/archive
 	0027-pvr-csb-bo-cache.patch
 	0028-pvr-static-ms-state-no-punch-through.patch
 	0029-pvr-no-helper-feedback-plain-fs.patch
+	0030-pco-test-no-null-tex.patch
 	"
 builddir="$srcdir/mesa-$_commit"
 options="!check"
@@ -247,4 +248,5 @@ eadc6e6641f87ca30b3ec337149d2d456ab214baef676de8cc265ba0c552b2cad071e607c4d52992
 b25721efd4bb99cb3a3a13e8eeac47e11873442f11d161692a2869bc583c49be1c66be2aee47b871be3c8e2d520baf43d0d13b67ce5aa96aabc73a2ea1c84c99  0027-pvr-csb-bo-cache.patch
 0bd4629cc7d0d474d23cb5c11609955dd415ec0615a999f53b10bf7e3351d5cb61670b1fba385ba33c91bbea9e559c83e4625f6d118313cd95c2c1d6dcbc5ca4  0028-pvr-static-ms-state-no-punch-through.patch
 b106f26193a74900ab39f03625780d531cd23a268a891c64cbb5f7ccda3cdc8ac95c38a1a305d0e559750b1d5a4b69d5fca484955f4b6c0029fd2c08561ed106  0029-pvr-no-helper-feedback-plain-fs.patch
+62344ef667a66cebe4822389f182489421aeef3bb856b1c5337f13736c7ccd97b3ee2da7480b56000f2dd7ed8bdac9ba17a1e919e43bb28fdb05d903946be6ca  0030-pco-test-no-null-tex.patch
 "
