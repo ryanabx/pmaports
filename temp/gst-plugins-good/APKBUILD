@@ -11,6 +11,8 @@
 # pkgrel is far above Alpine's so that an Alpine rebuild of the same version
 # does not silently replace it; rebase onto each new Alpine version.
 # !check: Alpine's test suite is slow and flaky under emulation.
+# Built for suez alone (aarch64), without Alpine's Qt subpackage, which
+# suez does not install, and without LTO, both costly under emulation.
 pkgname=gst-plugins-good
 pkgver=1.28.7
 pkgrel=100
@@ -18,7 +20,7 @@ pkgrel=100
 # only to even-numbered versions (e.g. 1.18.x, 1.20.x)!
 pkgdesc="GStreamer streaming media framework good plugins"
 url="https://gstreamer.freedesktop.org"
-arch="all"
+arch="aarch64"
 license="GPL-2.0-or-later LGPL-2.0-or-later"
 options="!check"
 subpackages="
@@ -26,14 +28,6 @@ subpackages="
 	$pkgname-lang
 	$pkgname-gtk
 	"
-# qt* is not available on armhf
-case "$CARCH" in
-	armhf)
-		;;
-	*)
-		subpackages="$subpackages $pkgname-qt"
-		;;
-esac
 
 replaces="gst-plugins-good1 gst-plugins-ugly"
 depends="libsoup3"
@@ -74,18 +68,6 @@ makedepends="
 	wavpack-dev
 	zlib-dev
 	"
-case "$CARCH" in
-	armhf)
-		;;
-	*)
-		makedepends="
-			$makedepends
-			qt6-qtdeclarative-dev
-			qt6-qtwayland-dev
-			qt6-qttools-dev
-			"
-		;;
-esac
 
 ldpath="/usr/lib/gstreamer-1.0"
 source="https://gstreamer.freedesktop.org/src/gst-plugins-good/gst-plugins-good-$pkgver.tar.xz
@@ -98,18 +80,6 @@ source="https://gstreamer.freedesktop.org/src/gst-plugins-good/gst-plugins-good-
 
 
 build() {
-	local qt6_qml="enabled"
-	local qt_x11="enabled"
-	case "$CARCH" in
-	aarch64|armv7)
-		qt_x11="disabled"
-		;;
-	armhf)
-		qt6_qml="disabled"
-		qt_x11="disabled"
-		;;
-	esac
-
 	# MPG123_NO_LARGENAME: fix undefined reference to
 	# `mpg123_decode_frame_64' in function
 	# `gst_mpg123_audio_dec_handle_frame'
@@ -118,14 +88,14 @@ build() {
 	CXXFLAGS="$CXXFLAGS -O2 -DMPG123_NO_LARGENAME" \
 	CPPFLAGS="$CPPFLAGS -O2 -DMPG123_NO_LARGENAME" \
 	abuild-meson \
-		-Db_lto=true \
+		-Db_lto=false \
 		-Dpackage-origin="https://alpinelinux.org" \
 		-Dpackage-name="GStreamer good plugins (Alpine Linux)" \
 		-Dtests="$(want_check && echo enabled || echo disabled)" \
 		-Damrnb=enabled \
 		-Damrwbdec=enabled \
-		-Dqt-x11=$qt_x11 \
-		-Dqt6=$qt6_qml \
+		-Dqt5=disabled \
+		-Dqt6=disabled \
 		. output
 
 	meson compile -C output
@@ -144,15 +114,6 @@ package() {
 _mv() {
 	mkdir -p "$subpkgdir"/"$ldpath"
 	mv "$1" "$subpkgdir"/"$ldpath"
-}
-
-qt() {
-	pkgdesc="Gstreamer Qt plugin"
-	find "$pkgdir" -type f | while read -r i; do
-		if ldd $i 2>/dev/null | grep -q "libQt"; then
-			_mv "$i"
-		fi
-	done
 }
 
 gtk() {
