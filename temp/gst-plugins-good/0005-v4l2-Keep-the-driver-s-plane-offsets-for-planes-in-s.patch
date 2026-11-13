@@ -1,0 +1,49 @@
+From 8b3c759cff8cc2239678d1f0356cfcaafbc53265 Mon Sep 17 00:00:00 2001
+From: Ryan Brue <ryanbrue.dev@gmail.com>
+Date: Fri, 13 Nov 2026 04:10:53 -0600
+Subject: [PATCH] v4l2: Keep the driver's plane offsets for planes in separate
+ memories
+
+Aligning the video info recomputes each plane's offset as stride times
+padded height, but planes in separate memories start where the driver's
+previous plane ends, and a driver may pad a plane beyond that: MT8173's
+encoder takes 1280x736 NV12M with a 983040-byte luma plane. The chroma
+offset then fell inside the luma memory, and writing the frame ran past
+its end (videotestsrc ! v4l2h264enc crashed). Restore the driver's
+offsets after aligning.
+
+Local enablement for MT8173 (suez); not sent.
+---
+ sys/v4l2/gstv4l2object.c | 15 +++++++++++++++
+ 1 file changed, 15 insertions(+)
+
+diff --git a/sys/v4l2/gstv4l2object.c b/sys/v4l2/gstv4l2object.c
+index 5cdf7c9b5a..e9ebd1684f 100644
+--- a/sys/v4l2/gstv4l2object.c
++++ b/sys/v4l2/gstv4l2object.c
+@@ -3755,10 +3755,25 @@ gst_v4l2_object_save_format (GstV4l2Object * v4l2object,
+      * driver's plane sizes */
+     memset (v4l2object->plane_size, 0, sizeof (v4l2object->plane_size));
+   } else {
++    gsize offset[GST_VIDEO_MAX_PLANES];
++
++    memcpy (offset, info->vinfo.offset, sizeof (offset));
+     if (!gst_video_info_align_full (&info->vinfo, align,
+             v4l2object->plane_size)) {
+       GST_WARNING_OBJECT (v4l2object->dbg_obj, "Failed to align video info");
+     }
++
++    /* Planes in separate memories start where the driver's previous
++     * plane ends, which may be padded beyond stride * height (MT8173's
++     * encoder: 768 rows of luma for a 736-row format) */
++    if (V4L2_TYPE_IS_MULTIPLANAR (v4l2object->type) &&
++        v4l2object->n_v4l2_planes > 1) {
++      memcpy (info->vinfo.offset, offset, sizeof (offset));
++      info->vinfo.size = 0;
++      for (i = 0; i < v4l2object->n_v4l2_planes; i++)
++        info->vinfo.size +=
++            format->fmt.pix_mp.plane_fmt[i].sizeimage;
++    }
+   }
+ 
+ store_info:
