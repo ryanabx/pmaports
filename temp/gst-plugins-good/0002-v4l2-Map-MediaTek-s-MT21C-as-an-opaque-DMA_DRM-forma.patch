@@ -1,0 +1,43 @@
+From 0904113c6d464e72f65641957dc6d078c250effa Mon Sep 17 00:00:00 2001
+From: Ryan Brue <ryanbrue.dev@gmail.com>
+Date: Fri, 13 Nov 2026 03:13:21 -0600
+Subject: [PATCH 2/4] v4l2: Map MediaTek's MT21C as an opaque DMA_DRM format
+
+MT8173's decoder writes only MT21C, 16x32 tiles with MediaTek's
+compression, which only the SoC's MDP reads. Expose it as NV12 with
+DRM_FORMAT_MOD_VENDOR_MTK, MTK_FMT_MOD_TILE_16L32S and
+MTK_FMT_MOD_COMPRESS_V1, so that it can pass as a dmabuf from the
+decoder to v4l2convert.
+
+Local enablement for MT8173 (suez); not sent.
+---
+ sys/v4l2/gstv4l2object.c | 9 +++++++++
+ 1 file changed, 9 insertions(+)
+
+diff --git a/sys/v4l2/gstv4l2object.c b/sys/v4l2/gstv4l2object.c
+index ba8b373dde..e160a9cddf 100644
+--- a/sys/v4l2/gstv4l2object.c
++++ b/sys/v4l2/gstv4l2object.c
+@@ -95,6 +95,12 @@ typedef struct
+ #define MAP_DRM(drm_fmt, drm_mod) \
+   DRM_FORMAT_##drm_fmt, DRM_FORMAT_MOD_##drm_mod
+ 
++/* DRM_FORMAT_MOD_VENDOR_MTK (0x0b) with MTK_FMT_MOD_TILE_16L32S |
++ * MTK_FMT_MOD_COMPRESS_V1, as in the kernel's drm_fourcc.h, which
++ * ext/drm_fourcc.h does not have yet */
++#define DRM_FORMAT_MOD_MTK_MT21C \
++  ((((guint64) 0x0b) << 56) | 0x1 | (0x1 << 8))
++
+ #define KNOWN_DRM_MAP \
+   MAP_DRM (INVALID, INVALID)
+ 
+@@ -233,6 +239,9 @@ static GstV4L2FormatDesc gst_v4l2_formats[] = {
+   {MAP_FMT (NV24, NV24),                        KNOWN_DRM_MAP,                      GST_V4L2_RAW},
+   {MAP_FMT (NV42, UNKNOWN),                     MAP_DRM (NV42, LINEAR),             GST_V4L2_RAW},
+   {MAP_FMT (MM21, NV12_16L32S),                 KNOWN_DRM_MAP,                      GST_V4L2_RAW | GST_V4L2_MPLANE},
++  /* MT8173's decoder output: 16x32 tiles with MediaTek's compression, only
++   * usable as a dmabuf by the MDP (v4l2convert) */
++  {MAP_FMT (MT21C, UNKNOWN),                    MAP_DRM (NV12, MTK_MT21C),          GST_V4L2_RAW | GST_V4L2_MPLANE},
+   {MAP_FMT (P010, P010_10LE),                   KNOWN_DRM_MAP,                      GST_V4L2_RAW},
+ 
+   /* Bayer formats - see http://www.siliconimaging.com/RGB%20Bayer.htm */

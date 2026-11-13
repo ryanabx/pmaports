@@ -1,0 +1,173 @@
+# Forked from Alpine's community/gst-plugins-good (aports master,
+# 1.28.7-r0, 2026-11-13) for amazon-suez only: hardware video decoding on
+# MT8173. MT8173's V4L2 decoder outputs only MT21C, MediaTek's compressed
+# tiles, which only the SoC's MDP (v4l2convert) reads; the patches pass it
+# from decoder to converter as an opaque DMA_DRM dmabuf and register
+# v4l2<codec>convdec bins (decoder ! converter) that players auto-plug.
+# They come from ~/repos/gstreamer branch suez/v4l2-mt21 and are LOCAL
+# EXPERIMENTS, not sent: GStreamer's AGENTS.md rules out agent-written MRs.
+# Evidence: suez-work notes/VPU-VIDEO-2026-11-13.md.
+#
+# pkgrel is far above Alpine's so that an Alpine rebuild of the same version
+# does not silently replace it; rebase onto each new Alpine version.
+# !check: Alpine's test suite is slow and flaky under emulation.
+pkgname=gst-plugins-good
+pkgver=1.28.7
+pkgrel=100
+# NOTE: Upgrade together with the whole GStreamer suite &
+# only to even-numbered versions (e.g. 1.18.x, 1.20.x)!
+pkgdesc="GStreamer streaming media framework good plugins"
+url="https://gstreamer.freedesktop.org"
+arch="all"
+license="GPL-2.0-or-later LGPL-2.0-or-later"
+options="!check"
+subpackages="
+	$pkgname-dbg
+	$pkgname-lang
+	$pkgname-gtk
+	"
+# qt* is not available on armhf
+case "$CARCH" in
+	armhf)
+		;;
+	*)
+		subpackages="$subpackages $pkgname-qt"
+		;;
+esac
+
+replaces="gst-plugins-good1 gst-plugins-ugly"
+depends="libsoup3"
+makedepends="
+	cairo-dev
+	flac-dev
+	gdk-pixbuf-dev
+	glib-dev
+	gst-plugins-base-dev
+	gstreamer-dev
+	gtk+3.0-dev
+	jack-dev
+	lame-dev
+	libavc1394-dev
+	libdv-dev
+	libgudev-dev
+	libice-dev
+	libiec61883-dev
+	libjpeg-turbo-dev
+	libogg-dev
+	libpng-dev
+	libshout-dev
+	libsm-dev
+	libsoup3-dev
+	libvpx-dev
+	libxdamage-dev
+	libxext-dev
+	libxv-dev
+	linux-headers
+	meson
+	mpg123-dev
+	nasm
+	opencore-amr-dev
+	orc-compiler
+	orc-dev
+	pulseaudio-dev
+	taglib-dev
+	wavpack-dev
+	zlib-dev
+	"
+case "$CARCH" in
+	armhf)
+		;;
+	*)
+		makedepends="
+			$makedepends
+			qt6-qtdeclarative-dev
+			qt6-qtwayland-dev
+			qt6-qttools-dev
+			"
+		;;
+esac
+
+ldpath="/usr/lib/gstreamer-1.0"
+source="https://gstreamer.freedesktop.org/src/gst-plugins-good/gst-plugins-good-$pkgver.tar.xz
+	flaky-test.patch
+	0001-v4l2-Keep-the-driver-s-layout-for-opaque-DMA_DRM-for.patch
+	0002-v4l2-Map-MediaTek-s-MT21C-as-an-opaque-DMA_DRM-forma.patch
+	0003-v4l2-Do-not-apply-coded-frame-size-steps-to-caps.patch
+	0004-v4l2-Wrap-MT21C-only-decoders-with-the-converter-tha.patch
+	"
+
+
+build() {
+	local qt6_qml="enabled"
+	local qt_x11="enabled"
+	case "$CARCH" in
+	aarch64|armv7)
+		qt_x11="disabled"
+		;;
+	armhf)
+		qt6_qml="disabled"
+		qt_x11="disabled"
+		;;
+	esac
+
+	# MPG123_NO_LARGENAME: fix undefined reference to
+	# `mpg123_decode_frame_64' in function
+	# `gst_mpg123_audio_dec_handle_frame'
+
+	CFLAGS="$CFLAGS -O2 -DMPG123_NO_LARGENAME" \
+	CXXFLAGS="$CXXFLAGS -O2 -DMPG123_NO_LARGENAME" \
+	CPPFLAGS="$CPPFLAGS -O2 -DMPG123_NO_LARGENAME" \
+	abuild-meson \
+		-Db_lto=true \
+		-Dpackage-origin="https://alpinelinux.org" \
+		-Dpackage-name="GStreamer good plugins (Alpine Linux)" \
+		-Dtests="$(want_check && echo enabled || echo disabled)" \
+		-Damrnb=enabled \
+		-Damrwbdec=enabled \
+		-Dqt-x11=$qt_x11 \
+		-Dqt6=$qt6_qml \
+		. output
+
+	meson compile -C output
+}
+
+check() {
+	CK_TIMEOUT_MULTIPLIER=10 \
+	meson test -t 10 --print-errorlogs -C output
+}
+
+package() {
+	export GCONF_DISABLE_MAKEFILE_SCHEMA_INSTALL=1
+	DESTDIR="$pkgdir" meson install --no-rebuild -C output
+}
+
+_mv() {
+	mkdir -p "$subpkgdir"/"$ldpath"
+	mv "$1" "$subpkgdir"/"$ldpath"
+}
+
+qt() {
+	pkgdesc="Gstreamer Qt plugin"
+	find "$pkgdir" -type f | while read -r i; do
+		if ldd $i 2>/dev/null | grep -q "libQt"; then
+			_mv "$i"
+		fi
+	done
+}
+
+gtk() {
+	pkgdesc="Gstreamer gtk-3 plugin"
+	find "$pkgdir" -type f | while read -r i; do
+		if ldd $i 2>/dev/null | grep -q "libgtk-3"; then
+			_mv "$i"
+		fi
+	done
+}
+sha512sums="
+f8bfb0326c8b7b2e698d1f09a5a5a2beae3df05fd18596cf39a6daae211f4f722e7b4701007b7942e0313c6635064803e454c3bd677d6d026d6be17158f6cb21  gst-plugins-good-1.28.7.tar.xz
+e471a892c511c501fdd336cd1729df4e955e266a395260db50665b4ee717d881a007ae84873c57e386931c042ce08ee8f3ab8e102ba251632f724e167b5af913  flaky-test.patch
+7854eeacae7dd03f3ade81e55603f38c71391f2fc8f4fb5f056017a3c32c5041fd9732575f078dd5a17261d633b13b7d4ff744b8d66b678eae2508f7a658120b  0001-v4l2-Keep-the-driver-s-layout-for-opaque-DMA_DRM-for.patch
+1941c2d4902ab3782bd2c1ab10ad57cd3ef27add6f89011ba18e2b4438b1a06c78ad155a1a670333121f37141c73f9b368c05c23b60c37286897e1320a6b2459  0002-v4l2-Map-MediaTek-s-MT21C-as-an-opaque-DMA_DRM-forma.patch
+e0ad17fa37e7ab0b2978f38ab298fd464dfb6bc30e267f6ffc4c3d54b3c9566c54076f1612881833c51064e9e1103f11f8539b41133be3313ccd9b93e55310f1  0003-v4l2-Do-not-apply-coded-frame-size-steps-to-caps.patch
+0caa53dd163649da5827bd6c36bcdc4fe36616e1c6213918d9d30ffc7ce468fc09ce0e15222ba320432b7f74825fecc8c27bbbb3c0622310e8f6fb88fa8ffbb4  0004-v4l2-Wrap-MT21C-only-decoders-with-the-converter-tha.patch
+"

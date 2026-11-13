@@ -1,0 +1,425 @@
+From 6af98188d79b5cdeb9f0463eca2abb5b39d3d95d Mon Sep 17 00:00:00 2001
+From: Ryan Brue <ryanbrue.dev@gmail.com>
+Date: Fri, 13 Nov 2026 03:13:21 -0600
+Subject: [PATCH 4/4] v4l2: Wrap MT21C-only decoders with the converter that
+ reads MT21C
+
+A decoder whose only output is MT21C is useless to players, which
+auto-plug decoders by rank and expect raw video. Register it with rank
+NONE and add a bin, v4l2<codec>convdec, of the decoder and the first
+converter that accepts MT21C, with the decoder's rank. The frames go
+across as dmabufs: copying them would cut off what follows the picture
+in MT21C, whose size only the decoder knows.
+
+Local enablement for MT8173 (suez); not sent.
+---
+ sys/v4l2/gstv4l2.c         |  81 ++++++++++++++++-
+ sys/v4l2/gstv4l2convdec.c  | 177 +++++++++++++++++++++++++++++++++++++
+ sys/v4l2/gstv4l2convdec.h  |  15 ++++
+ sys/v4l2/gstv4l2videodec.c |  21 ++++-
+ sys/v4l2/gstv4l2videodec.h |   8 ++
+ sys/v4l2/meson.build       |   1 +
+ 6 files changed, 300 insertions(+), 3 deletions(-)
+ create mode 100644 subprojects/gst-plugins-good/sys/v4l2/gstv4l2convdec.c
+ create mode 100644 subprojects/gst-plugins-good/sys/v4l2/gstv4l2convdec.h
+
+diff --git a/sys/v4l2/gstv4l2.c b/sys/v4l2/gstv4l2.c
+index 3944a6a2b7..3f200f2bcf 100644
+--- a/sys/v4l2/gstv4l2.c
++++ b/sys/v4l2/gstv4l2.c
+@@ -48,6 +48,8 @@
+ #include "gstv4l2sink.h"
+ #include "gstv4l2radio.h"
+ #include "gstv4l2videodec.h"
++#include "gstv4l2convdec.h"
++#include <gst/video/video.h>
+ #include "gstv4l2fwhtenc.h"
+ #include "gstv4l2h263enc.h"
+ #include "gstv4l2h264enc.h"
+@@ -62,11 +64,55 @@ GST_DEBUG_CATEGORY_EXTERN (v4l2_debug);
+ #define GST_CAT_DEFAULT v4l2_debug
+ 
+ #ifdef GST_V4L2_ENABLE_PROBE
++/* MT8173's MT21C: DRM_FORMAT_MOD_VENDOR_MTK, 16L32S tiles, compressed */
++#define MT21C_DRM_MODIFIER ((((guint64) 0x0b) << 56) | 0x1 | (0x1 << 8))
++
++static gboolean
++gst_v4l2_drm_format_is_mt21c (const GValue * v)
++{
++  guint64 modifier = 0;
++
++  return G_VALUE_HOLDS_STRING (v) &&
++      gst_video_dma_drm_fourcc_from_string (g_value_get_string (v),
++      &modifier) && modifier == MT21C_DRM_MODIFIER;
++}
++
++/* Does @caps hold MT21C, and (if @only) nothing else? */
++static gboolean
++gst_v4l2_caps_have_mt21c (GstCaps * caps, gboolean only)
++{
++  guint i, j, found = 0, other = 0;
++
++  for (i = 0; i < gst_caps_get_size (caps); i++) {
++    const GValue *v = gst_structure_get_value (gst_caps_get_structure (caps,
++            i), "drm-format");
++
++    if (v && GST_VALUE_HOLDS_LIST (v)) {
++      for (j = 0; j < gst_value_list_get_size (v); j++) {
++        if (gst_v4l2_drm_format_is_mt21c (gst_value_list_get_value (v, j)))
++          found++;
++        else
++          other++;
++      }
++    } else if (v && gst_v4l2_drm_format_is_mt21c (v)) {
++      found++;
++    } else {
++      other++;
++    }
++  }
++
++  return found > 0 && (!only || other == 0);
++}
++
+ static gboolean
+ gst_v4l2_probe_and_register (GstPlugin * plugin)
+ {
+   GstV4l2Iterator *it;
+   gint video_fd = -1;
++  GPtrArray *mt21c_decoders = g_ptr_array_new ();
++  gchar *mt21c_converter = NULL;
++  GstCaps *mt21c_converter_caps = NULL;
++  guint i;
+   struct v4l2_capability vcap;
+   guint32 device_caps;
+   enum v4l2_buf_type output_type, capture_type;
+@@ -144,7 +190,12 @@ gst_v4l2_probe_and_register (GstPlugin * plugin)
+     GST_MINI_OBJECT_FLAG_SET (sink_caps, GST_MINI_OBJECT_FLAG_MAY_BE_LEAKED);
+     GST_MINI_OBJECT_FLAG_SET (src_caps, GST_MINI_OBJECT_FLAG_MAY_BE_LEAKED);
+ 
+-    if (gst_v4l2_is_video_dec (sink_caps, src_caps)) {
++    if (gst_v4l2_is_video_dec (sink_caps, src_caps) &&
++        gst_v4l2_caps_have_mt21c (src_caps, TRUE)) {
++      /* Usable only through a converter: see gstv4l2convdec.c */
++      gst_v4l2_video_dec_register_full (plugin, basename, it->device_path,
++          video_fd, sink_caps, src_caps, GST_RANK_NONE, mt21c_decoders);
++    } else if (gst_v4l2_is_video_dec (sink_caps, src_caps)) {
+       gst_v4l2_video_dec_register (plugin, basename, it->device_path,
+           video_fd, sink_caps, src_caps);
+     } else if (gst_v4l2_is_video_enc (sink_caps, src_caps, NULL)) {
+@@ -180,6 +231,14 @@ gst_v4l2_probe_and_register (GstPlugin * plugin)
+         gst_v4l2_vp9_enc_register (plugin, basename, it->device_path,
+             video_fd, sink_caps, src_caps);
+     } else if (gst_v4l2_is_transform (sink_caps, src_caps)) {
++      if (!mt21c_converter && gst_v4l2_caps_have_mt21c (sink_caps, FALSE)) {
++        /* the name gst_v4l2_transform_register() is about to choose */
++        if (g_type_from_name ("v4l2convert") != 0)
++          mt21c_converter = g_strdup_printf ("v4l2%sconvert", basename);
++        else
++          mt21c_converter = g_strdup ("v4l2convert");
++        mt21c_converter_caps = gst_caps_ref (src_caps);
++      }
+       gst_v4l2_transform_register (plugin, basename, it->device_path,
+           sink_caps, src_caps);
+     }
+@@ -195,6 +254,26 @@ gst_v4l2_probe_and_register (GstPlugin * plugin)
+ 
+   gst_v4l2_iterator_free (it);
+ 
++  for (i = 0; i + 1 < mt21c_decoders->len; i += 2) {
++    const gchar *name = g_ptr_array_index (mt21c_decoders, i);
++    GstCaps *caps = g_ptr_array_index (mt21c_decoders, i + 1);
++    GstElementFactory *f = gst_element_factory_find (name);
++    const gchar *longname = f ? gst_element_factory_get_metadata (f,
++        GST_ELEMENT_METADATA_LONGNAME) : name;
++
++    if (mt21c_converter)
++      gst_v4l2_conv_dec_register (plugin, name, mt21c_converter, longname,
++          caps, mt21c_converter_caps);
++    else
++      GST_WARNING ("%s outputs MT21C only and there is no converter", name);
++    gst_clear_object (&f);
++    g_free (g_ptr_array_index (mt21c_decoders, i));
++    gst_caps_unref (caps);
++  }
++  g_ptr_array_unref (mt21c_decoders);
++  g_free (mt21c_converter);
++  gst_clear_caps (&mt21c_converter_caps);
++
+   return TRUE;
+ }
+ #endif
+diff --git a/sys/v4l2/gstv4l2convdec.c b/sys/v4l2/gstv4l2convdec.c
+new file mode 100644
+index 0000000000..3fc96c651c
+--- /dev/null
++++ b/sys/v4l2/gstv4l2convdec.c
+@@ -0,0 +1,177 @@
++/*
++ * A V4L2 decoder whose only output format needs a V4L2 converter, wrapped
++ * with that converter so that it decodes to ordinary raw video.
++ *
++ * MT8173's decoder writes MT21C (MediaTek's compressed 16x32 tiles), which
++ * only the SoC's MDP can read. Players auto-plug decoders by rank and expect
++ * raw video out, so the decoder itself is registered with rank NONE and this
++ * bin, decoder ! converter, takes its rank instead.
++ *
++ * This library is free software; you can redistribute it and/or
++ * modify it under the terms of the GNU Library General Public
++ * License as published by the Free Software Foundation; either
++ * version 2 of the License, or (at your option) any later version.
++ */
++
++#ifdef HAVE_CONFIG_H
++#include "config.h"
++#endif
++
++#include "gstv4l2convdec.h"
++
++#include <string.h>
++
++GST_DEBUG_CATEGORY_STATIC (gst_v4l2_conv_dec_debug);
++#define GST_CAT_DEFAULT gst_v4l2_conv_dec_debug
++
++typedef struct
++{
++  gchar *decoder;               /* element factory names */
++  gchar *converter;
++  gchar *longname;
++  GstCaps *sink_caps;
++  GstCaps *src_caps;
++} GstV4l2ConvDecCData;
++
++typedef struct
++{
++  GstBin parent;
++} GstV4l2ConvDec;
++
++typedef struct
++{
++  GstBinClass parent_class;
++  GstV4l2ConvDecCData *cdata;
++} GstV4l2ConvDecClass;
++
++static GType gst_v4l2_conv_dec_get_type (void);
++G_DEFINE_TYPE (GstV4l2ConvDec, gst_v4l2_conv_dec, GST_TYPE_BIN);
++
++static void
++gst_v4l2_conv_dec_class_init (GstV4l2ConvDecClass * klass)
++{
++}
++
++static void
++gst_v4l2_conv_dec_init (GstV4l2ConvDec * self)
++{
++}
++
++static void
++gst_v4l2_conv_dec_subclass_init (gpointer g_class, gpointer data)
++{
++  GstV4l2ConvDecClass *klass = g_class;
++  GstElementClass *element_class = GST_ELEMENT_CLASS (g_class);
++  GstV4l2ConvDecCData *cdata = data;
++
++  klass->cdata = cdata;
++
++  gst_element_class_set_metadata (element_class, cdata->longname,
++      "Codec/Decoder/Video/Hardware",
++      "Decodes through a V4L2 decoder and a V4L2 converter",
++      "Ryan Brue <ryanbrue.dev@gmail.com>");
++
++  gst_element_class_add_pad_template (element_class,
++      gst_pad_template_new ("sink", GST_PAD_SINK, GST_PAD_ALWAYS,
++          cdata->sink_caps));
++  gst_element_class_add_pad_template (element_class,
++      gst_pad_template_new ("src", GST_PAD_SRC, GST_PAD_ALWAYS,
++          cdata->src_caps));
++}
++
++static void
++gst_v4l2_conv_dec_subinstance_init (GTypeInstance * instance, gpointer g_class)
++{
++  GstV4l2ConvDecClass *klass = g_class;
++  GstElement *bin = GST_ELEMENT (instance);
++  GstElement *dec, *conv;
++  GstPad *pad;
++
++  dec = gst_element_factory_make (klass->cdata->decoder, "decoder");
++  conv = gst_element_factory_make (klass->cdata->converter, "converter");
++  if (!dec || !conv) {
++    GST_ERROR_OBJECT (bin, "cannot create %s or %s", klass->cdata->decoder,
++        klass->cdata->converter);
++    gst_clear_object (&dec);
++    gst_clear_object (&conv);
++    return;
++  }
++
++  /*
++   * The frames go to the converter as they are: copying them into its own
++   * buffers would cut off what follows the picture in MT21C, whose size
++   * only the decoder knows.
++   */
++  gst_util_set_object_arg (G_OBJECT (dec), "capture-io-mode", "dmabuf");
++  gst_util_set_object_arg (G_OBJECT (conv), "output-io-mode", "dmabuf-import");
++
++  gst_bin_add_many (GST_BIN (bin), dec, conv, NULL);
++  if (!gst_element_link (dec, conv))
++    GST_ERROR_OBJECT (bin, "cannot link %s to %s", klass->cdata->decoder,
++        klass->cdata->converter);
++
++  pad = gst_element_get_static_pad (dec, "sink");
++  gst_element_add_pad (bin, gst_ghost_pad_new_from_template ("sink", pad,
++          gst_element_class_get_pad_template (GST_ELEMENT_CLASS (g_class),
++              "sink")));
++  gst_object_unref (pad);
++
++  pad = gst_element_get_static_pad (conv, "src");
++  gst_element_add_pad (bin, gst_ghost_pad_new_from_template ("src", pad,
++          gst_element_class_get_pad_template (GST_ELEMENT_CLASS (g_class),
++              "src")));
++  gst_object_unref (pad);
++}
++
++/*
++ * @decoder and @converter are registered element names; @sink_caps are the
++ * decoder's, @src_caps the converter's.
++ */
++void
++gst_v4l2_conv_dec_register (GstPlugin * plugin, const gchar * decoder,
++    const gchar * converter, const gchar * longname, GstCaps * sink_caps,
++    GstCaps * src_caps)
++{
++  GTypeQuery type_query;
++  GTypeInfo type_info = { 0, };
++  GstV4l2ConvDecCData *cdata;
++  gchar *type_name;
++  GType subtype;
++
++  GST_DEBUG_CATEGORY_INIT (gst_v4l2_conv_dec_debug, "v4l2convdec", 0,
++      "V4L2 decoder + converter bin");
++
++  cdata = g_new0 (GstV4l2ConvDecCData, 1);
++  cdata->decoder = g_strdup (decoder);
++  cdata->converter = g_strdup (converter);
++  cdata->longname = g_strdup (longname);
++  cdata->sink_caps = gst_caps_ref (sink_caps);
++  cdata->src_caps = gst_caps_ref (src_caps);
++  GST_MINI_OBJECT_FLAG_SET (cdata->sink_caps,
++      GST_MINI_OBJECT_FLAG_MAY_BE_LEAKED);
++  GST_MINI_OBJECT_FLAG_SET (cdata->src_caps,
++      GST_MINI_OBJECT_FLAG_MAY_BE_LEAKED);
++
++  /* v4l2h264dec -> v4l2h264convdec */
++  if (g_str_has_suffix (decoder, "dec"))
++    type_name = g_strdup_printf ("%.*sconvdec", (int) strlen (decoder) - 3,
++        decoder);
++  else
++    type_name = g_strdup_printf ("%sconvdec", decoder);
++
++  g_type_query (gst_v4l2_conv_dec_get_type (), &type_query);
++  type_info.class_size = type_query.class_size;
++  type_info.instance_size = type_query.instance_size;
++  type_info.class_init = gst_v4l2_conv_dec_subclass_init;
++  type_info.class_data = cdata;
++  type_info.instance_init = gst_v4l2_conv_dec_subinstance_init;
++
++  subtype = g_type_register_static (gst_v4l2_conv_dec_get_type (), type_name,
++      &type_info, 0);
++  if (!gst_element_register (plugin, type_name, GST_RANK_PRIMARY + 1, subtype))
++    GST_WARNING ("Failed to register '%s'", type_name);
++  else
++    GST_INFO ("registered %s = %s ! %s", type_name, decoder, converter);
++
++  g_free (type_name);
++}
+diff --git a/sys/v4l2/gstv4l2convdec.h b/sys/v4l2/gstv4l2convdec.h
+new file mode 100644
+index 0000000000..c6494634d3
+--- /dev/null
++++ b/sys/v4l2/gstv4l2convdec.h
+@@ -0,0 +1,15 @@
++/* SPDX-License-Identifier: LGPL-2.0-or-later */
++#ifndef __GST_V4L2_CONV_DEC_H__
++#define __GST_V4L2_CONV_DEC_H__
++
++#include <gst/gst.h>
++
++G_BEGIN_DECLS
++
++void gst_v4l2_conv_dec_register (GstPlugin * plugin, const gchar * decoder,
++    const gchar * converter, const gchar * longname, GstCaps * sink_caps,
++    GstCaps * src_caps);
++
++G_END_DECLS
++
++#endif
+diff --git a/sys/v4l2/gstv4l2videodec.c b/sys/v4l2/gstv4l2videodec.c
+index e300d9b22b..c53b2af8af 100644
+--- a/sys/v4l2/gstv4l2videodec.c
++++ b/sys/v4l2/gstv4l2videodec.c
+@@ -1500,6 +1500,20 @@ void
+ gst_v4l2_video_dec_register (GstPlugin * plugin, const gchar * basename,
+     const gchar * device_path, gint video_fd, GstCaps * sink_caps,
+     GstCaps * src_caps)
++{
++  gst_v4l2_video_dec_register_full (plugin, basename, device_path, video_fd,
++      sink_caps, src_caps, GST_RANK_PRIMARY + 1, NULL);
++}
++
++/*
++ * As gst_v4l2_video_dec_register(), with the rank given; when @registered is
++ * not NULL, each registered element name is appended to it, followed by its
++ * sink caps (gchar *, GstCaps *, ...; the caller frees both).
++ */
++void
++gst_v4l2_video_dec_register_full (GstPlugin * plugin, const gchar * basename,
++    const gchar * device_path, gint video_fd, GstCaps * sink_caps,
++    GstCaps * src_caps, guint rank, GPtrArray * registered)
+ {
+   gint i;
+ 
+@@ -1556,9 +1570,12 @@ gst_v4l2_video_dec_register (GstPlugin * plugin, const gchar * basename,
+     type_info.instance_init = gst_v4l2_video_dec_subinstance_init;
+ 
+     subtype = g_type_register_static (type, type_name, &type_info, 0);
+-    if (!gst_element_register (plugin, type_name, GST_RANK_PRIMARY + 1,
+-            subtype))
++    if (!gst_element_register (plugin, type_name, rank, subtype))
+       GST_WARNING ("Failed to register plugin '%s'", type_name);
++    else if (registered) {
++      g_ptr_array_add (registered, g_strdup (type_name));
++      g_ptr_array_add (registered, gst_caps_ref (cdata->sink_caps));
++    }
+ 
+     g_free (type_name);
+   }
+diff --git a/sys/v4l2/gstv4l2videodec.h b/sys/v4l2/gstv4l2videodec.h
+index fbbfb60b01..4b265131b3 100644
+--- a/sys/v4l2/gstv4l2videodec.h
++++ b/sys/v4l2/gstv4l2videodec.h
+@@ -85,6 +85,14 @@ void     gst_v4l2_video_dec_register (GstPlugin * plugin,
+                                       const gchar *basename,
+                                       const gchar *device_path, gint video_fd,
+                                       GstCaps * sink_caps, GstCaps * src_caps);
++void     gst_v4l2_video_dec_register_full (GstPlugin * plugin,
++                                           const gchar * basename,
++                                           const gchar * device_path,
++                                           gint video_fd,
++                                           GstCaps * sink_caps,
++                                           GstCaps * src_caps,
++                                           guint rank,
++                                           GPtrArray * registered);
+ 
+ G_END_DECLS
+ 
+diff --git a/sys/v4l2/meson.build b/sys/v4l2/meson.build
+index 2d6cbb3451..c9384ac5e3 100644
+--- a/sys/v4l2/meson.build
++++ b/sys/v4l2/meson.build
+@@ -12,6 +12,7 @@ v4l2_sources = [
+   'gstv4l2radio.c',
+   'gstv4l2tuner.c',
+   'gstv4l2transform.c',
++  'gstv4l2convdec.c',
+   'gstv4l2videodec.c',
+   'gstv4l2videoenc.c',
+   'gstv4l2fwhtenc.c',

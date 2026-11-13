@@ -1,0 +1,60 @@
+From f5af3a880366cb0fb295dc3e2ff58221d64106de Mon Sep 17 00:00:00 2001
+From: Ryan Brue <ryanbrue.dev@gmail.com>
+Date: Fri, 13 Nov 2026 03:13:21 -0600
+Subject: [PATCH 1/4] v4l2: Keep the driver's layout for opaque DMA_DRM formats
+
+A DMA_DRM format libgstvideo cannot describe has no planes, strides or
+sizes of its own. Take the plane count from the driver instead of
+refusing it for differing from the maximum requested, and keep the
+driver's plane sizes instead of resizing the planes to an empty layout
+after every dequeue, which made each buffer look like the end of the
+stream.
+
+Local enablement for MT8173 (suez); not sent.
+---
+ sys/v4l2/gstv4l2bufferpool.c | 4 +++-
+ sys/v4l2/gstv4l2object.c     | 9 +++++++++
+ 2 files changed, 12 insertions(+), 1 deletion(-)
+
+diff --git a/sys/v4l2/gstv4l2bufferpool.c b/sys/v4l2/gstv4l2bufferpool.c
+index 2b96f2ed5c..a5db03addc 100644
+--- a/sys/v4l2/gstv4l2bufferpool.c
++++ b/sys/v4l2/gstv4l2bufferpool.c
+@@ -1365,7 +1365,9 @@ gst_v4l2_buffer_pool_dqbuf (GstV4l2BufferPool * pool, GstBuffer ** buffer,
+         break;
+       }
+ 
+-      if (!GST_VIDEO_FORMAT_INFO_IS_TILED (finfo))
++      /* tiled and opaque DRM formats keep the driver's plane sizes */
++      if (!GST_VIDEO_FORMAT_INFO_IS_TILED (finfo) &&
++          GST_VIDEO_INFO_FORMAT (info) != GST_VIDEO_FORMAT_DMA_DRM)
+         gst_memory_resize (group->mem[i], 0, obj->plane_size[i]);
+     }
+   }
+diff --git a/sys/v4l2/gstv4l2object.c b/sys/v4l2/gstv4l2object.c
+index 53f4e08b34..ba8b373dde 100644
+--- a/sys/v4l2/gstv4l2object.c
++++ b/sys/v4l2/gstv4l2object.c
+@@ -3732,6 +3732,10 @@ gst_v4l2_object_save_format (GstV4l2Object * v4l2object,
+       GST_WARNING_OBJECT (v4l2object->dbg_obj,
+           "Left and top padding is not permitted for tiled formats");
+     memset (v4l2object->plane_size, 0, sizeof (v4l2object->plane_size));
++  } else if (GST_VIDEO_INFO_FORMAT (&info->vinfo) == GST_VIDEO_FORMAT_DMA_DRM) {
++    /* An opaque DRM format has no layout libgstvideo could align: keep the
++     * driver's plane sizes */
++    memset (v4l2object->plane_size, 0, sizeof (v4l2object->plane_size));
+   } else {
+     if (!gst_video_info_align_full (&info->vinfo, align,
+             v4l2object->plane_size)) {
+@@ -4376,6 +4380,11 @@ gst_v4l2_object_set_format_full (GstV4l2Object * v4l2object, GstCaps * caps,
+     align.padding_right = format.fmt.pix.width - width;
+   }
+ 
++  /* For an opaque DRM format the driver has told us how many planes */
++  if (is_mplane && GST_VIDEO_INFO_FORMAT (&info.vinfo) ==
++      GST_VIDEO_FORMAT_DMA_DRM && !GST_VIDEO_INFO_N_PLANES (&info.vinfo))
++    n_v4l_planes = format.fmt.pix_mp.num_planes;
++
+   if (is_mplane && format.fmt.pix_mp.num_planes != n_v4l_planes)
+     goto invalid_planes;
+ 

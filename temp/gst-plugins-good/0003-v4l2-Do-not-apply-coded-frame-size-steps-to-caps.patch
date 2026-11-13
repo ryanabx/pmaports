@@ -1,0 +1,35 @@
+From 57266358fc4294715452002ce94f7cd32bfd4424 Mon Sep 17 00:00:00 2001
+From: Ryan Brue <ryanbrue.dev@gmail.com>
+Date: Fri, 13 Nov 2026 03:13:21 -0600
+Subject: [PATCH 3/4] v4l2: Do not apply coded frame size steps to caps
+
+The frame sizes of a coded format are coded sizes, a whole number of
+macroblocks, while caps carry the visible size, so a decoder with a
+step of 16 refused 1080-line streams. Leave the steps out for coded
+formats.
+
+Local enablement for MT8173 (suez); not sent.
+---
+ sys/v4l2/gstv4l2object.c | 9 +++++++++
+ 1 file changed, 9 insertions(+)
+
+diff --git a/sys/v4l2/gstv4l2object.c b/sys/v4l2/gstv4l2object.c
+index e160a9cddf..5cdf7c9b5a 100644
+--- a/sys/v4l2/gstv4l2object.c
++++ b/sys/v4l2/gstv4l2object.c
+@@ -3170,6 +3170,15 @@ gst_v4l2_object_probe_caps_for_format (GstV4l2Object * v4l2object,
+ 
+     step_w = MAX (size.stepwise.step_width, 1);
+     step_h = MAX (size.stepwise.step_height, 1);
++
++    /* The sizes of a coded format are coded sizes, macroblock aligned,
++     * while caps carry the visible size: 1080 lines code as 1088. */
++    {
++      const GstV4L2FormatDesc *desc =
++          gst_v4l2_object_get_desc_from_v4l2fourcc (pixelformat);
++      if (desc && (desc->flags & GST_V4L2_CODEC))
++        step_w = step_h = 1;
++    }
+     w = MAX (size.stepwise.min_width, step_w);
+     h = MAX (size.stepwise.min_height, step_h);
+     maxw = MIN (size.stepwise.max_width, G_MAXINT);
