@@ -3,7 +3,8 @@
 # MT8173. MT8173's V4L2 decoder outputs only MT21C, MediaTek's compressed
 # tiles, which only the SoC's MDP (v4l2convert) reads; the patches pass it
 # from decoder to converter as an opaque DMA_DRM dmabuf and register
-# v4l2<codec>convdec bins (decoder ! converter) that players auto-plug.
+# v4l2<codec>convdec bins (decoder ! converter) that players auto-plug;
+# 0005/0006 fix encoding (plane offsets; headers joined with frame 0).
 # They come from ~/repos/gstreamer branch suez/v4l2-mt21 and are LOCAL
 # EXPERIMENTS, not sent: GStreamer's AGENTS.md rules out agent-written MRs.
 # Evidence: suez-work notes/VPU-VIDEO-2026-11-13.md.
@@ -15,7 +16,7 @@
 # suez does not install, and without LTO, both costly under emulation.
 pkgname=gst-plugins-good
 pkgver=1.28.7
-pkgrel=101
+pkgrel=102
 # NOTE: Upgrade together with the whole GStreamer suite &
 # only to even-numbered versions (e.g. 1.18.x, 1.20.x)!
 pkgdesc="GStreamer streaming media framework good plugins"
@@ -77,6 +78,7 @@ source="https://gstreamer.freedesktop.org/src/gst-plugins-good/gst-plugins-good-
 	0003-v4l2-Do-not-apply-coded-frame-size-steps-to-caps.patch
 	0004-v4l2-Wrap-MT21C-only-decoders-with-the-converter-tha.patch
 	0005-v4l2-Keep-the-driver-s-plane-offsets-for-planes-in-s.patch
+	0006-v4l2videoenc-Ask-for-the-stream-headers-with-the-fir.patch
 	"
 
 
@@ -133,4 +135,5 @@ e471a892c511c501fdd336cd1729df4e955e266a395260db50665b4ee717d881a007ae84873c57e3
 e0ad17fa37e7ab0b2978f38ab298fd464dfb6bc30e267f6ffc4c3d54b3c9566c54076f1612881833c51064e9e1103f11f8539b41133be3313ccd9b93e55310f1  0003-v4l2-Do-not-apply-coded-frame-size-steps-to-caps.patch
 0caa53dd163649da5827bd6c36bcdc4fe36616e1c6213918d9d30ffc7ce468fc09ce0e15222ba320432b7f74825fecc8c27bbbb3c0622310e8f6fb88fa8ffbb4  0004-v4l2-Wrap-MT21C-only-decoders-with-the-converter-tha.patch
 29bccb77b224960e5c5dce16b1948ad186e712881d2c48b82195a13f7d9cf43b569b1c4e0dad6d072cec1b6b80c989007c7bad1ba7ddeb27e62ff84168fdaa6c  0005-v4l2-Keep-the-driver-s-plane-offsets-for-planes-in-s.patch
+b98a06bfbb5bc131ec1e81f6b96560d204cf2dffcdb685d5fe0caf603bb88fd33d37841e73386cab2b594803bde07316d36de368f52561b7b11793add8c0cdbc  0006-v4l2videoenc-Ask-for-the-stream-headers-with-the-fir.patch
 "

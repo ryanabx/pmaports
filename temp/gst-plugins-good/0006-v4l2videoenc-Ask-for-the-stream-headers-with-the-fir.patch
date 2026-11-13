@@ -1,0 +1,68 @@
+From 945c5d04196c09e8a4d111f393e2cfce719784b4 Mon Sep 17 00:00:00 2001
+From: Ryan Brue <ryanbrue.dev@gmail.com>
+Date: Fri, 13 Nov 2026 08:15:31 -0600
+Subject: [PATCH] v4l2videoenc: Ask for the stream headers with the first frame
+
+Output buffers are matched to frames by timestamp, one buffer per frame.
+MediaTek's encoder defaults to V4L2_MPEG_VIDEO_HEADER_MODE_SEPARATE and
+returns SPS/PPS in a buffer of their own carrying the first frame's
+timestamp: that buffer finished frame 0, and the IDR picture that followed
+was dropped as "too many buffers", so every stream began with a P slice
+and lost a frame (90 frames in, 89 out, 88 decodable).
+
+Set the header mode to joined where the driver offers the control.
+
+Local enablement patch for amazon-suez (MT8173); not for upstream.
+---
+ sys/v4l2/gstv4l2videoenc.c | 28 ++++++++++++++++++++++++++++
+ 1 file changed, 28 insertions(+)
+
+diff --git a/sys/v4l2/gstv4l2videoenc.c b/sys/v4l2/gstv4l2videoenc.c
+index 8eedd46718..2bc6524b8c 100644
+--- a/sys/v4l2/gstv4l2videoenc.c
++++ b/sys/v4l2/gstv4l2videoenc.c
+@@ -324,6 +324,32 @@ gst_v4l2_video_enc_flush (GstVideoEncoder * encoder)
+   return TRUE;
+ }
+ 
++/*
++ * Output buffers are matched to frames by timestamp, one buffer per frame. A
++ * driver putting the stream headers in a buffer of their own gives it the
++ * first frame's timestamp, so that frame is finished with the headers alone
++ * and its picture is then dropped as one buffer too many. Ask for the
++ * headers to come with the first frame instead.
++ */
++static void
++gst_v4l2_video_enc_join_headers (GstV4l2VideoEnc * self)
++{
++  gint mode;
++
++  if (!gst_v4l2_get_attribute (self->v4l2output,
++          V4L2_CID_MPEG_VIDEO_HEADER_MODE, &mode) ||
++      mode != V4L2_MPEG_VIDEO_HEADER_MODE_SEPARATE)
++    return;
++
++  if (gst_v4l2_set_attribute (self->v4l2output,
++          V4L2_CID_MPEG_VIDEO_HEADER_MODE,
++          V4L2_MPEG_VIDEO_HEADER_MODE_JOINED_WITH_1ST_FRAME))
++    GST_INFO_OBJECT (self, "stream headers joined with the first frame");
++  else
++    GST_WARNING_OBJECT (self, "driver puts the stream headers in a buffer "
++        "of their own; the first frame will be lost");
++}
++
+ static gboolean
+ gst_v4l2_video_enc_set_format (GstVideoEncoder * encoder,
+     GstVideoCodecState * state)
+@@ -360,6 +386,8 @@ gst_v4l2_video_enc_set_format (GstVideoEncoder * encoder,
+   if (!gst_video_encoder_negotiate (encoder))
+     return FALSE;
+ 
++  gst_v4l2_video_enc_join_headers (self);
++
+   if (!gst_v4l2_object_set_format (self->v4l2output, state->caps, &error)) {
+     gst_v4l2_error (self, &error);
+     return FALSE;
+-- 
+2.56.0
+
