@@ -3,8 +3,11 @@
 # 6.8.3-r0, 2026-11-14) for amazon-suez: 0001 advances slidingpopups'
 # animations in prePaintScreen, so a popup that slides in below the boot lock
 # screen no longer keeps KWin repainting at 60 fps (~70 % CPU) until unlock.
-# A LOCAL fix until upstream has one (unsent; suez-work
-# notes/PLASMA-LOCKSCREEN-REDRAW-2026-11-14.md §2). Tests are not built
+# 0002 compiles colour-transform shaders per transfer-function pair, so the
+# GPU does not run every transfer function per pixel (1080p video composite
+# 38 -> 9.3 ms on the GX6250 with temp/mesa r2; §6). LOCAL fixes until upstream
+# has them (unsent; suez-work notes/PLASMA-LOCKSCREEN-REDRAW-2026-11-14.md
+# §2, §6). Tests are not built
 # (BUILD_TESTING=OFF; the aport never ran them).
 #
 # pkgrel is far above Nura's so that a rebuild of the same version does not
@@ -13,7 +16,7 @@ maintainer="team/kde <bribbers@disroot.org>"
 pkgname=kwin
 _pkgver=6.8.3
 pkgver=9999$_pkgver
-pkgrel=100
+pkgrel=101
 pkgdesc="An easy to use, but flexible, composited Window Manager"
 # armhf blocked by qt6-qtdeclarative
 # riscv64: slow Alpine builders
@@ -110,6 +113,7 @@ subpackages="
 _repo_url="https://invent.kde.org/plasma/kwin.git"
 source="https://download.kde.org/stable/plasma/$(echo $_pkgver | cut -d . -f 1-3)/kwin-$_pkgver.tar.xz
 	0001-slidingpopups-advance-animations-in-prePaintScreen.patch
+	0002-opengl-specialise-colour-transform-shaders.patch
 	"
 # Broken, fails to setup due to missing or invalid XDG_RUNTIME_DIR?
 options="setcap !check"
@@ -138,4 +142,5 @@ package() {
 sha512sums="
 fcaa17b3d963785f7ec27b77009f8a5e6a11f032ada49f4905c7bc778c37b0dcaa80b2c7b6d5177ec4a6be0054973b117c49eeec39d677ae547ff86e76adaf0e  kwin-6.8.3.tar.xz
 1b22bc11a826561656a86139209348a089d3da7b1d8440bb691f450be4e6009e170ff39c7df7510bfdeed1425b4920b29b47b53320475831413f1e01da5f20fc  0001-slidingpopups-advance-animations-in-prePaintScreen.patch
+d27fc3ea6174fae6d2eab069bd072d5cbbc5740b3b1293e6a7b9b6fdebccceb8af3322eb873778254798e774f0ca75cc3c7d088e876ed8496e6c93d4301cad8d  0002-opengl-specialise-colour-transform-shaders.patch
 "

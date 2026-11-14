@@ -1,0 +1,292 @@
+From c9787244bc27a5041c55e84f57a00ab306046336 Mon Sep 17 00:00:00 2001
+From: Ryan Brue <ryanbrue.dev@gmail.com>
+Date: Sat, 14 Nov 2026 16:31:02 -0600
+Subject: [PATCH] opengl: specialise colour-transform shaders for the transfer
+ functions
+
+ShaderTrait::TransformColorspace shaders select the source and
+destination transfer functions, and whether to tonemap, at run time from
+uniforms. On GPUs whose compilers flatten such branches, every pixel
+then pays for every transfer function: on a PowerVR GX6250, compositing
+a full-width 1080p video (which waylandsink tags as BT.1886) took 38 ms
+of GPU time per frame, against about 5 ms for an RGB window.
+
+Let the scene renderer ask for a shader variant keyed by the two
+transfer functions and the tonemapping decision. The variant has them as
+compile-time constants, so the compiler drops the paths it does not
+take. Other users of TransformColorspace keep the generic shader.
+
+With this, the video above composites in 9.3 ms per frame. The output
+is unchanged: a KMS capture of a still frame matched the generic
+shader's to within one 8-bit step on 4 of 2.3 million pixels.
+---
+ src/opengl/colormanagement.glsl   | 14 +++++++++
+ src/opengl/glshader.cpp           | 50 +++++++++++++++++++++++--------
+ src/opengl/glshader.h             | 16 ++++++++++
+ src/opengl/glshadermanager.cpp    | 23 ++++++++++++++
+ src/opengl/glshadermanager.h      | 16 ++++++++++
+ src/scene/itemrenderer_opengl.cpp | 11 +++++--
+ 6 files changed, 115 insertions(+), 15 deletions(-)
+
+diff --git a/src/opengl/colormanagement.glsl b/src/opengl/colormanagement.glsl
+index a49c9e438d..f7779ac33e 100644
+--- a/src/opengl/colormanagement.glsl
++++ b/src/opengl/colormanagement.glsl
+@@ -7,13 +7,23 @@ const int HLG_EOTF = 5;
+ 
+ uniform mat4 colorimetryTransform;
+ 
++// A shader generated for a ColorspaceShaderVariant has the transfer functions
++// as constants, so that the compiler can drop the paths it does not take.
++#ifdef VARIANT_SOURCE_TRANSFER_FUNCTION
++const int sourceNamedTransferFunction = VARIANT_SOURCE_TRANSFER_FUNCTION;
++#else
+ uniform int sourceNamedTransferFunction;
++#endif
+ /**
+  * Parameters specific to the transfer function
+  */
+ uniform vec2 sourceTransferFunctionParams;
+ 
++#ifdef VARIANT_DESTINATION_TRANSFER_FUNCTION
++const int destinationNamedTransferFunction = VARIANT_DESTINATION_TRANSFER_FUNCTION;
++#else
+ uniform int destinationNamedTransferFunction;
++#endif
+ /**
+  * Parameters specific to the transfer function
+  */
+@@ -166,6 +176,9 @@ const mat3 fromICtCp = mat3(
+ );
+ 
+ vec3 doTonemapping(vec3 color) {
++#if defined(VARIANT_TONEMAPPING) && !VARIANT_TONEMAPPING
++    return clamp(color.rgb, vec3(0.0), vec3(maxTonemappingLuminance));
++#else
+     if (maxTonemappingLuminance < maxDestinationLuminance * 1.01) {
+         // clipping is enough
+         return clamp(color.rgb, vec3(0.0), vec3(maxTonemappingLuminance));
+@@ -191,6 +204,7 @@ vec3 doTonemapping(vec3 color) {
+     color = (lmsToDestination * vec4(pqToLinear(fromICtCp * ICtCp), 1.0)).rgb * 10000.0;
+     // and clip, to ensure out-of-gamut values are clipped to the correct white point
+     return clamp(color, vec3(0.0), vec3(maxDestinationLuminance));
++#endif
+ }
+ 
+ vec4 encodingToNits(vec4 color, int sourceTransferFunction, float luminanceOffset, float luminanceScale) {
+diff --git a/src/opengl/glshader.cpp b/src/opengl/glshader.cpp
+index 5cdad99ea7..2fdba0a9b6 100644
+--- a/src/opengl/glshader.cpp
++++ b/src/opengl/glshader.cpp
+@@ -508,6 +508,37 @@ QMatrix4x4 GLShader::getUniformMatrix4x4(const char *name)
+ 
+ static bool s_disableTonemapping = qEnvironmentVariableIntValue("KWIN_DISABLE_TONEMAPPING") == 1;
+ 
++struct TonemappingLuminances
++{
++    double maxWhite;
++    double maxOutput;
++    bool tonemap;
++};
++
++static TonemappingLuminances tonemappingLuminances(const ColorDescription &src, const ColorDescription &dst, const QMatrix4x4 &toOther, RenderingIntent intent)
++{
++    const double maxLuminance = src.maxHdrLuminance().value_or(src.referenceLuminance());
++    const auto &fromXYZ = src.containerColorimetry().fromXYZ();
++    const QVector3D masteringWhite = fromXYZ * (src.masteringColorimetry().white() * maxLuminance).asVector();
++    const QVector3D white = toOther.map(masteringWhite);
++    const double maxWhiteLuminance = std::max({white.x(), white.y(), white.z()});
++    const double maxOutputLuminance = dst.maxHdrLuminance().value_or(dst.referenceLuminance());
++
++    constexpr double eta = 1.001;
++    const bool tonemap = !s_disableTonemapping && maxWhiteLuminance > maxOutputLuminance * eta && intent == RenderingIntent::Perceptual;
++    return {maxWhiteLuminance, maxOutputLuminance, tonemap};
++}
++
++ColorspaceShaderVariant ColorspaceShaderVariant::create(const std::shared_ptr<ColorDescription> &src, const std::shared_ptr<ColorDescription> &dst, RenderingIntent intent)
++{
++    const auto luminances = tonemappingLuminances(*src, *dst, src->toOther(*dst, intent), intent);
++    return ColorspaceShaderVariant{
++        .source = src->transferFunction().type,
++        .destination = dst->transferFunction().type,
++        .tonemapping = luminances.tonemap,
++    };
++}
++
+ void GLShader::setColorspaceUniforms(const std::shared_ptr<ColorDescription> &src, const std::shared_ptr<ColorDescription> &dst, RenderingIntent intent)
+ {
+     const auto toOther = src->toOther(*dst, intent);
+@@ -531,22 +562,15 @@ void GLShader::setColorspaceUniforms(const std::shared_ptr<ColorDescription> &sr
+     }
+     setUniform(FloatUniform::DestinationReferenceLuminance, dst->referenceLuminance());
+ 
+-    const double maxLuminance = src->maxHdrLuminance().value_or(src->referenceLuminance());
+-    const auto &fromXYZ = src->containerColorimetry().fromXYZ();
+-    const QVector3D masteringWhite = fromXYZ * (src->masteringColorimetry().white() * maxLuminance).asVector();
+-    const QVector3D white = toOther.map(masteringWhite);
+-    const double maxWhiteLuminance = std::max({white.x(), white.y(), white.z()});
+-    const double maxOutputLuminance = dst->maxHdrLuminance().value_or(dst->referenceLuminance());
+-
+-    constexpr double eta = 1.001;
+-    if (!s_disableTonemapping && maxWhiteLuminance > maxOutputLuminance * eta && intent == RenderingIntent::Perceptual) {
++    const auto luminances = tonemappingLuminances(*src, *dst, toOther, intent);
++    if (luminances.tonemap) {
+         // do tonemapping
+-        setUniform(FloatUniform::MaxTonemappingLuminance, maxWhiteLuminance);
+-        setUniform(FloatUniform::MaxDestinationLuminance, maxOutputLuminance);
++        setUniform(FloatUniform::MaxTonemappingLuminance, luminances.maxWhite);
++        setUniform(FloatUniform::MaxDestinationLuminance, luminances.maxOutput);
+     } else {
+         // clip to src luminance
+-        setUniform(FloatUniform::MaxTonemappingLuminance, maxWhiteLuminance);
+-        setUniform(FloatUniform::MaxDestinationLuminance, maxWhiteLuminance);
++        setUniform(FloatUniform::MaxTonemappingLuminance, luminances.maxWhite);
++        setUniform(FloatUniform::MaxDestinationLuminance, luminances.maxWhite);
+     }
+     setUniform(Mat4Uniform::DestinationToLMS, dst->containerColorimetry().toLMS());
+     setUniform(Mat4Uniform::LMSToDestination, dst->containerColorimetry().fromLMS());
+diff --git a/src/opengl/glshader.h b/src/opengl/glshader.h
+index eec2021a95..45b849d0b2 100644
+--- a/src/opengl/glshader.h
++++ b/src/opengl/glshader.h
+@@ -24,6 +24,22 @@ namespace KWin
+ 
+ class EglContext;
+ 
++/**
++ * The parts of a colour transformation that ShaderTrait::TransformColorspace
++ * shaders can be specialised for, so that the shader does not select them
++ * at run time.
++ */
++struct KWIN_EXPORT ColorspaceShaderVariant
++{
++    TransferFunction::Type source;
++    TransferFunction::Type destination;
++    bool tonemapping;
++
++    auto operator<=>(const ColorspaceShaderVariant &) const = default;
++
++    static ColorspaceShaderVariant create(const std::shared_ptr<ColorDescription> &src, const std::shared_ptr<ColorDescription> &dst, RenderingIntent intent);
++};
++
+ class KWIN_EXPORT GLShader
+ {
+ public:
+diff --git a/src/opengl/glshadermanager.cpp b/src/opengl/glshadermanager.cpp
+index 4883acd36b..3d0f14fa3d 100644
+--- a/src/opengl/glshadermanager.cpp
++++ b/src/opengl/glshadermanager.cpp
+@@ -148,6 +148,29 @@ bool ShaderManager::isShaderBound() const
+     return !m_boundShaders.isEmpty();
+ }
+ 
++GLShader *ShaderManager::shader(ShaderTraits traits, const ColorspaceShaderVariant &variant)
++{
++    Q_ASSERT(traits & ShaderTrait::TransformColorspace);
++    std::unique_ptr<GLShader> &shader = m_variantShaderHash[std::make_pair(traits.toInt(), variant)];
++    if (!shader) {
++        const QByteArray defines = QByteArrayLiteral("#define VARIANT_SOURCE_TRANSFER_FUNCTION ") + QByteArray::number(int(variant.source)) + "\n"
++            + QByteArrayLiteral("#define VARIANT_DESTINATION_TRANSFER_FUNCTION ") + QByteArray::number(int(variant.destination)) + "\n"
++            + QByteArrayLiteral("#define VARIANT_TONEMAPPING ") + (variant.tonemapping ? "1" : "0") + "\n";
++        shader = generateCustomShader(traits, QByteArray(), defines + generateFragmentSource(traits));
++    }
++    return shader.get();
++}
++
++GLShader *ShaderManager::pushShader(ShaderTraits traits, const ColorspaceShaderVariant &variant)
++{
++    GLShader *shader = this->shader(traits, variant);
++    if (!shader) {
++        return nullptr;
++    }
++    pushShader(shader);
++    return shader;
++}
++
+ GLShader *ShaderManager::pushShader(ShaderTraits traits)
+ {
+     GLShader *shader = this->shader(traits);
+diff --git a/src/opengl/glshadermanager.h b/src/opengl/glshadermanager.h
+index 79324b390e..ae42ebb113 100644
+--- a/src/opengl/glshadermanager.h
++++ b/src/opengl/glshadermanager.h
+@@ -10,6 +10,7 @@
+ */
+ #pragma once
+ #include "kwin_export.h"
++#include "opengl/glshader.h"
+ 
+ #include <QByteArray>
+ #include <QFlags>
+@@ -58,6 +59,14 @@ public:
+      */
+     GLShader *shader(ShaderTraits traits);
+ 
++    /**
++     * Returns a ShaderTrait::TransformColorspace shader with the given traits,
++     * specialised for @p variant, creating it if necessary. Its colour
++     * uniforms are set with GLShader::setColorspaceUniforms() as usual, for a
++     * colour transformation that matches @p variant.
++     */
++    GLShader *shader(ShaderTraits traits, const ColorspaceShaderVariant &variant);
++
+     /**
+      * @return The currently bound shader or @c null if no shader is bound.
+      */
+@@ -74,6 +83,12 @@ public:
+      */
+     GLShader *pushShader(ShaderTraits traits);
+ 
++    /**
++     * Pushes the current shader onto the stack and binds a shader with the
++     * given traits, specialised for @p variant.
++     */
++    GLShader *pushShader(ShaderTraits traits, const ColorspaceShaderVariant &variant);
++
+     /**
+      * Binds the @p shader.
+      * To unbind the shader use popShader. A previous bound shader will be rebound.
+@@ -155,6 +170,7 @@ private:
+ 
+     QStack<GLShader *> m_boundShaders;
+     std::map<ShaderTraits, std::unique_ptr<GLShader>> m_shaderHash;
++    std::map<std::pair<int, ColorspaceShaderVariant>, std::unique_ptr<GLShader>> m_variantShaderHash;
+ };
+ 
+ /**
+diff --git a/src/scene/itemrenderer_opengl.cpp b/src/scene/itemrenderer_opengl.cpp
+index a2fc64f9f4..8d523ebabc 100644
+--- a/src/scene/itemrenderer_opengl.cpp
++++ b/src/scene/itemrenderer_opengl.cpp
+@@ -443,6 +443,7 @@ bool ItemRendererOpenGL::renderItem(const RenderTarget &renderTarget, const Rend
+     }
+ 
+     ShaderTraits lastTraits;
++    std::optional<ColorspaceShaderVariant> lastVariant;
+     GLShader *shader = nullptr;
+     for (int i = 0; i < renderContext.renderNodes.count(); i++) {
+         const RenderNode &renderNode = renderContext.renderNodes[i];
+@@ -474,12 +475,18 @@ bool ItemRendererOpenGL::renderItem(const RenderTarget &renderTarget, const Rend
+             setBlendEnabled(renderNode.hasAlpha || renderNode.opacity < 1.0);
+         }
+ 
+-        if (!shader || traits != lastTraits) {
++        std::optional<ColorspaceShaderVariant> variant;
++        if (traits & ShaderTrait::TransformColorspace) {
++            variant = ColorspaceShaderVariant::create(renderNode.colorDescription, renderTarget.colorDescription(), renderNode.renderingIntent);
++        }
++
++        if (!shader || traits != lastTraits || variant != lastVariant) {
+             lastTraits = traits;
++            lastVariant = variant;
+             if (shader) {
+                 ShaderManager::instance()->popShader();
+             }
+-            shader = ShaderManager::instance()->pushShader(traits);
++            shader = variant ? ShaderManager::instance()->pushShader(traits, *variant) : ShaderManager::instance()->pushShader(traits);
+             if (!shader) {
+                 continue;
+             }
+-- 
+2.56.0
+
