@@ -1,0 +1,258 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Ryan Brue <ryanbrue.dev@gmail.com>
+Date: Fri, 13 Nov 2026 19:33:48 -0600
+Subject: [PATCH] pvr: honour explicit DRM modifier plane layouts on import
+
+Importing a dmabuf whose planes share one buffer (GStreamer's udmabuf
+I420/NV12 frames, imported by GTK through zink) rendered garbage: the
+chroma planes were read from the luma plane.
+
+pvr_pick_modifier() rejected a non-zero plane 0 offset, but
+pvr_image_init() dropped the error (an assert, compiled out in release
+builds), so the image was created anyway at offset 0. Planes 1 and 2
+got the driver's own page-aligned offsets instead of the layout's, and
+the explicit row pitch was divided by the multi-planar format's block
+size and then by the chroma subsampling factor.
+
+Take every plane's offset and pitch from the explicit layout: apply
+plane 0's offset when binding memory and keep the other planes relative
+to it, compute pitches in each plane's own format, and return the
+validation error from vkCreateImage. Only plane 0's stride is
+programmed, so a chroma pitch the texture unit would not derive from it
+is refused.
+
+Local: src/imagination does not take LLM-generated code upstream.
+
+Generated-by: LLM
+(cherry picked from commit 8ffac5314f146dbb216b68013197d8ccb72c7c84)
+---
+ src/imagination/vulkan/pvr_image.c | 119 +++++++++++++++++++++++------
+ src/imagination/vulkan/pvr_image.h |  12 ++-
+ 2 files changed, 105 insertions(+), 26 deletions(-)
+
+diff --git a/src/imagination/vulkan/pvr_image.c b/src/imagination/vulkan/pvr_image.c
+index 654ba7761a0..5b5689172a6 100644
+--- a/src/imagination/vulkan/pvr_image.c
++++ b/src/imagination/vulkan/pvr_image.c
+@@ -104,10 +104,16 @@ static void pvr_image_plane_init_physical_extent(
+                pCreateInfo->pNext,
+                IMAGE_DRM_FORMAT_MODIFIER_EXPLICIT_CREATE_INFO_EXT);
+          if (explicit_mod) {
+-            const uint32_t bpp =
+-              vk_format_get_blocksize(image->vk.format);
++            /* The row pitch is given per plane, in the plane's format. */
++            const uint32_t bpp = vk_format_get_blocksize(
++               vk_format_get_plane_format(image->vk.format, i));
+             plane->physical_extent.width =
+               explicit_mod->pPlaneLayouts[i].rowPitch / bpp;
++            if (ycbcr_info) {
++               plane->physical_extent.height /=
++                  ycbcr_info->planes[i].denominator_scales[1];
++            }
++            return;
+          }
+       }
+    }
+@@ -198,9 +204,40 @@ static void pvr_image_plane_setup_mip_levels(struct pvr_image *image, uint8_t i)
+    plane->size = plane->layer_size * image->vk.array_layers;
+ }
+ 
+-static void pvr_image_setup_mip_levels(struct pvr_image *image)
++static void pvr_image_setup_mip_levels(struct pvr_image *image,
++                                       const VkImageCreateInfo *pCreateInfo)
+ {
++   const VkImageDrmFormatModifierExplicitCreateInfoEXT *explicit_mod = NULL;
+    VkDeviceSize offset = 0;
++
++   if (pCreateInfo->tiling == VK_IMAGE_TILING_DRM_FORMAT_MODIFIER_EXT) {
++      explicit_mod = vk_find_struct_const(
++         pCreateInfo->pNext,
++         IMAGE_DRM_FORMAT_MODIFIER_EXPLICIT_CREATE_INFO_EXT);
++   }
++
++   image->bind_offset = 0;
++
++   if (explicit_mod) {
++      /* Imported memory: the planes are where the layout says. Plane 0's
++       * offset is applied when binding, so plane offsets stay relative to
++       * the image's device address.
++       */
++      image->bind_offset = explicit_mod->pPlaneLayouts[0].offset;
++
++      for (uint8_t plane = 0; plane < image->plane_count; plane++) {
++         pvr_image_plane_setup_mip_levels(image, plane);
++
++         image->planes[plane].offset =
++            explicit_mod->pPlaneLayouts[plane].offset - image->bind_offset;
++         offset = MAX2(offset,
++                       image->planes[plane].offset + image->planes[plane].size);
++      }
++
++      image->total_size = offset;
++      return;
++   }
++
+    for (uint8_t plane = 0; plane < image->plane_count; plane++) {
+       pvr_image_plane_setup_mip_levels(image, plane);
+ 
+@@ -236,22 +273,52 @@ static VkResult pvr_pick_modifier(const VkImageCreateInfo *pCreateInfo,
+             *modifier = DRM_FORMAT_MOD_LINEAR;
+ 
+    if (explicit_mod) {
+-      const uint32_t bpp = vk_format_get_blocksize(pCreateInfo->format);
+-      assert(explicit_mod->drmFormatModifier == DRM_FORMAT_MOD_LINEAR &&
+-             explicit_mod->drmFormatModifierPlaneCount == 1);
+-      *modifier = explicit_mod->drmFormatModifier;
+-
+-      if (explicit_mod->pPlaneLayouts[0].offset != 0)
+-         return VK_ERROR_INVALID_DRM_FORMAT_MODIFIER_PLANE_LAYOUT_EXT;
++      const struct vk_format_ycbcr_info *ycbcr_info =
++         vk_format_get_ycbcr_info(pCreateInfo->format);
++      const uint32_t plane_count =
++         vk_format_get_plane_count(pCreateInfo->format);
+ 
+-      if (explicit_mod->pPlaneLayouts[0].rowPitch %
+-          (bpp * pbe_stride_align) != 0) {
++      if (explicit_mod->drmFormatModifier != DRM_FORMAT_MOD_LINEAR ||
++          explicit_mod->drmFormatModifierPlaneCount != plane_count) {
+          return VK_ERROR_INVALID_DRM_FORMAT_MODIFIER_PLANE_LAYOUT_EXT;
+       }
+ 
+-      if (explicit_mod->pPlaneLayouts[0].rowPitch <
+-          pCreateInfo->extent.width * bpp) {
+-         return VK_ERROR_INVALID_DRM_FORMAT_MODIFIER_PLANE_LAYOUT_EXT;
++      *modifier = explicit_mod->drmFormatModifier;
++
++      for (uint32_t i = 0; i < plane_count; i++) {
++         const VkSubresourceLayout *layout = &explicit_mod->pPlaneLayouts[i];
++         const uint32_t bpp = vk_format_get_blocksize(
++            vk_format_get_plane_format(pCreateInfo->format, i));
++         uint32_t width = pCreateInfo->extent.width;
++
++         if (ycbcr_info)
++            width /= ycbcr_info->planes[i].denominator_scales[0];
++
++         /* Texture addresses are in units of 4 bytes. */
++         if (layout->offset % 4 != 0 ||
++             layout->offset < explicit_mod->pPlaneLayouts[0].offset) {
++            return VK_ERROR_INVALID_DRM_FORMAT_MODIFIER_PLANE_LAYOUT_EXT;
++         }
++
++         if (layout->rowPitch < width * bpp)
++            return VK_ERROR_INVALID_DRM_FORMAT_MODIFIER_PLANE_LAYOUT_EXT;
++
++         if (i == 0) {
++            if (layout->rowPitch % (bpp * pbe_stride_align) != 0)
++               return VK_ERROR_INVALID_DRM_FORMAT_MODIFIER_PLANE_LAYOUT_EXT;
++         } else {
++            /* Only plane 0's stride is programmed; the texture unit derives
++             * the chroma planes' strides from it.
++             */
++            const uint32_t bpp0 = vk_format_get_blocksize(
++               vk_format_get_plane_format(pCreateInfo->format, 0));
++            const uint32_t pixels0 = explicit_mod->pPlaneLayouts[0].rowPitch / bpp0;
++
++            if (layout->rowPitch !=
++                pixels0 / ycbcr_info->planes[i].denominator_scales[0] * bpp) {
++               return VK_ERROR_INVALID_DRM_FORMAT_MODIFIER_PLANE_LAYOUT_EXT;
++            }
++         }
+       }
+    }
+ 
+@@ -277,7 +344,11 @@ VkResult pvr_CreateImage(VkDevice _device,
+    if (!image)
+       return vk_error(device, VK_ERROR_OUT_OF_HOST_MEMORY);
+ 
+-   pvr_image_init(device, pCreateInfo, image);
++   VkResult result = pvr_image_init(device, pCreateInfo, image);
++   if (result != VK_SUCCESS) {
++      vk_image_destroy(&device->vk, pAllocator, &image->vk);
++      return vk_error(device, result);
++   }
+ 
+    *pImage = pvr_image_to_handle(image);
+ 
+@@ -298,9 +369,9 @@ void pvr_DestroyImage(VkDevice _device,
+    vk_image_destroy(&device->vk, pAllocator, &image->vk);
+ }
+ 
+-void pvr_image_init(struct pvr_device *device,
+-                    const VkImageCreateInfo *pCreateInfo,
+-                    struct pvr_image *image)
++VkResult pvr_image_init(struct pvr_device *device,
++                        const VkImageCreateInfo *pCreateInfo,
++                        struct pvr_image *image)
+ {
+    unsigned pbe_stride_align = get_pbe_stride_align(&device->pdevice->dev_info);
+ 
+@@ -312,14 +383,16 @@ void pvr_image_init(struct pvr_device *device,
+                                        pbe_stride_align,
+                                        &image->vk.drm_format_mod);
+       if (res != VK_SUCCESS)
+-         assert(res == VK_SUCCESS);
++         return res;
+ 
+       assert(image->vk.drm_format_mod == DRM_FORMAT_MOD_LINEAR);
+    }
+ 
+    pvr_image_init_memlayout(image);
+    pvr_image_init_physical_extent(image, pCreateInfo, pbe_stride_align);
+-   pvr_image_setup_mip_levels(image);
++   pvr_image_setup_mip_levels(image, pCreateInfo);
++
++   return VK_SUCCESS;
+ }
+ 
+ void pvr_image_fini(struct pvr_device *device, struct pvr_image *image)
+@@ -391,7 +464,7 @@ VkResult pvr_BindImageMemory2(VkDevice _device,
+ 
+       result = pvr_bind_memory(device,
+                                mem,
+-                               offset,
++                               offset + image->bind_offset,
+                                image->total_size,
+                                image->alignment,
+                                &image->vma,
+@@ -419,7 +492,7 @@ void pvr_get_image_subresource_layout(const struct pvr_image *image,
+    const struct pvr_mip_level *mip_level =
+       &plane->mip_levels[subresource->mipLevel];
+ 
+-   layout->offset = plane->offset +
++   layout->offset = image->bind_offset + plane->offset +
+                     subresource->arrayLayer * plane->layer_size +
+                     mip_level->offset;
+    layout->rowPitch = mip_level->pitch;
+diff --git a/src/imagination/vulkan/pvr_image.h b/src/imagination/vulkan/pvr_image.h
+index 45daa7b40e1..427cc33acd3 100644
+--- a/src/imagination/vulkan/pvr_image.h
++++ b/src/imagination/vulkan/pvr_image.h
+@@ -64,6 +64,12 @@ struct pvr_image {
+    VkDeviceSize alignment;
+    VkDeviceSize total_size;
+ 
++   /* Offset of plane 0 from the start of the memory binding, from an
++    * explicit DRM format modifier layout; the other planes' offsets are
++    * relative to plane 0.
++    */
++   VkDeviceSize bind_offset;
++
+    uint8_t plane_count;
+    struct pvr_image_plane planes[PVR_MAX_PLANE_COUNT];
+ };
+@@ -169,9 +175,9 @@ void pvr_get_image_subresource_layout(const struct pvr_image *image,
+                                       const VkImageSubresource *subresource,
+                                       VkSubresourceLayout *layout);
+ 
+-void pvr_image_init(struct pvr_device *device,
+-                    const VkImageCreateInfo *pCreateInfo,
+-                    struct pvr_image *image);
++VkResult pvr_image_init(struct pvr_device *device,
++                        const VkImageCreateInfo *pCreateInfo,
++                        struct pvr_image *image);
+ void pvr_image_fini(struct pvr_device *device, struct pvr_image *image);
+ 
+ #endif /* PVR_IMAGE_H */
+-- 
+2.56.0
+

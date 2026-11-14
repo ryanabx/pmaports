@@ -12,7 +12,7 @@
 maintainer="Ryan Brue <ryanbrue.dev@gmail.com>"
 pkgname=mesa
 pkgver=27.0.0_git20261110
-pkgrel=0
+pkgrel=1
 _commit="5304cac24b08b8f7d4da00464dff6e7bc1d4a07b"
 pkgdesc="Mesa DRI OpenGL library (amazon-suez PowerVR fork)"
 url="https://www.mesa3d.org"
@@ -91,6 +91,7 @@ source="mesa-$_commit.tar.gz::https://gitlab.freedesktop.org/mesa/mesa/-/archive
 	0016-PROTOTYPE-pvr-cache-load-op-and-end-of-tile-shaders-.patch
 	0017-PROTOTYPE-pco-fold-fsat-into-the-producing-fmul-fadd.patch
 	0018-PROTOTYPE-pco-enable-the-preamble-by-default.patch
+	0019-pvr-honour-explicit-DRM-modifier-plane-layouts-on-im.patch
 	"
 builddir="$srcdir/mesa-$_commit"
 options="!check"
@@ -233,4 +234,5 @@ a530d8ea4e4de4e6d3ad5668a6a82254a7d6001b3bacb6e3f1d426534be782dda8815e9d48525525
 aa7f509a3b4047769057e7975ff939aa59014a53a27553e88141af9a1d57b04ff2af32966ef2047a190c8f11fcabf8320d1c9318a1065e16a67e97f1f101c179  0016-PROTOTYPE-pvr-cache-load-op-and-end-of-tile-shaders-.patch
 e2c48a59fa2f9fdd1bf99a05abf87089e8aeb2db120402e66e7d994037333346d1df4398d47834bd67eab6e338a53496feab21d850159140275a0fcbe6de9517  0017-PROTOTYPE-pco-fold-fsat-into-the-producing-fmul-fadd.patch
 b71f9d529fa2b9b712c2d71cb1dd51a40c5b1918ea8a3a5cd32b6d59872fa83bf6331da716458146ae74a28d73bf181f62c943ba583e1eb41efc022b9f1af9f4  0018-PROTOTYPE-pco-enable-the-preamble-by-default.patch
+fedc8a263086c33aa049dd95959a3e7bd357cbaa4eef780c9cd0f865b918b59709c730d42816ebf5b840dd67843b5a2f92a0c200d4e43602d2cfd6585fb054bd  0019-pvr-honour-explicit-DRM-modifier-plane-layouts-on-im.patch
 "
