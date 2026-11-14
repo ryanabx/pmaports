@@ -1,0 +1,47 @@
+From 8402b4585531e3d14641befe8695102c1c043dfd Mon Sep 17 00:00:00 2001
+From: Ryan Brue <ryanbrue.dev@gmail.com>
+Date: Sat, 14 Nov 2026 11:34:25 -0600
+Subject: [PATCH] BusyIndicator: fade out with a NumberAnimation
+
+An OpacityAnimator runs on the render thread of its window and only
+finishes when that window renders. When a BusyIndicator stops while its
+window is hidden, the fade-out never finishes, the content item stays
+visible, and the running animation keeps the animation driver ticking,
+so every other exposed window of the process redraws at the display's
+refresh rate.
+
+Seen in Plasma Mobile: the status bar's network indicator also exists in
+a hidden window, and a Wi-Fi reconnect while the screen is off (as after
+every resume) left the lock screen's status bar redrawing at 60 fps.
+
+A NumberAnimation runs on the GUI thread and finishes on time whether or
+not the window renders.
+---
+ style/qtquickcontrols/BusyIndicator.qml | 7 +++++--
+ 1 file changed, 5 insertions(+), 2 deletions(-)
+
+diff --git a/style/qtquickcontrols/BusyIndicator.qml b/style/qtquickcontrols/BusyIndicator.qml
+index 9b231e4..f35a9fe 100644
+--- a/style/qtquickcontrols/BusyIndicator.qml
++++ b/style/qtquickcontrols/BusyIndicator.qml
+@@ -41,12 +41,15 @@ T.BusyIndicator {
+         implicitWidth: Kirigami.Units.gridUnit * 2
+         implicitHeight: Kirigami.Units.gridUnit * 2
+ 
+-        // We can't bind directly to opacity, as Animator won't update its value immediately.
++        // We can't bind directly to opacity, as the animation won't update its value immediately.
+         visible: control.running || opacityAnimator.running
+         opacity: control.running ? 1 : 0
+         Behavior on opacity {
+             enabled: Kirigami.Units.shortDuration > 0
+-            OpacityAnimator {
++            // Not an OpacityAnimator: an Animator only finishes when its window
++            // renders, so in a hidden window it would run forever and keep
++            // the other windows redrawing.
++            NumberAnimation {
+                 id: opacityAnimator
+                 duration: Kirigami.Units.shortDuration
+                 easing.type: Easing.OutCubic
+-- 
+2.56.0
+

@@ -2,8 +2,12 @@
 # 6.8.3-r0, 2026-11-14) for amazon-suez: 0001 stops ProgressBar's hidden
 # indeterminate animation from running forever, which kept Plasma Mobile's
 # lock screen redrawing at 60 fps whenever a notification was shown
-# (~75% of a CPU, ~620 mA). From ~/repos/qqc2-breeze-style branch
-# suez/progressbar-anim; a LOCAL fix until upstream has one (unsent).
+# (~75% of a CPU, ~300 mA). 0002 fades BusyIndicator out with a
+# NumberAnimation: an OpacityAnimator in a hidden window never finishes, and
+# Plasma Mobile's hidden network indicator then kept the lock screen's status
+# bar redrawing at 60 fps after every Wi-Fi reconnect with the screen off
+# (every resume; ~1.6 CPU cores while lit). From ~/repos/qqc2-breeze-style
+# branch suez/progressbar-anim; LOCAL fixes until upstream has them (unsent).
 # Evidence: suez-work PLASMA_MOBILE_PLAN.md, Progress Tracking.
 #
 # pkgrel is far above Alpine's so that an Alpine rebuild of the same version
@@ -11,7 +15,7 @@
 maintainer="team/kde <bribbers@disroot.org>"
 pkgname=qqc2-breeze-style
 pkgver=6.8.3
-pkgrel=100
+pkgrel=101
 pkgdesc="Breeze inspired QQC2 style"
 # armhf blocked by qt6-qtdeclarative
 arch="all !armhf"
@@ -41,6 +45,7 @@ esac
 _repo_url="https://invent.kde.org/plasma/qqc2-breeze-style.git"
 source="https://download.kde.org/$_rel/plasma/$pkgver/qqc2-breeze-style-$pkgver.tar.xz
 	0001-progressbar-indeterminate-animation.patch
+	0002-busyindicator-fade-numberanimation.patch
 	"
 options="!check" # No tests
 
@@ -61,4 +66,5 @@ package() {
 sha512sums="
 2e1d1695973e36198863ac561a2b627b8f182e7a62220bb94233ec2ef062ba052f2982c40905bd3e2626d056c4849791bfc2a536445582081b4ef93fbbb2fb2d  qqc2-breeze-style-6.8.3.tar.xz
 707e5937439d19d1566d0e3e6ea43364e8ee09e5b89e5d2f927489f67ae468cfdbe92e5694c7d2883d852e50dfc6aae9e79e45c96970c1e0257ddc9707468f42  0001-progressbar-indeterminate-animation.patch
+c31b1d0277633dff6206e611fd64b6e5bf61ad3476fe2632650285077f87a9e60e4044bc99066cb86f18ee87a2b4eecd04c8e053b877774a31794017a487e0e5  0002-busyindicator-fade-numberanimation.patch
 "
