@@ -16,7 +16,7 @@
 # suez does not install, and without LTO, both costly under emulation.
 pkgname=gst-plugins-good
 pkgver=1.28.7
-pkgrel=102
+pkgrel=103
 # NOTE: Upgrade together with the whole GStreamer suite &
 # only to even-numbered versions (e.g. 1.18.x, 1.20.x)!
 pkgdesc="GStreamer streaming media framework good plugins"
@@ -79,6 +79,7 @@ source="https://gstreamer.freedesktop.org/src/gst-plugins-good/gst-plugins-good-
 	0004-v4l2-Wrap-MT21C-only-decoders-with-the-converter-tha.patch
 	0005-v4l2-Keep-the-driver-s-plane-offsets-for-planes-in-s.patch
 	0006-v4l2videoenc-Ask-for-the-stream-headers-with-the-fir.patch
+	0007-v4l2object-accept-any-colorimetry-on-coded-OUTPUT-ca.patch
 	"
 
 
@@ -136,4 +137,5 @@ e0ad17fa37e7ab0b2978f38ab298fd464dfb6bc30e267f6ffc4c3d54b3c9566c54076f1612881833
 0caa53dd163649da5827bd6c36bcdc4fe36616e1c6213918d9d30ffc7ce468fc09ce0e15222ba320432b7f74825fecc8c27bbbb3c0622310e8f6fb88fa8ffbb4  0004-v4l2-Wrap-MT21C-only-decoders-with-the-converter-tha.patch
 29bccb77b224960e5c5dce16b1948ad186e712881d2c48b82195a13f7d9cf43b569b1c4e0dad6d072cec1b6b80c989007c7bad1ba7ddeb27e62ff84168fdaa6c  0005-v4l2-Keep-the-driver-s-plane-offsets-for-planes-in-s.patch
 b98a06bfbb5bc131ec1e81f6b96560d204cf2dffcdb685d5fe0caf603bb88fd33d37841e73386cab2b594803bde07316d36de368f52561b7b11793add8c0cdbc  0006-v4l2videoenc-Ask-for-the-stream-headers-with-the-fir.patch
+9557f8caac4e60a512e9b755566047b82ea5885d9499af481ac18dd17a87b2799ee0e6130a85733ef08cabe9469074406c6859276a1f8ccf6e4e27a36095b2ae  0007-v4l2object-accept-any-colorimetry-on-coded-OUTPUT-ca.patch
 "
