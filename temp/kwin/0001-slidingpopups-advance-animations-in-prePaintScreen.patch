@@ -1,0 +1,69 @@
+From 0eccb46164b6b7afb091084a49430ec8aee5e5c1 Mon Sep 17 00:00:00 2001
+From: Ryan Brue <ryanbrue.dev@gmail.com>
+Date: Sat, 14 Nov 2026 14:16:34 -0600
+Subject: [PATCH] plugins/slidingpopups: advance animations in prePaintScreen
+
+The timeline of a sliding popup only advanced in prePaintWindow(), while
+postPaintScreen() schedules a repaint of the popup's area until the
+timeline is done. If the window is not painted, for example because it
+appeared below the lock screen, the timeline never advances, the
+animation never finishes, and KWin repaints every frame for as long as
+the window stays unpainted.
+
+Advance the timelines in prePaintScreen() instead, like the other
+effects that drive TimeLines from the screen paint.
+---
+ src/plugins/slidingpopups/slidingpopups.cpp | 21 ++++++++++++++-------
+ src/plugins/slidingpopups/slidingpopups.h   |  1 +
+ 2 files changed, 15 insertions(+), 7 deletions(-)
+
+diff --git a/src/plugins/slidingpopups/slidingpopups.cpp b/src/plugins/slidingpopups/slidingpopups.cpp
+index f05aeb32df..c09fe241b9 100644
+--- a/src/plugins/slidingpopups/slidingpopups.cpp
++++ b/src/plugins/slidingpopups/slidingpopups.cpp
+@@ -109,16 +109,23 @@ void SlidingPopupsEffect::reconfigure(ReconfigureFlags flags)
+     }
+ }
+ 
+-void SlidingPopupsEffect::prePaintWindow(RenderView *view, EffectWindow *w, WindowPrePaintData &data)
++void SlidingPopupsEffect::prePaintScreen(ScreenPrePaintData &data)
+ {
+-    auto animationIt = m_animations.find(w);
+-    if (animationIt == m_animations.end()) {
+-        effects->prePaintWindow(view, w, data);
+-        return;
++    // Advance here rather than in prePaintWindow(): a window that is not
++    // painted (e.g. below the lock screen) would otherwise never finish its
++    // animation, and postPaintScreen() would schedule repaints forever.
++    for (auto &[window, animation] : m_animations) {
++        animation.timeLine.advance(data.view);
+     }
+ 
+-    animationIt->second.timeLine.advance(view);
+-    data.setTransformed();
++    effects->prePaintScreen(data);
++}
++
++void SlidingPopupsEffect::prePaintWindow(RenderView *view, EffectWindow *w, WindowPrePaintData &data)
++{
++    if (m_animations.contains(w)) {
++        data.setTransformed();
++    }
+ 
+     effects->prePaintWindow(view, w, data);
+ }
+diff --git a/src/plugins/slidingpopups/slidingpopups.h b/src/plugins/slidingpopups/slidingpopups.h
+index ff11db03ee..4f63569547 100644
+--- a/src/plugins/slidingpopups/slidingpopups.h
++++ b/src/plugins/slidingpopups/slidingpopups.h
+@@ -30,6 +30,7 @@ public:
+     SlidingPopupsEffect();
+     ~SlidingPopupsEffect() override;
+ 
++    void prePaintScreen(ScreenPrePaintData &data) override;
+     void prePaintWindow(RenderView *view, EffectWindow *w, WindowPrePaintData &data) override;
+     bool paintWindow(const RenderTarget &renderTarget, const RenderViewport &viewport, EffectWindow *w, int mask, const Region &deviceGeometry, WindowPaintData &data) override;
+     void reconfigure(ReconfigureFlags flags) override;
+-- 
+2.56.0
+
