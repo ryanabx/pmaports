@@ -1,0 +1,40 @@
+From bb7df52c89496367f9cb4fc197e553086e102185 Mon Sep 17 00:00:00 2001
+From: Ryan Brue <ryanbrue.dev@gmail.com>
+Date: Sat, 14 Nov 2026 01:57:10 -0600
+Subject: [PATCH] ProgressBar: only run the indeterminate animation while it is
+ shown
+
+The indeterminate stripes' NumberAnimation runs with running: true and
+infinite loops, so every ProgressBar animates its hidden indeterminate
+fill for as long as it exists, even in determinate mode or while the bar
+is invisible. A running animation keeps the window rendering at the
+display's refresh rate.
+
+Plasma Mobile's notification cards contain a determinate ProgressBar, so
+a lock screen showing a notification redraws continuously: on an MT8173
+tablet kscreenlocker_greet used ~75% of a CPU and presented ~60 frames/s
+with nothing changing on screen.
+
+Run the animation only while the indeterminate fill is visible, which is
+already bound to the indeterminate state and follows the control's
+effective visibility.
+---
+ style/qtquickcontrols/ProgressBar.qml | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/style/qtquickcontrols/ProgressBar.qml b/style/qtquickcontrols/ProgressBar.qml
+index 097da8d..a7e3d09 100644
+--- a/style/qtquickcontrols/ProgressBar.qml
++++ b/style/qtquickcontrols/ProgressBar.qml
+@@ -82,7 +82,7 @@ T.ProgressBar {
+                 to: 0
+                 duration: 3 * Kirigami.Units.veryLongDuration
+                 loops: Animation.Infinite
+-                running: true
++                running: indeterminateFill.visible
+             }
+         }
+     }
+-- 
+2.56.0
+
