@@ -1,0 +1,31 @@
+From d665ae44e2a9c26204a0be737bcb5edba92cfec6 Mon Sep 17 00:00:00 2001
+From: Ryan Brue <ryanbrue.dev@gmail.com>
+Date: Sat, 14 Nov 2026 23:43:30 -0600
+Subject: [PATCH 5/5] effect/offscreenquickview: Cancel touches when the view
+ is hidden
+
+A hidden view can be shown again (QuickSceneEffect view caching). Touch
+state left over from before it was hidden must not carry over.
+---
+ src/effect/offscreenquickview.cpp | 5 +++++
+ 1 file changed, 5 insertions(+)
+
+diff --git a/src/effect/offscreenquickview.cpp b/src/effect/offscreenquickview.cpp
+index b233dcda79..f84073b030 100644
+--- a/src/effect/offscreenquickview.cpp
++++ b/src/effect/offscreenquickview.cpp
+@@ -586,6 +586,11 @@ void OffscreenQuickView::setVisible(bool visible)
+     if (d->m_visible == visible) {
+         return;
+     }
++    if (!visible) {
++        // A view that is shown again later must not see a touch that
++        // started before it was hidden.
++        forwardTouchCancel();
++    }
+     d->m_visible = visible;
+     d->m_item->setVisible(visible);
+     Q_EMIT visibleChanged(visible);
+-- 
+2.56.0
+

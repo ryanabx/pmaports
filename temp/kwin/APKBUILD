@@ -7,7 +7,11 @@
 # GPU does not run every transfer function per pixel (1080p video composite
 # 38 -> 9.3 ms on the GX6250 with temp/mesa r2; §6). LOCAL fixes until upstream
 # has them (unsent; suez-work notes/PLASMA-LOCKSCREEN-REDRAW-2026-11-14.md
-# §2, §6). Tests are not built
+# §2, §6). 0003-0005 (r102) fix QuickSceneEffect view caching, which
+# temp/plasma-mobile turns back on for the task switcher: a stopped effect's
+# hidden view no longer takes touch input, hidden thumbnails hold no
+# offscreen rendering, and a hidden view's touches are cancelled (§11, §12).
+# Tests are not built
 # (BUILD_TESTING=OFF; the aport never ran them).
 #
 # pkgrel is far above Nura's so that a rebuild of the same version does not
@@ -16,7 +20,7 @@ maintainer="team/kde <bribbers@disroot.org>"
 pkgname=kwin
 _pkgver=6.8.3
 pkgver=9999$_pkgver
-pkgrel=101
+pkgrel=102
 pkgdesc="An easy to use, but flexible, composited Window Manager"
 # armhf blocked by qt6-qtdeclarative
 # riscv64: slow Alpine builders
@@ -114,6 +118,9 @@ _repo_url="https://invent.kde.org/plasma/kwin.git"
 source="https://download.kde.org/stable/plasma/$(echo $_pkgver | cut -d . -f 1-3)/kwin-$_pkgver.tar.xz
 	0001-slidingpopups-advance-animations-in-prePaintScreen.patch
 	0002-opengl-specialise-colour-transform-shaders.patch
+	0003-quickeffect-Only-forward-touch-and-tablet-input-to-a.patch
+	0004-scripting-windowthumbnailitem-Hold-no-source-while-t.patch
+	0005-effect-offscreenquickview-Cancel-touches-when-the-vi.patch
 	"
 # Broken, fails to setup due to missing or invalid XDG_RUNTIME_DIR?
 options="setcap !check"
@@ -143,4 +150,7 @@ sha512sums="
 fcaa17b3d963785f7ec27b77009f8a5e6a11f032ada49f4905c7bc778c37b0dcaa80b2c7b6d5177ec4a6be0054973b117c49eeec39d677ae547ff86e76adaf0e  kwin-6.8.3.tar.xz
 1b22bc11a826561656a86139209348a089d3da7b1d8440bb691f450be4e6009e170ff39c7df7510bfdeed1425b4920b29b47b53320475831413f1e01da5f20fc  0001-slidingpopups-advance-animations-in-prePaintScreen.patch
 d27fc3ea6174fae6d2eab069bd072d5cbbc5740b3b1293e6a7b9b6fdebccceb8af3322eb873778254798e774f0ca75cc3c7d088e876ed8496e6c93d4301cad8d  0002-opengl-specialise-colour-transform-shaders.patch
+ea371efa25ed7ab35a3828f9ade2670934ee059e06fd551990cb7eba5432d0a61a661dbaf99457483cec2a10b139a102888a462d67ae5a839adf9f2f18bc170d  0003-quickeffect-Only-forward-touch-and-tablet-input-to-a.patch
+52cfe8917fa339d5511a224972f4e9a141eed9b258d1ee8281883d0e5abc64b30363c1b89c5dc035e5cef01e5a0e0182e6288e7b38b0639ad8de52f5adebe800  0004-scripting-windowthumbnailitem-Hold-no-source-while-t.patch
+7935747c720f7bab112c2a462806b7633f9030189d1638784d9b51b147d4f946817887b02c4bd89789ae14a217761f4dc2bf4dd3d913c4dcb9729a5b99919b49  0005-effect-offscreenquickview-Cancel-touches-when-the-vi.patch
 "

@@ -1,0 +1,40 @@
+From b128acb577ecfd65a06c43e07d06df2755bd8968 Mon Sep 17 00:00:00 2001
+From: Ryan Brue <ryanbrue.dev@gmail.com>
+Date: Sun, 15 Nov 2026 13:14:38 -0600
+Subject: [PATCH] MarqueeLabel: Scroll through the text once each time it is
+ shown
+
+An overflowing label scrolled in an endless loop while its window was
+visible. Every step redraws the label's layer and its mask, so the window,
+and the compositor with it, rendered every frame for as long as the window
+stayed open: the action drawer did so whenever one quick settings label was
+slightly too long for its tile. Scroll once each time the label is shown,
+which still reveals the whole text.
+---
+ components/mobileshell/qml/components/MarqueeLabel.qml | 6 ++++--
+ 1 file changed, 4 insertions(+), 2 deletions(-)
+
+diff --git a/components/mobileshell/qml/components/MarqueeLabel.qml b/components/mobileshell/qml/components/MarqueeLabel.qml
+index 8100b1797..6a72b1ba3 100644
+--- a/components/mobileshell/qml/components/MarqueeLabel.qml
++++ b/components/mobileshell/qml/components/MarqueeLabel.qml
+@@ -88,12 +88,14 @@ Item {
+         }
+     }
+ 
+-    // if the label is overflowing, this animation in a loop smoothly scrolling thought the text
++    // if the label is overflowing, this animation smoothly scrolls through the text once each
++    // time the label is shown: looping would keep the window rendering every frame for as long
++    // as it stays open
+     SequentialAnimation {
+         id: textAnimationLoop
+         running: root.shouldAnimate
+         onRunningChanged: row.scrollPosition = 0
+-        loops: Animation.Infinite
++        loops: 1
+         PauseAnimation { duration: root.waitDuration }
+         NumberAnimation { target: row; property: "scrollPosition"; from: 0; to: -root.textAdvanceWidth - row.spacing; duration: (root.textAdvanceWidth + row.spacing) / root.scrollSpeed }
+     }
+-- 
+2.56.0
+

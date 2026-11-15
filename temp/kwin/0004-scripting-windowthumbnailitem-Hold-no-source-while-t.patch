@@ -1,0 +1,44 @@
+From a06465d181d6f58d09372684555774abe67ae749 Mon Sep 17 00:00:00 2001
+From: Ryan Brue <ryanbrue.dev@gmail.com>
+Date: Sat, 14 Nov 2026 23:26:28 -0600
+Subject: [PATCH 4/5] scripting/windowthumbnailitem: Hold no source while the
+ item is hidden
+
+A WindowThumbnailSource keeps its window rendering offscreen, which runs a
+frame callback timer at the output's refresh rate for the window, and it
+re-renders the thumbnail on every frame the window is damaged. A hidden
+thumbnail still held one, so an effect that keeps its scene around while
+hidden (QuickSceneEffect view caching) kept every thumbnailed window busy.
+Create the source only while the item is visible.
+---
+ src/scripting/windowthumbnailitem.cpp | 7 +++++--
+ 1 file changed, 5 insertions(+), 2 deletions(-)
+
+diff --git a/src/scripting/windowthumbnailitem.cpp b/src/scripting/windowthumbnailitem.cpp
+index cc373fcc44..b85eeed9cd 100644
+--- a/src/scripting/windowthumbnailitem.cpp
++++ b/src/scripting/windowthumbnailitem.cpp
+@@ -270,7 +270,7 @@ void WindowThumbnailItem::invalidateSceneGraph()
+ 
+ void WindowThumbnailItem::itemChange(QQuickItem::ItemChange change, const QQuickItem::ItemChangeData &value)
+ {
+-    if (change == QQuickItem::ItemSceneChange) {
++    if (change == QQuickItem::ItemSceneChange || change == QQuickItem::ItemVisibleHasChanged) {
+         updateSource();
+     }
+     QQuickItem::itemChange(change, value);
+@@ -302,7 +302,10 @@ void WindowThumbnailItem::releaseOpenGlResources()
+ 
+ void WindowThumbnailItem::updateSource()
+ {
+-    if (useGlThumbnails() && window() && m_client) {
++    // A source keeps the window rendering offscreen and is updated on every
++    // frame the window is damaged, so only hold one while the thumbnail can
++    // be seen.
++    if (useGlThumbnails() && window() && m_client && isVisible()) {
+         m_source = WindowThumbnailSource::getOrCreate(window(), m_client);
+         connect(m_source.get(), &WindowThumbnailSource::changed, this, &WindowThumbnailItem::update);
+     } else {
+-- 
+2.56.0
+

@@ -1,0 +1,55 @@
+From d89867f6719499901df1b98cfe38fde53ac57b43 Mon Sep 17 00:00:00 2001
+From: Ryan Brue <ryanbrue.dev@gmail.com>
+Date: Sat, 14 Nov 2026 23:02:18 -0600
+Subject: [PATCH 3/5] quickeffect: Only forward touch and tablet input to a
+ running effect
+
+The effects handler hands touch and tablet events to every loaded effect,
+not only the active ones. QuickSceneEffect forwarded them to its views
+whether or not it was running, which did not matter while stopping an
+effect destroyed its views. With view caching enabled, a stopped effect
+keeps its hidden views, and a full-screen one then swallows every touch on
+the screen until it is started again.
+---
+ src/effect/quickeffect.cpp | 11 +++++++++++
+ 1 file changed, 11 insertions(+)
+
+diff --git a/src/effect/quickeffect.cpp b/src/effect/quickeffect.cpp
+index b3f8fb3b0d..47c25450bb 100644
+--- a/src/effect/quickeffect.cpp
++++ b/src/effect/quickeffect.cpp
+@@ -737,6 +737,9 @@ void QuickSceneEffect::pointerAxis(PointerAxisEvent *event)
+ 
+ bool QuickSceneEffect::tabletToolAxis(TabletToolAxisEvent *event)
+ {
++    if (!d->running) {
++        return false;
++    }
+     auto mouseEvent = new PointerMotionEvent{
+         .device = event->device,
+         .position = event->position,
+@@ -754,6 +757,9 @@ bool QuickSceneEffect::tabletToolAxis(TabletToolAxisEvent *event)
+ 
+ bool QuickSceneEffect::tabletToolTip(TabletToolTipEvent *event)
+ {
++    if (!d->running) {
++        return false;
++    }
+     auto mouseEvent = new KWin::PointerButtonEvent{
+         .device = event->device,
+         .position = event->position,
+@@ -772,6 +778,11 @@ bool QuickSceneEffect::tabletToolTip(TabletToolTipEvent *event)
+ 
+ bool QuickSceneEffect::touchDown(qint32 id, const QPointF &pos, std::chrono::microseconds time)
+ {
++    // Touch reaches every loaded effect; a stopped effect may still hold
++    // its views if view caching is enabled.
++    if (!d->running) {
++        return false;
++    }
+     for (const auto &[screen, screenView] : d->views) {
+         if (screenView->geometry().contains(pos.toPoint())) {
+             activateView(screenView.get());
+-- 
+2.56.0
+

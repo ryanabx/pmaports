@@ -1,0 +1,68 @@
+From 3c8c6dd8df8a762787958cece370932c9ca8b986 Mon Sep 17 00:00:00 2001
+From: Ryan Brue <ryanbrue.dev@gmail.com>
+Date: Sun, 15 Nov 2026 01:04:56 -0600
+Subject: [PATCH 1/2] taskswitcher: Hide window thumbnails while the effect is
+ not shown
+
+With view caching the switcher's scene outlives each run of the effect. A
+window thumbnail keeps its window rendering offscreen, so hide the
+thumbnails while the effect is not shown.
+---
+ kwin/mobiletaskswitcher/package/contents/ui/Task.qml |  2 ++
+ .../package/contents/ui/TaskSwitcher.qml             | 12 ++++++++++++
+ 2 files changed, 14 insertions(+)
+
+diff --git a/kwin/mobiletaskswitcher/package/contents/ui/Task.qml b/kwin/mobiletaskswitcher/package/contents/ui/Task.qml
+index c2c339958..36b2a283d 100644
+--- a/kwin/mobiletaskswitcher/package/contents/ui/Task.qml
++++ b/kwin/mobiletaskswitcher/package/contents/ui/Task.qml
+@@ -239,6 +239,8 @@ Item {
+                         id: thumbSource
+                         wId: delegate.window.internalId
+                         anchors.fill: item
++                        // A thumbnail keeps its window rendering offscreen
++                        visible: delegate.taskSwitcher.viewShown
+                     }
+ 
+                     Rectangle {
+diff --git a/kwin/mobiletaskswitcher/package/contents/ui/TaskSwitcher.qml b/kwin/mobiletaskswitcher/package/contents/ui/TaskSwitcher.qml
+index ca3908eff..01b66bc70 100644
+--- a/kwin/mobiletaskswitcher/package/contents/ui/TaskSwitcher.qml
++++ b/kwin/mobiletaskswitcher/package/contents/ui/TaskSwitcher.qml
+@@ -161,14 +161,24 @@ FocusScope {
+         state.deactivate(false);
+     }
+ 
++    // Whether the effect is showing this view. With view caching the view
++    // outlives the effect's runs, so window thumbnails follow this rather
++    // than their own lifetime.
++    property bool viewShown: true
++
+     Connections {
+         target: root.state
+ 
+         function onActivated(): void {
++            root.viewShown = true;
+             root.tasksModel.refresh();
+             root.initialSetup();
+         }
+ 
++        function onDeactivated(): void {
++            root.viewShown = false;
++        }
++
+         // task scrub mode allows scrubbing through a number of tasks with a mostly horizontal motion
+         function taskScrubMode(): void {
+             taskList.setTaskOffsetValue(0, false, Easing.OutQuart);
+@@ -454,6 +464,8 @@ FocusScope {
+         activity: KWinComponents.Workspace.currentActivity
+         desktop: KWinComponents.Workspace.currentDesktop
+         outputName: root.targetScreen.name
++        // A thumbnail of the desktop window, so the same applies to it
++        visible: root.viewShown
+     }
+ 
+     // background colour
+-- 
+2.56.0
+

@@ -1,0 +1,140 @@
+# Forked from Alpine's community/plasma-mobile (master, 6.8.3-r0, 2026-11-15)
+# for amazon-suez: 0001-0002 turn the task switcher's KWin view caching back
+# on (upstream disabled it in 0113ff773 for background CPU), with window
+# thumbnails and the desktop background hidden while the switcher is not
+# shown. Every open after the first no longer rebuilds the switcher's QML
+# scene and buffers: worst frame per open 176-304 -> 64-128 ms on the GX6250,
+# KWin idle CPU unchanged. Needs temp/kwin r102 (0003-0005). LOCAL until
+# upstream has them (unsent; suez-work notes/PLASMA-LOCKSCREEN-REDRAW-2026-11-14.md
+# §11, §12). 0003 (r101) makes MarqueeLabel scroll once each time it is
+# shown instead of looping: one quick settings label that overflowed its tile
+# by 2 px kept the action drawer, and KWin, rendering every frame while it was
+# open (§13).
+#
+# pkgrel is far above Alpine's so that a rebuild of the same version does not
+# silently replace it; rebase onto each new plasma-mobile version.
+# The group tag is just to easily find this APKBUILD by some scripts for automation
+# group=kde-plasma
+maintainer="team/kde <bribbers@disroot.org>"
+pkgname=plasma-mobile
+pkgver=6.8.3
+pkgrel=101
+pkgdesc="Modules providing phone functionality for Plasma"
+# armhf blocked by qt6-qtdeclarative
+arch="all !armhf"
+url="https://www.plasma-mobile.org/"
+license="GPL-2.0-or-later AND LGPL-2.1-or-later"
+depends="
+	bluez-qt
+	breeze-icons
+	dbus-x11
+	feedbackd
+	kpipewire
+	kquickcharts
+	plasma-activities
+	plasma-keyboard
+	plasma-nano
+	plasma-nm
+	plasma-pa
+	plasma-settings
+	plasma-workspace
+	qqc2-breeze-style
+	"
+makedepends="
+	extra-cmake-modules
+	kauth-dev
+	kbookmarks-dev
+	kcodecs-dev
+	kcompletion-dev
+	kconfig-dev
+	kconfigwidgets-dev
+	kcoreaddons-dev
+	kdbusaddons-dev
+	kdeclarative-dev
+	ki18n-dev
+	kio-dev
+	kirigami-addons-dev
+	kitemviews-dev
+	kjobwidgets-dev
+	knotifications-dev
+	kpackage-dev
+	kpeople-dev
+	kservice-dev
+	kwayland-dev
+	kwidgetsaddons-dev
+	kwin-dev
+	kwindowsystem-dev
+	kxmlgui-dev
+	libphonenumber-dev
+	libplasma-dev
+	modemmanager-qt-dev
+	networkmanager-qt-dev
+	plasma-activities-dev
+	plasma-workspace-dev
+	qcoro-dev
+	qt6-qtdeclarative-dev
+	samurai
+	solid-dev
+	"
+subpackages="
+	$pkgname-dbg
+	$pkgname-lang
+	$pkgname-systemd
+	$pkgname-waydroid
+	"
+provides="plasma-phone-components=$pkgver-r$pkgrel" # For backwards compatibility
+replaces="plasma-phone-components" # For backwards compatibility
+
+
+case "$pkgver" in
+	*.*.9*) _rel=unstable;;
+	*) _rel=stable;;
+esac
+_repo_url="https://invent.kde.org/plasma/plasma-mobile.git"
+source="https://download.kde.org/$_rel/plasma/$pkgver/plasma-mobile-$pkgver.tar.xz
+	99-flashlight.rules
+	0001-taskswitcher-Hide-window-thumbnails-while-the-effect.patch
+	0002-taskswitcher-Re-enable-view-caching.patch
+	0003-MarqueeLabel-Scroll-through-the-text-once-each-time-.patch
+	"
+
+build() {
+	cmake -B build -G Ninja \
+		-DCMAKE_BUILD_TYPE=RelWithDebInfo \
+		-DCMAKE_INSTALL_PREFIX=/usr \
+		-DCMAKE_INSTALL_LIBDIR=lib \
+		-DINSTALL_SYSTEMD_SERVICE=ON
+	cmake --build build
+}
+
+check() {
+	ctest --test-dir build
+}
+
+package() {
+	DESTDIR="$pkgdir" cmake --install build
+
+	install -Dm644 "$srcdir"/99-flashlight.rules -t "$pkgdir"/usr/lib/udev/rules.d/
+}
+
+waydroid() {
+	pkgdesc="$pkgdesc - Waydroid integration"
+	install_if="$pkgname=$pkgver-r$pkgrel waydroid"
+
+	amove usr/lib/libexec/kf6/kauth/waydroidhelper
+	amove usr/lib/qt6/plugins/plasma/kcms/systemsettings/kcm_waydroidintegration.so
+	amove usr/lib/qt6/qml/org/kde/plasma/private/mobileshell/waydroidintegrationplugin
+	amove usr/share/applications/kcm_waydroidintegration.desktop
+	amove usr/share/dbus-1/system-services/*waydroidhelper.service
+	amove usr/share/dbus-1/system.d/*waydroidhelper.conf
+	amove usr/share/plasma/quicksettings/*waydroid
+	amove usr/share/polkit-1/actions/*waydroidhelper.policy
+}
+
+sha512sums="
+ae1c389294e2ba3393ba3b001fa88a959f3babfd0cbb06df735d35ab039255d73d6a7499d66a7bd98647b848385e4e545a25bc1b1420ecfd564c28c21067704c  plasma-mobile-6.8.3.tar.xz
+4badc25cbb7dc84d6af54cff5f3c09dcc37da86b7e930bdcab6d75f8dd90ef0dd9c8a3837ab696b1f4de9cad82d5e64ddd44904640a92e910a8f45524542be95  99-flashlight.rules
+da5cc855424a4fe80999fcda4a6d486684f5e707510dfdc1269715e9166ee9ec354cd647ddf085783d6b509e32b855404d20765054278e0e99e474aefe707553  0001-taskswitcher-Hide-window-thumbnails-while-the-effect.patch
+055ad50759759b4db35830785392aa07c3b1e8e8ac8e4f026cb2c6e1043104cc6a0db24a5292ab3a90af595635cb4d615ade63af32d30318a35feb22e283be6e  0002-taskswitcher-Re-enable-view-caching.patch
+fa864826562998b8c5f90d5e5a75e8750432c86da0cbada729fa2adf11e1734abd91d534cb9dc2e2c8d06535f28fcf74808439ea257035d51ff94523885e2a41  0003-MarqueeLabel-Scroll-through-the-text-once-each-time-.patch
+"
