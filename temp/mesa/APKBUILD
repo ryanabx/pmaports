@@ -5,7 +5,9 @@
 # branch suez/pvr-desktop-pkg and are LOCAL EXPERIMENTS, NEVER TO BE SENT:
 # Imagination declines LLM-generated code in src/imagination. Evidence:
 # suez-work notes/PVR-DESKTOP-2026-11-04.md; book GPU chapter. 0020 (r2):
-# suez-work notes/PLASMA-LOCKSCREEN-REDRAW-2026-11-14.md §6.
+# suez-work notes/PLASMA-LOCKSCREEN-REDRAW-2026-11-14.md §6. 0021 (r3): same
+# note, §11 (window-sized images stored linearly: ~155 MB less pinned);
+# 0022 (r3): transfer submit scratch kept per context (task switcher).
 #
 # Trimmed to what suez uses: gallium zink and llvmpipe, Vulkan imagination
 # and lavapipe; no VA, no rusticl, no Vulkan layers. Do not merge this into
@@ -13,7 +15,7 @@
 maintainer="Ryan Brue <ryanbrue.dev@gmail.com>"
 pkgname=mesa
 pkgver=27.0.0_git20261110
-pkgrel=2
+pkgrel=3
 _commit="5304cac24b08b8f7d4da00464dff6e7bc1d4a07b"
 pkgdesc="Mesa DRI OpenGL library (amazon-suez PowerVR fork)"
 url="https://www.mesa3d.org"
@@ -94,6 +96,8 @@ source="mesa-$_commit.tar.gz::https://gitlab.freedesktop.org/mesa/mesa/-/archive
 	0018-PROTOTYPE-pco-enable-the-preamble-by-default.patch
 	0019-pvr-honour-explicit-DRM-modifier-plane-layouts-on-im.patch
 	0020-PROTOTYPE-pco-keep-branches-with-expensive-ALU-ops-a.patch
+	0021-PROTOTYPE-pvr-store-window-sized-images-linearly-ins.patch
+	0022-PROTOTYPE-pvr-reuse-the-transfer-submit-scratch-per-.patch
 	"
 builddir="$srcdir/mesa-$_commit"
 options="!check"
@@ -238,4 +242,6 @@ e2c48a59fa2f9fdd1bf99a05abf87089e8aeb2db120402e66e7d994037333346d1df4398d47834bd
 b71f9d529fa2b9b712c2d71cb1dd51a40c5b1918ea8a3a5cd32b6d59872fa83bf6331da716458146ae74a28d73bf181f62c943ba583e1eb41efc022b9f1af9f4  0018-PROTOTYPE-pco-enable-the-preamble-by-default.patch
 fedc8a263086c33aa049dd95959a3e7bd357cbaa4eef780c9cd0f865b918b59709c730d42816ebf5b840dd67843b5a2f92a0c200d4e43602d2cfd6585fb054bd  0019-pvr-honour-explicit-DRM-modifier-plane-layouts-on-im.patch
 4bfc9ac9d46281b5892d12eb46c4e7380d6f4f3a30ce01d287b5102c800605a02f3adc4f6624e3db95d5338b9ce10fc589d9400f9720b7f6be1eea0502ec4518  0020-PROTOTYPE-pco-keep-branches-with-expensive-ALU-ops-a.patch
+bed55080a541c13063e89f1bf29cab12f81faf0a6a6e8ea178a411b77ba958fa6694c8ab5e9651e1f800d278e753036361c970579cf36e6466d6be54076ff9a8  0021-PROTOTYPE-pvr-store-window-sized-images-linearly-ins.patch
+be3d6a71fb49f5f89faf80b4fbdc347bfc926c04593cf7d8132338d0fd6fca8bec1637a0b285d96cbcb613093c56f7f4ae4b81eb7f77413c429505e9efa36984  0022-PROTOTYPE-pvr-reuse-the-transfer-submit-scratch-per-.patch
 "

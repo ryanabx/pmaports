@@ -1,0 +1,101 @@
+From 3b79e00da871047857c0dc556c6d2a5b49d34fb6 Mon Sep 17 00:00:00 2001
+From: Ryan Brue <ryanbrue.dev@gmail.com>
+Date: Sat, 14 Nov 2026 22:42:09 -0600
+Subject: [PATCH] PROTOTYPE pvr: store window-sized images linearly instead of
+ twiddled
+
+Local measurement prototype for amazon-suez, never to be sent (Imagination
+declines LLM-generated code). A twiddled image is padded to power-of-two
+dimensions, so a 1200x1834 Plasma Mobile window's depth/stencil buffer or
+offscreen layer takes 2048x2048 texels, nearly twice its size, and all of
+it stays pinned. Single-level, single-layer 2D optimal images whose padding
+would waste more than a quarter of the allocation use the linear layout
+instead; linear depth/stencil images are rounded up to whole ZLS tiles.
+
+Measured on the board (Plasma Mobile, 2 interleaved boots per arm): pinned
+GPU memory after drawer use 660/659 -> 506/504 MB, available memory
+292-308 -> 437-442 MB, drawer frame pacing unchanged, no GPU faults.
+
+Generated-by: LLM
+---
+ src/imagination/vulkan/pvr_image.c | 43 ++++++++++++++++++++++++++++++
+ 1 file changed, 43 insertions(+)
+
+diff --git a/src/imagination/vulkan/pvr_image.c b/src/imagination/vulkan/pvr_image.c
+index 5b5689172a6..f7614994fb0 100644
+--- a/src/imagination/vulkan/pvr_image.c
++++ b/src/imagination/vulkan/pvr_image.c
+@@ -37,6 +37,7 @@
+ #include "pvr_macros.h"
+ #include "pvr_physical_device.h"
+ #include "pvr_tex_state.h"
++#include "hwdef/rogue_hw_utils.h"
+ #include "util/macros.h"
+ #include "util/u_math.h"
+ #include "vk_format.h"
+@@ -46,6 +47,25 @@
+ #include "vk_util.h"
+ #include "wsi_common.h"
+ 
++/* A twiddled image is padded to power-of-two dimensions, so a window-sized
++ * image (1200x1834, say) takes 2048x2048 texels: nearly twice its size, and
++ * pinned for as long as the image lives. When the padding would waste more
++ * than a quarter of the allocation, store a single-level, single-layer 2D
++ * image linearly instead.
++ */
++static bool pvr_image_twiddle_padding_is_wasteful(const struct pvr_image *image)
++{
++   const uint64_t w = image->vk.extent.width;
++   const uint64_t h = image->vk.extent.height;
++
++   if (image->vk.image_type != VK_IMAGE_TYPE_2D || image->vk.mip_levels > 1 ||
++       image->vk.array_layers > 1 || image->vk.samples > VK_SAMPLE_COUNT_1_BIT)
++      return false;
++
++   return util_next_power_of_two64(w) * util_next_power_of_two64(h) * 4 >
++          w * h * 5;
++}
++
+ static void pvr_image_init_memlayout(struct pvr_image *image)
+ {
+    switch (image->vk.tiling) {
+@@ -57,6 +77,8 @@ static void pvr_image_init_memlayout(struct pvr_image *image)
+          image->memlayout = PVR_MEMLAYOUT_LINEAR;
+       else if (image->vk.image_type == VK_IMAGE_TYPE_3D)
+          image->memlayout = PVR_MEMLAYOUT_3DTWIDDLED;
++      else if (pvr_image_twiddle_padding_is_wasteful(image))
++         image->memlayout = PVR_MEMLAYOUT_LINEAR;
+       else
+          image->memlayout = PVR_MEMLAYOUT_TWIDDLED;
+       break;
+@@ -390,6 +412,27 @@ VkResult pvr_image_init(struct pvr_device *device,
+ 
+    pvr_image_init_memlayout(image);
+    pvr_image_init_physical_extent(image, pCreateInfo, pbe_stride_align);
++
++   /* The ZLS loads and stores whole tiles: give a linear depth/stencil image
++    * whole tiles to hold them.
++    */
++   if (image->vk.tiling == VK_IMAGE_TILING_OPTIMAL &&
++       image->memlayout == PVR_MEMLAYOUT_LINEAR &&
++       vk_format_is_depth_or_stencil(image->vk.format)) {
++      uint32_t zls_tile_x, zls_tile_y;
++
++      rogue_get_zls_tile_size_xy(&device->pdevice->dev_info,
++                                 &zls_tile_x,
++                                 &zls_tile_y);
++      for (uint8_t i = 0; i < image->plane_count; i++) {
++         struct pvr_image_plane *plane = &image->planes[i];
++
++         plane->physical_extent.width =
++            align(plane->physical_extent.width, zls_tile_x);
++         plane->physical_extent.height =
++            align(plane->physical_extent.height, zls_tile_y);
++      }
++   }
+    pvr_image_setup_mip_levels(image, pCreateInfo);
+ 
+    return VK_SUCCESS;
+-- 
+2.56.0
+
