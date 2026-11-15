@@ -1,0 +1,43 @@
+From 0e994fe65021b14bf49f022335ae9c0770f5fd30 Mon Sep 17 00:00:00 2001
+From: Ryan Brue <ryanbrue.dev@gmail.com>
+Date: Sun, 15 Nov 2026 15:58:47 -0600
+Subject: [PATCH] BlurEffect: Draw neither the wallpaper nor the masked blur
+ under a full blur
+
+While the blur is at full opacity it covers the whole wallpaper, so drawing
+the wallpaper and the masked blur below it costs two full-screen layers
+that cannot be seen. Hide the wallpaper from the scene through the blur's
+source (it is still rendered into the blur) and the masked blur while the
+blur is full. On a PowerVR GX6250 tablet this takes plasmashell's frame
+during the app drawer animation from about 20.5 to 13.7 ms of GPU time.
+---
+ components/mobileshell/qml/homescreen/BlurEffect.qml | 6 ++++--
+ 1 file changed, 4 insertions(+), 2 deletions(-)
+
+diff --git a/components/mobileshell/qml/homescreen/BlurEffect.qml b/components/mobileshell/qml/homescreen/BlurEffect.qml
+index 163e0ebd6..092a52271 100644
+--- a/components/mobileshell/qml/homescreen/BlurEffect.qml
++++ b/components/mobileshell/qml/homescreen/BlurEffect.qml
+@@ -46,7 +46,8 @@ Loader {
+                     textureSize: controlledWallpaperSource.textureSize
+ 
+                     sourceItem: root.sourceLayer
+-                    hideSource: false
++                    // a full blur covers the whole source, so it need not be drawn as well
++                    hideSource: root.fullBlur >= 1
+                 }
+             }
+         }
+@@ -84,7 +85,8 @@ Loader {
+             anchors.fill: parent
+             source: controlledWallpaperSource
+             maskSource: blurMask
+-            visible: opacity > 0 && root.maskSourceLayer != null
++            // under a full blur the masked blur cannot be seen
++            visible: opacity > 0 && root.maskSourceLayer != null && root.fullBlur < 1
+         }
+     }
+ }
+-- 
+2.56.0
+
