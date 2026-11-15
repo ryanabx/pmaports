@@ -11,7 +11,10 @@
 # by 2 px kept the action drawer, and KWin, rendering every frame while it was
 # open (§13). 0004 (r102) draws neither the wallpaper nor the masked blur
 # under a full wallpaper blur: plasmashell's GPU time per app drawer frame
-# ~20.5 -> 13.7 ms (§15).
+# ~20.5 -> 13.7 ms (§15). 0005 (r103) masks the app drawer's edges only while
+# apps reach them: the drawer opens at 60 fps, ~70 MB less GPU memory (§16).
+# 0006 (r104) gives the quick settings panel the simple shadow: action drawer
+# frame 10.5 -> 6.2 ms GPU (§17).
 #
 # pkgrel is far above Alpine's so that a rebuild of the same version does not
 # silently replace it; rebase onto each new plasma-mobile version.
@@ -20,7 +23,7 @@
 maintainer="team/kde <bribbers@disroot.org>"
 pkgname=plasma-mobile
 pkgver=6.8.3
-pkgrel=102
+pkgrel=104
 pkgdesc="Modules providing phone functionality for Plasma"
 # armhf blocked by qt6-qtdeclarative
 arch="all !armhf"
@@ -99,6 +102,8 @@ source="https://download.kde.org/$_rel/plasma/$pkgver/plasma-mobile-$pkgver.tar.
 	0002-taskswitcher-Re-enable-view-caching.patch
 	0003-MarqueeLabel-Scroll-through-the-text-once-each-time-.patch
 	0004-BlurEffect-Draw-neither-the-wallpaper-nor-the-masked.patch
+	0005-folio-Mask-the-app-drawer-s-edges-only-while-apps-re.patch
+	0006-actiondrawer-Give-the-quick-settings-panel-the-simpl.patch
 	"
 
 build() {
@@ -141,4 +146,6 @@ da5cc855424a4fe80999fcda4a6d486684f5e707510dfdc1269715e9166ee9ec354cd647ddf08578
 055ad50759759b4db35830785392aa07c3b1e8e8ac8e4f026cb2c6e1043104cc6a0db24a5292ab3a90af595635cb4d615ade63af32d30318a35feb22e283be6e  0002-taskswitcher-Re-enable-view-caching.patch
 fa864826562998b8c5f90d5e5a75e8750432c86da0cbada729fa2adf11e1734abd91d534cb9dc2e2c8d06535f28fcf74808439ea257035d51ff94523885e2a41  0003-MarqueeLabel-Scroll-through-the-text-once-each-time-.patch
 d5198ae0fee98bf673c5670574369979938c40c1d1290af7e9a68bde50d3629e1ac029ad39301166aa548470c2ad332fb3b7274f67c2a9f89df6c228248b464f  0004-BlurEffect-Draw-neither-the-wallpaper-nor-the-masked.patch
+3c3484e56f4ea8f93e8afa5075f32b4de930a093b45879a4098b4a9669c354560691c7dd3c2c9f42c82096ec81579e3ea6bcb9c7c6230f41c3797e9d97993185  0005-folio-Mask-the-app-drawer-s-edges-only-while-apps-re.patch
+ba3105a350af1600325d1afa61fd17632a2ac3138dc3b3448b153470a691337fa2735fa84a07f8261c198082df447e0ae4ca53438579e0ee472a0bcb7b99aa18  0006-actiondrawer-Give-the-quick-settings-panel-the-simpl.patch
 "

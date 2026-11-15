@@ -1,0 +1,55 @@
+From 76ff233d096d1e1a78e4a0a514bf6c915523eaf5 Mon Sep 17 00:00:00 2001
+From: Ryan Brue <ryanbrue.dev@gmail.com>
+Date: Sun, 15 Nov 2026 17:29:27 -0600
+Subject: [PATCH] actiondrawer: Give the quick settings panel the simple shadow
+
+The quick settings panel sits on the action drawer's own background, which
+is 90 % opaque, so its MultiEffect shadow differs from the simple one by a
+few levels at most. The MultiEffect is redrawn on every frame the panel
+resizes, which is every frame of the drawer's animation. Add a simpleShadow
+property to PanelBackground and set it on the quick settings panel.
+
+On a PowerVR GX6250 tablet this takes plasmashell's frame during the drawer
+animation from about 10.5 to 6.2 ms of GPU time.
+---
+ .../qml/actiondrawer/private/QuickSettingsPanel.qml            | 2 ++
+ components/mobileshell/qml/components/PanelBackground.qml      | 3 ++-
+ 2 files changed, 4 insertions(+), 1 deletion(-)
+
+diff --git a/components/mobileshell/qml/actiondrawer/private/QuickSettingsPanel.qml b/components/mobileshell/qml/actiondrawer/private/QuickSettingsPanel.qml
+index 9a19b0c10..5a5534ce2 100644
+--- a/components/mobileshell/qml/actiondrawer/private/QuickSettingsPanel.qml
++++ b/components/mobileshell/qml/actiondrawer/private/QuickSettingsPanel.qml
+@@ -51,6 +51,8 @@ MobileShell.BaseItem {
+         anchors.fill: parent
+         anchors.margins: Kirigami.Units.largeSpacing
+         panelType: MobileShell.PanelBackground.PanelType.Base
++        // the drawer's own background is nearly opaque behind the panel, so the complex shadow cannot be seen
++        simpleShadow: true
+         opacity: brightnessPressedValue
+ 
+         Kirigami.Theme.inherit: false
+diff --git a/components/mobileshell/qml/components/PanelBackground.qml b/components/mobileshell/qml/components/PanelBackground.qml
+index e505b2641..a78e8115b 100644
+--- a/components/mobileshell/qml/components/PanelBackground.qml
++++ b/components/mobileshell/qml/components/PanelBackground.qml
+@@ -13,6 +13,7 @@ Item {
+     property real flatten: 0 // flattens out the border and shadow effects
+     property bool pressed: false // darkens the panel when true
+     property bool animate: false // animate panel color changes
++    property bool simpleShadow: false // use the cheap shadow, e.g. where the panel sits on an opaque backdrop that hides the complex one
+ 
+     enum PanelType {
+         Flat, // the base rectangle with no effects
+@@ -30,7 +31,7 @@ Item {
+                                             panelType === PanelBackground.PanelType.Popup ||
+                                             panelType === PanelBackground.PanelType.Wallpaper
+     // whether to use the complex shadow effect - note that this uses more performance
+-    readonly property bool complexShadow:   shadow &&
++    readonly property bool complexShadow:   shadow && !simpleShadow &&
+                                             (panelType === PanelBackground.PanelType.Base ||
+                                             panelType === PanelBackground.PanelType.Drawer ||
+                                             panelType === PanelBackground.PanelType.Popup ||
+-- 
+2.56.0
+

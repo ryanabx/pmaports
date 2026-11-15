@@ -1,0 +1,49 @@
+From 5b3f074b52d5ec652aa7c32ef8487c791cd90a58 Mon Sep 17 00:00:00 2001
+From: Ryan Brue <ryanbrue.dev@gmail.com>
+Date: Sun, 15 Nov 2026 16:55:53 -0600
+Subject: [PATCH] folio: Mask the app drawer's edges only while apps reach them
+
+The app drawer draws its grids through a full-size layer and an
+OpacityMask so that apps fade out under the header and the bottom margin.
+While no app reaches those edges (the grid is not scrolled and its apps fit
+above the bottom margin), the mask changes nothing on screen, yet every
+frame of the drawer's animation still composites the layer and its mask,
+and both keep full-size textures allocated. Enable the layer only while a
+grid's content reaches the faded edges.
+
+On a PowerVR GX6250 tablet with 14 apps this lets the app drawer open at
+60 fps and frees about 70 MB of GPU memory.
+---
+ containments/homescreens/folio/qml/AppDrawer.qml | 9 ++++++++-
+ 1 file changed, 8 insertions(+), 1 deletion(-)
+
+diff --git a/containments/homescreens/folio/qml/AppDrawer.qml b/containments/homescreens/folio/qml/AppDrawer.qml
+index 219dfc4a2..f021e229f 100644
+--- a/containments/homescreens/folio/qml/AppDrawer.qml
++++ b/containments/homescreens/folio/qml/AppDrawer.qml
+@@ -109,6 +109,13 @@ Item {
+             clip: true
+ 
+             onWidthChanged: folio.HomeScreenState.appDrawerPageWidth = width
++
++            // the edge fade only has something to fade while a grid's content reaches under it
++            function reachesEdges(grid: Flickable): bool {
++                return grid.contentHeight > grid.height - grid.topMargin - grid.bottomMargin
++                    || grid.contentY > -grid.topMargin + 0.5;
++            }
++            readonly property bool needsEdgeMask: reachesEdges(allAppsGrid) || reachesEdges(categoryGridView)
+             Component.onCompleted: folio.HomeScreenState.appDrawerPageWidth = width
+ 
+             Binding {
+@@ -172,7 +179,7 @@ Item {
+                 }
+             }
+ 
+-            layer.enabled: GraphicsInfo.api !== GraphicsInfo.Software
++            layer.enabled: GraphicsInfo.api !== GraphicsInfo.Software && swipeContainer.needsEdgeMask
+             layer.effect: OpacityMask {
+                 invert: true
+ 
+-- 
+2.56.0
+
