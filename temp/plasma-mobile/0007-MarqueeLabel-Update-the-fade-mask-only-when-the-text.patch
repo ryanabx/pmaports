@@ -1,0 +1,43 @@
+From c6500b929fd1184bbe322e39f9e09375ca145ee7 Mon Sep 17 00:00:00 2001
+From: Ryan Brue <ryanbrue.dev@gmail.com>
+Date: Sun, 15 Nov 2026 18:29:09 -0600
+Subject: [PATCH] MarqueeLabel: Update the fade mask only when the text leaves
+ or reaches its start
+
+The first stop of the mask's gradient was bound to the scroll position, so
+every step of the scroll re-evaluated it and redrew the mask, an extra
+render pass per label per frame. Bind it to whether the text is at its
+start, which changes twice per scroll.
+
+On a PowerVR GX6250 tablet, with five quick settings labels scrolling, this
+takes plasmashell from about 860 to 630 GPU jobs per action drawer close.
+---
+ components/mobileshell/qml/components/MarqueeLabel.qml | 5 ++++-
+ 1 file changed, 4 insertions(+), 1 deletion(-)
+
+diff --git a/components/mobileshell/qml/components/MarqueeLabel.qml b/components/mobileshell/qml/components/MarqueeLabel.qml
+index 6a72b1ba3..a4f3eef89 100644
+--- a/components/mobileshell/qml/components/MarqueeLabel.qml
++++ b/components/mobileshell/qml/components/MarqueeLabel.qml
+@@ -32,6 +32,9 @@ Item {
+ 
+     readonly property real textAdvanceWidth: txtMeter.advanceWidth // Cache TextMetrics.advanceWidth
+     readonly property bool charactersOverflowing: textAdvanceWidth > root.width // true when text is overflowing
++    // whether the text starts at the left edge, so the start of the fade is not needed; a bool, so
++    // the mask is only updated when this changes and not on every step of the scroll
++    readonly property bool textAtStart: row.scrollPosition == 0 || row.scrollPosition < -root.textAdvanceWidth
+     readonly property bool shouldAnimate: scrollingEnabled && charactersOverflowing && visible && Window.window && Window.window.visible
+ 
+     // update animation values and text positions whenever the label overflows or changes
+@@ -116,7 +119,7 @@ Item {
+             gradient: Gradient {
+                 orientation: Gradient.Horizontal
+ 
+-                GradientStop { position: 0; color: row.scrollPosition == 0 || row.scrollPosition < -root.textAdvanceWidth ? 'white' : 'transparent' } // remove the beginning of the gradient when at the start of the label so the front text is fully visible
++                GradientStop { position: 0; color: root.textAtStart ? 'white' : 'transparent' } // remove the beginning of the gradient when at the start of the label so the front text is fully visible
+                 GradientStop { position: 0 + mask.gradientPct; color: 'white' }
+                 GradientStop { position: 1.0 - mask.gradientPct; color: 'white' }
+                 GradientStop { position: 1.0; color: 'transparent' }
+-- 
+2.56.0
+
