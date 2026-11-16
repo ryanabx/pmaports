@@ -8,6 +8,9 @@
 # suez-work notes/PLASMA-LOCKSCREEN-REDRAW-2026-11-14.md §6. 0021 (r3): same
 # note, §11 (window-sized images stored linearly: ~155 MB less pinned);
 # 0022 (r3): transfer submit scratch kept per context (task switcher).
+# 0023-0024 (r4): the suballocator keeps up to eight emptied buffers, and the
+# render target cache holds 32 sizes: Plasma's drawers stop creating kernel
+# buffers every frame (action drawer close 48-64 -> 32 ms per frame).
 #
 # Trimmed to what suez uses: gallium zink and llvmpipe, Vulkan imagination
 # and lavapipe; no VA, no rusticl, no Vulkan layers. Do not merge this into
@@ -15,7 +18,7 @@
 maintainer="Ryan Brue <ryanbrue.dev@gmail.com>"
 pkgname=mesa
 pkgver=27.0.0_git20261110
-pkgrel=3
+pkgrel=4
 _commit="5304cac24b08b8f7d4da00464dff6e7bc1d4a07b"
 pkgdesc="Mesa DRI OpenGL library (amazon-suez PowerVR fork)"
 url="https://www.mesa3d.org"
@@ -98,6 +101,8 @@ source="mesa-$_commit.tar.gz::https://gitlab.freedesktop.org/mesa/mesa/-/archive
 	0020-PROTOTYPE-pco-keep-branches-with-expensive-ALU-ops-a.patch
 	0021-PROTOTYPE-pvr-store-window-sized-images-linearly-ins.patch
 	0022-PROTOTYPE-pvr-reuse-the-transfer-submit-scratch-per-.patch
+	0023-PROTOTYPE-pvr-keep-up-to-eight-emptied-suballocator-.patch
+	0024-PROTOTYPE-pvr-cache-render-targets-for-up-to-32-size.patch
 	"
 builddir="$srcdir/mesa-$_commit"
 options="!check"
@@ -244,4 +249,6 @@ fedc8a263086c33aa049dd95959a3e7bd357cbaa4eef780c9cd0f865b918b59709c730d42816ebf5
 4bfc9ac9d46281b5892d12eb46c4e7380d6f4f3a30ce01d287b5102c800605a02f3adc4f6624e3db95d5338b9ce10fc589d9400f9720b7f6be1eea0502ec4518  0020-PROTOTYPE-pco-keep-branches-with-expensive-ALU-ops-a.patch
 bed55080a541c13063e89f1bf29cab12f81faf0a6a6e8ea178a411b77ba958fa6694c8ab5e9651e1f800d278e753036361c970579cf36e6466d6be54076ff9a8  0021-PROTOTYPE-pvr-store-window-sized-images-linearly-ins.patch
 be3d6a71fb49f5f89faf80b4fbdc347bfc926c04593cf7d8132338d0fd6fca8bec1637a0b285d96cbcb613093c56f7f4ae4b81eb7f77413c429505e9efa36984  0022-PROTOTYPE-pvr-reuse-the-transfer-submit-scratch-per-.patch
+bbdc83b085939c9d433f83bc669b0f46beaeaab99bbac0ba1b9afc85ef3d7e8134399be4e9cab0809df151d84887e92c53afbbadb8658f911150d0a942c99a0e  0023-PROTOTYPE-pvr-keep-up-to-eight-emptied-suballocator-.patch
+1ff14204efaaa178d1b9c1ce4aa0838bdfee8c522c58126df94979da83100d61bd9a4211dee539fbe3157a9023095101ee8ee8316e1b0c6f4d642e00e55038de  0024-PROTOTYPE-pvr-cache-render-targets-for-up-to-32-size.patch
 "
