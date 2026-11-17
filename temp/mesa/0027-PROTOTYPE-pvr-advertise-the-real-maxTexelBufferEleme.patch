@@ -1,4 +1,4 @@
-From 82c65cd8bcaeaa30ce3f2f0d6dab1b50b78fcae7 Mon Sep 17 00:00:00 2001
+From 8b39ec1b18b3beabfbae3811cff9c21b7542a109 Mon Sep 17 00:00:00 2001
 From: Ryan Brue <ryanbrue.dev@gmail.com>
 Date: Mon, 16 Nov 2026 17:27:32 -0600
 Subject: [PATCH 27/35] PROTOTYPE pvr: advertise the real

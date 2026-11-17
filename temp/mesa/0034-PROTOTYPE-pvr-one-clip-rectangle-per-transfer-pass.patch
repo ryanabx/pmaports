@@ -1,4 +1,4 @@
-From 3097575e965005e5b4d35166f45854c337e7702b Mon Sep 17 00:00:00 2001
+From 606f3896df7d41b2cafbb36fb653008a5efce5b1 Mon Sep 17 00:00:00 2001
 From: Ryan Brue <ryanbrue.dev@gmail.com>
 Date: Tue, 17 Nov 2026 10:30:32 -0600
 Subject: [PATCH 34/35] PROTOTYPE pvr: one clip rectangle per transfer pass

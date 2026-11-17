@@ -1,4 +1,4 @@
-From f76e8aeae14559da266ebe74ad9c420e02882c32 Mon Sep 17 00:00:00 2001
+From da35d0623df1f6bfd49c2b82dc5a814fb0e5420a Mon Sep 17 00:00:00 2001
 From: Ryan Brue <ryanbrue.dev@gmail.com>
 Date: Mon, 16 Nov 2026 15:57:24 -0600
 Subject: [PATCH 26/35] PROTOTYPE pvr: cache the SPM end-of-tile shader too

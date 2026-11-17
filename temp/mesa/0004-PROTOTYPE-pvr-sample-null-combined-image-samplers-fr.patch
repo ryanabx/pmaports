@@ -1,4 +1,4 @@
-From 3097818cff7492e15b6c00cd35e7c4e23f2dd81c Mon Sep 17 00:00:00 2001
+From ee508be23c275168801b3777850d01f6ca197a97 Mon Sep 17 00:00:00 2001
 From: Ryan Brue <ryanbrue.dev@gmail.com>
 Date: Sat, 31 Oct 2026 01:15:26 -0500
 Subject: [PATCH 04/35] PROTOTYPE pvr: sample null combined image samplers from

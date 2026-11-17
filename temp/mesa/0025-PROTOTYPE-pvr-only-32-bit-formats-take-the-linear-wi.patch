@@ -1,4 +1,4 @@
-From f557fbc12fc60600cf05019dc62cd3fd775b752f Mon Sep 17 00:00:00 2001
+From 23c4ea8a2719d1a4e800c34694c3c4eeea894b4a Mon Sep 17 00:00:00 2001
 From: Ryan Brue <ryanbrue.dev@gmail.com>
 Date: Mon, 16 Nov 2026 13:31:47 -0600
 Subject: [PATCH 25/35] PROTOTYPE pvr: only 32-bit formats take the linear

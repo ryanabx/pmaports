@@ -1,4 +1,4 @@
-From 570042a1b7653ea05b94cab405073977ba20bfdb Mon Sep 17 00:00:00 2001
+From 3cd168994afa17734ae1ebcd2da84fcff6ed80b1 Mon Sep 17 00:00:00 2001
 From: Ryan Brue <ryanbrue.dev@gmail.com>
 Date: Thu, 5 Nov 2026 22:43:33 -0600
 Subject: [PATCH 18/35] PROTOTYPE pco: enable the preamble by default

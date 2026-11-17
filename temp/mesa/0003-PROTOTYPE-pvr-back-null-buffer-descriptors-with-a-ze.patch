@@ -1,4 +1,4 @@
-From f558cc869692ca779bd8d324fbbfd6c3d501b9e0 Mon Sep 17 00:00:00 2001
+From 6cf78a7cd180ff4f2953b59057421035f17eb912 Mon Sep 17 00:00:00 2001
 From: Ryan Brue <ryanbrue.dev@gmail.com>
 Date: Fri, 30 Oct 2026 23:15:30 -0500
 Subject: [PATCH 03/35] PROTOTYPE pvr: back null buffer descriptors with a

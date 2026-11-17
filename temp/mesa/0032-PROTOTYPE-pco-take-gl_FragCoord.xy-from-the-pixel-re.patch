@@ -1,4 +1,4 @@
-From 6b5b6e8f158d18d84736299f71b1155ccbacaeac Mon Sep 17 00:00:00 2001
+From 20276b227ac0560492f4f6e1ba5044bf3eacd92c Mon Sep 17 00:00:00 2001
 From: Ryan Brue <ryanbrue.dev@gmail.com>
 Date: Tue, 17 Nov 2026 09:50:31 -0600
 Subject: [PATCH 32/35] PROTOTYPE pco: take gl_FragCoord.xy from the pixel

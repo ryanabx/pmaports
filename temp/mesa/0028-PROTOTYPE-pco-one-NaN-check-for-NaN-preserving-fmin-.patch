@@ -1,4 +1,4 @@
-From 0911ff4edb9af5cb3b1b1ce144cd543b1ced741a Mon Sep 17 00:00:00 2001
+From 987a47fc811e9ae9fa5f41f4cc0d7ba7f90e6322 Mon Sep 17 00:00:00 2001
 From: Ryan Brue <ryanbrue.dev@gmail.com>
 Date: Mon, 16 Nov 2026 18:45:04 -0600
 Subject: [PATCH 28/35] PROTOTYPE pco: one NaN check for NaN-preserving

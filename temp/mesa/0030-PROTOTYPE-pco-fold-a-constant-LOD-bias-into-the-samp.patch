@@ -1,4 +1,4 @@
-From 3530b04ffa7c292bad9711995c397408193de950 Mon Sep 17 00:00:00 2001
+From 161a66f575fde49bee3dcd296f66db919c8dbf78 Mon Sep 17 00:00:00 2001
 From: Ryan Brue <ryanbrue.dev@gmail.com>
 Date: Tue, 17 Nov 2026 01:23:50 -0600
 Subject: [PATCH 30/35] PROTOTYPE pco: fold a constant LOD bias into the

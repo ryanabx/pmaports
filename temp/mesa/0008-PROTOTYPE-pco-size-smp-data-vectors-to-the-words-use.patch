@@ -1,4 +1,4 @@
-From 64d76c2185336438bd034ee01d497716add62e3c Mon Sep 17 00:00:00 2001
+From fafc999223bb902a08b5c2f14f7e342132b1f7cb Mon Sep 17 00:00:00 2001
 From: Ryan Brue <ryanbrue.dev@gmail.com>
 Date: Wed, 4 Nov 2026 06:24:51 -0600
 Subject: [PATCH 08/35] PROTOTYPE pco: size smp data vectors to the words used

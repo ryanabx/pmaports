@@ -1,4 +1,4 @@
-From 502b3bb521d7cf19bfbfde459145318df8a302bc Mon Sep 17 00:00:00 2001
+From 13865f32fb0b5f92a6fc2b72125f47cb3b7dffc1 Mon Sep 17 00:00:00 2001
 From: Ryan Brue <ryanbrue.dev@gmail.com>
 Date: Sat, 14 Nov 2026 14:28:48 -0600
 Subject: [PATCH 20/35] PROTOTYPE pco: keep branches with expensive ALU ops as
