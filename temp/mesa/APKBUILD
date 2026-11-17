@@ -26,6 +26,10 @@
 # 0029 (r9): pco commutes fadd/fmul/fmad sources instead of copying a
 # uniform out of S1 with a mov group per use (Firefox shaders -4.5 %,
 # Angelfish's -8 %, bit-exact).
+# 0030 (r10): pco folds a constant LOD bias into the sampler's own bias
+# (computed in the preamble) instead of passing it per pixel; biased samples
+# cost the texture unit ~2.5x. Skia biases by -0.475: Angelfish's 720p video
+# compositor pass 27 -> 6.4 ms, dropped frames 12.4 -> 0 per second.
 #
 # Trimmed to what suez uses: gallium zink and llvmpipe, Vulkan imagination
 # and lavapipe; no VA, no rusticl, no Vulkan layers. Do not merge this into
@@ -33,7 +37,7 @@
 maintainer="Ryan Brue <ryanbrue.dev@gmail.com>"
 pkgname=mesa
 pkgver=27.0.0_git20261110
-pkgrel=9
+pkgrel=10
 _commit="5304cac24b08b8f7d4da00464dff6e7bc1d4a07b"
 pkgdesc="Mesa DRI OpenGL library (amazon-suez PowerVR fork)"
 url="https://www.mesa3d.org"
@@ -123,6 +127,7 @@ source="mesa-$_commit.tar.gz::https://gitlab.freedesktop.org/mesa/mesa/-/archive
 	0027-PROTOTYPE-pvr-advertise-the-real-maxTexelBufferEleme.patch
 	0028-PROTOTYPE-pco-one-NaN-check-for-NaN-preserving-fmin-.patch
 	0029-PROTOTYPE-pco-commute-fadd-fmul-fmad-sources-instead.patch
+	0030-PROTOTYPE-pco-fold-a-constant-LOD-bias-into-the-samp.patch
 	"
 builddir="$srcdir/mesa-$_commit"
 options="!check"
@@ -276,4 +281,5 @@ c19030a5306af6ac9f38a6deb630a851b0bae05d36c7669d2165eae642f97f7d7bc4d613d0b0cedb
 0232fd823eabe832c5050d0ed6f17c1441da91a4e94eac3a71cbb6e5fb6df880c234a2784a04bcde3818e833d8390f37bc0e4a3311194679c959b293e7cebaaa  0027-PROTOTYPE-pvr-advertise-the-real-maxTexelBufferEleme.patch
 11ebdc4516257aeeaca376962aedc345d861e4694d6be24c13ea2cfec100df377268e119efd2f5f0c1b4700896061a377e146a0facba8e17c8d3537d7ee1319c  0028-PROTOTYPE-pco-one-NaN-check-for-NaN-preserving-fmin-.patch
 882578a642426e363d8a84ea200ca5477d9f048773d2f84e5933f9557baa3009d4b984119fbc1585b810096a62d540a6073701d993db999c75b7080ef1afae0d  0029-PROTOTYPE-pco-commute-fadd-fmul-fmad-sources-instead.patch
+f0250556712ac89b5dca8f360a733bb4fea65d6926b478186678d3148414a678640590e81552cf87b86864e99a9ba514dae92855283bc83cf624126a0bb93d71  0030-PROTOTYPE-pco-fold-a-constant-LOD-bias-into-the-samp.patch
 "

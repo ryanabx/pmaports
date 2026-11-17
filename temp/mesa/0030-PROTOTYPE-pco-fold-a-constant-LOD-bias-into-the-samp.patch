@@ -1,0 +1,357 @@
+From 2e1062945f603672e82e48395975fd6062ec4843 Mon Sep 17 00:00:00 2001
+From: Ryan Brue <ryanbrue.dev@gmail.com>
+Date: Tue, 17 Nov 2026 01:23:50 -0600
+Subject: [PATCH] PROTOTYPE pco: fold a constant LOD bias into the sampler
+ state
+
+A sample with an LOD bias passes the bias per pixel (lod_mode bias,
+pplod), and the texture unit then takes about 2.5x as long per sample
+as with the hardware's own per-quad LOD. Explicit gradients cost the
+same. Skia (Chromium's compositor) samples with a constant -0.475 bias,
+so on a GX6250 Angelfish's compositor pass for a 720p video took 27 ms
+instead of 6.
+
+For a constant bias, add it to the sampler's own LOD bias instead
+(dadjust: 5.8 fixed point, bits 0..12 of the first sampler word; its
++-16 range is the clamp Vulkan applies to the sum of both biases), and
+sample with normal LOD. Sample instructions read texture and sampler
+state from shared registers, so the modified words are computed by the
+preamble:
+
+- nir_opt_preamble may move load_{tex,smp}_state_pco (they are uniform
+  for a uniform index); pco gives them no cost of their own, so only
+  values computed from them are hoisted.
+- pco keeps a preamble value used only as texture/sampler state a
+  vector (4-aligned), and lower_smp takes each state from either its
+  descriptor or the preamble.
+- pco_opt_prop_hw_comps turns a comp from a hw vector into a hw
+  register (the preamble storing a state word) into a mov.
+
+Only samples in the function's top-level control flow with constant
+texture and sampler indices are folded, so the preamble can compute
+the state. If it still did not (out of preamble registers), lower_smp
+uses the descriptor's state and warns once: the bias is lost, not the
+draw.
+
+Images match the per-pixel bias exactly except where the bias is not a
+multiple of 1/256 and a trilinear filter blends two levels: at most 1
+in 255 in a channel.
+
+Generated-by: LLM
+---
+ src/compiler/nir/nir_opt_preamble.c    |  2 +
+ src/imagination/pco/pco_nir_preamble.c | 56 +++++++++++++++++++++++++-
+ src/imagination/pco/pco_nir_tex.c      | 47 +++++++++++++++++++++
+ src/imagination/pco/pco_opt.c          | 14 ++++++-
+ src/imagination/pco/pco_trans_nir.c    | 56 +++++++++++++++++---------
+ 5 files changed, 153 insertions(+), 22 deletions(-)
+
+diff --git a/src/compiler/nir/nir_opt_preamble.c b/src/compiler/nir/nir_opt_preamble.c
+index d9a8d133779..15703f667f7 100644
+--- a/src/compiler/nir/nir_opt_preamble.c
++++ b/src/compiler/nir/nir_opt_preamble.c
+@@ -236,6 +236,8 @@ can_move_intrinsic(nir_intrinsic_instr *instr, opt_preamble_ctx *ctx)
+    case nir_intrinsic_load_constant_agx:
+    case nir_intrinsic_bindless_image_agx:
+    case nir_intrinsic_bindless_sampler_agx:
++   case nir_intrinsic_load_tex_state_pco:
++   case nir_intrinsic_load_smp_state_pco:
+       return can_move_srcs(&instr->instr, ctx);
+ 
+    /* Image/SSBO loads can be moved if they are CAN_REORDER and their
+diff --git a/src/imagination/pco/pco_nir_preamble.c b/src/imagination/pco/pco_nir_preamble.c
+index cf0d8db09a1..c8f26eb4834 100644
+--- a/src/imagination/pco/pco_nir_preamble.c
++++ b/src/imagination/pco/pco_nir_preamble.c
+@@ -38,7 +38,10 @@ static void def_size(nir_def *def,
+ 
+    /* Bit -> DWORD granularity. */
+    *size = DIV_ROUND_UP(bit_size, 32u) * def->num_components;
+-   *align = 1u;
++   /* 4-wide values (texture/sampler state) at 4-aligned registers, as the
++    * descriptor state words are.
++    */
++   *align = *size == 4u ? 4u : 1u;
+ 
+    /* Use general for everything; all the image/sampler/etc. state would already
+     * be present in the same regbank as preamble regs, so we don't have to
+@@ -47,8 +50,22 @@ static void def_size(nir_def *def,
+    *class = nir_preamble_class_general;
+ }
+ 
+-static float instr_cost(UNUSED nir_instr *instr, UNUSED const void *data)
++static float instr_cost(nir_instr *instr, UNUSED const void *data)
+ {
++   /* Texture/sampler state is already in shared registers: copying it into
++    * the preamble gains nothing on its own, only what is computed from it
++    * (e.g. a sampler with a constant LOD bias folded in).
++    */
++   if (instr->type == nir_instr_type_intrinsic) {
++      switch (nir_instr_as_intrinsic(instr)->intrinsic) {
++      case nir_intrinsic_load_tex_state_pco:
++      case nir_intrinsic_load_smp_state_pco:
++         return 0.0f;
++      default:
++         break;
++      }
++   }
++
+    /* TODO: add an actual cost calculation. */
+    return 1.0f;
+ }
+@@ -123,12 +140,47 @@ bool pco_nir_opt_preamble(nir_shader *shader, pco_data *data)
+    return true;
+ }
+ 
++/* Whether a def is only used as texture/sampler state by sample
++ * instructions, which take the state as a vector of shared registers.
++ */
++static bool only_used_as_tex_smp_state(nir_def *def)
++{
++   nir_foreach_use_including_if (src, def) {
++      if (nir_src_is_if(src))
++         return false;
++
++      nir_instr *instr = nir_src_use_instr(src);
++      if (instr->type != nir_instr_type_intrinsic)
++         return false;
++
++      switch (nir_instr_as_intrinsic(instr)->intrinsic) {
++      case nir_intrinsic_smp_pco:
++      case nir_intrinsic_smp_coeffs_pco:
++      case nir_intrinsic_smp_raw_pco: {
++         nir_intrinsic_instr *smp = nir_instr_as_intrinsic(instr);
++         if (src != &smp->src[1] && src != &smp->src[2])
++            return false;
++         break;
++      }
++
++      default:
++         return false;
++      }
++   }
++
++   return true;
++}
++
+ static bool lower_vec_load_preamble(nir_builder *b, nir_intrinsic_instr *intr)
+ {
+    unsigned num_components = nir_intrinsic_dest_components(intr);
+    if (num_components == 1u)
+       return false;
+ 
++   /* Texture/sampler state computed in the preamble stays a vector. */
++   if (only_used_as_tex_smp_state(&intr->def))
++      return false;
++
+    unsigned base = nir_intrinsic_base(intr);
+    nir_preamble_class preamble_class = nir_intrinsic_preamble_class(intr);
+ 
+diff --git a/src/imagination/pco/pco_nir_tex.c b/src/imagination/pco/pco_nir_tex.c
+index f8d71cd4f49..3bb61f87d55 100644
+--- a/src/imagination/pco/pco_nir_tex.c
++++ b/src/imagination/pco/pco_nir_tex.c
+@@ -21,6 +21,7 @@
+ #include "pco_usclib.h"
+ #include "pvr_iface.h"
+ #include "util/macros.h"
++#include "util/rounding.h"
+ 
+ #include <assert.h>
+ #include <stdbool.h>
+@@ -255,6 +256,52 @@ nir_intrinsic_instr *pco_emit_nir_smp(nir_builder *b, pco_smp_params *params)
+       smp_flags.array = true;
+    }
+ 
++   /* A constant LOD bias with the sampler state in registers: fold it into
++    * the sampler's own LOD bias (dadjust, 5.8 fixed point in bits 0..12 of
++    * the first sampler word) instead of passing it with the coordinates.
++    * Per-pixel LOD sampling costs the texture unit about 2.5x per sample;
++    * the sampler bias is applied with the hardware's per-quad LOD. Vulkan
++    * clamps the sum of both biases to maxSamplerLodBias (16), the field's
++    * range.
++    */
++   nir_intrinsic_instr *smp_load =
++      params->smp_state && nir_def_is_intrinsic(params->smp_state)
++         ? nir_def_as_intrinsic(params->smp_state)
++         : NULL;
++   nir_intrinsic_instr *tex_load =
++      params->tex_state && nir_def_is_intrinsic(params->tex_state)
++         ? nir_def_as_intrinsic(params->tex_state)
++         : NULL;
++   /* The sample must be in the function's top-level control flow, so that
++    * the preamble can compute the modified state once per draw into shared
++    * registers (pco_nir_opt_preamble); sample instructions read their state
++    * from shared registers.
++    */
++   nir_block *cursor_block = nir_cursor_current_block(b->cursor);
++   bool top_level = cursor_block->cf_node.parent == &b->impl->cf_node;
++   if (params->lod_bias && smp_load && tex_load && !params->addr_lo &&
++       PCO_DEBUG(PREAMBLE) && top_level &&
++       smp_load->intrinsic == nir_intrinsic_load_smp_state_pco &&
++       tex_load->intrinsic == nir_intrinsic_load_tex_state_pco &&
++       nir_src_is_const(smp_load->src[0]) &&
++       nir_src_is_const(tex_load->src[0]) &&
++       nir_scalar_is_const(nir_get_scalar(params->lod_bias, 0))) {
++      float bias = nir_scalar_as_float(nir_get_scalar(params->lod_bias, 0));
++      int delta = _mesa_lroundevenf(
++         CLAMP(bias, -32.0f, 32.0f) *
++         256.0f);
++
++      nir_def *w0 = nir_channel(b, params->smp_state, 0);
++      nir_def *dadjust = nir_iand_imm(b, w0, 0x1fff);
++      dadjust = nir_iadd_imm(b, dadjust, delta);
++      dadjust = nir_imax(b, dadjust, nir_imm_int(b, 0));
++      dadjust = nir_imin(b, dadjust, nir_imm_int(b, 0x1fff));
++      w0 = nir_ior(b, nir_iand_imm(b, w0, ~0x1fffu), dadjust);
++
++      params->smp_state = nir_vector_insert_imm(b, params->smp_state, w0, 0);
++      params->lod_bias = NULL;
++   }
++
+    /* Emit LOD (if present). */
+    bool lod_present = false;
+    assert(!!params->lod_ddx == !!params->lod_ddy);
+diff --git a/src/imagination/pco/pco_opt.c b/src/imagination/pco/pco_opt.c
+index e6173336451..609293a92cb 100644
+--- a/src/imagination/pco/pco_opt.c
++++ b/src/imagination/pco/pco_opt.c
+@@ -606,8 +606,6 @@ static inline bool pco_opt_prop_hw_comps(pco_shader *shader)
+             continue;
+ 
+          pco_ref dest = instr->dest[0];
+-         assert(pco_ref_is_ssa(dest));
+-
+          unsigned offset = pco_ref_get_imm(instr->src[1]);
+ 
+          /* Construct a replacement scalar reference. */
+@@ -615,6 +613,18 @@ static inline bool pco_opt_prop_hw_comps(pco_shader *shader)
+          repl = pco_ref_chans(repl, 1);
+          repl = pco_ref_offset(repl, offset);
+ 
++         /* hw -> hw (e.g. one word of texture/sampler state stored by the
++          * preamble): a plain move.
++          */
++         if (!pco_ref_is_ssa(dest)) {
++            pco_builder b =
++               pco_builder_create(func, pco_cursor_before_instr(instr));
++            pco_mov(&b, dest, repl);
++            pco_instr_delete(instr);
++            progress = true;
++            continue;
++         }
++
+          progress |= try_prop_hw_comp(dest, repl, instr);
+ 
+          pco_instr_delete(instr);
+diff --git a/src/imagination/pco/pco_trans_nir.c b/src/imagination/pco/pco_trans_nir.c
+index ffa56d3420d..79c23d3b2fc 100644
+--- a/src/imagination/pco/pco_trans_nir.c
++++ b/src/imagination/pco/pco_trans_nir.c
+@@ -18,6 +18,7 @@
+ #include "pvr_iface.h"
+ #include "util/bitset.h"
+ #include "util/list.h"
++#include "util/log.h"
+ #include "util/macros.h"
+ #include "util/ralloc.h"
+ 
+@@ -2127,15 +2128,30 @@ static pco_instr *lower_smp(trans_ctx *tctx,
+    nir_intrinsic_instr *nir_tex_state = nir_src_as_intrinsic(intr->src[1]);
+    nir_intrinsic_instr *nir_smp_state = nir_src_as_intrinsic(intr->src[2]);
+ 
++   /* Sampler state with a constant LOD bias folded in that the preamble did
++    * not compute (e.g. out of preamble registers): use the descriptor's
++    * state, i.e. drop the bias, rather than fail. The state is
++    * vec4(modified word 0, load.y, load.z, load.w).
++    */
++   if (!nir_smp_state) {
++      nir_alu_instr *vec = nir_src_as_alu(intr->src[2]);
++      if (vec && vec->op == nir_op_vec4)
++         nir_smp_state = nir_src_as_intrinsic(vec->src[1].src);
++      assert(nir_smp_state &&
++             nir_smp_state->intrinsic == nir_intrinsic_load_smp_state_pco);
++      static bool warned;
++      if (!warned) {
++         mesa_logw("pco: LOD bias folded into a sampler not computed in the "
++                   "preamble; bias dropped");
++         warned = true;
++      }
++   }
++
+    assert(nir_intrinsic_dest_components(nir_tex_state) ==
+           ROGUE_NUM_TEXSTATE_DWORDS);
+    assert(nir_intrinsic_dest_components(nir_smp_state) ==
+           ROGUE_NUM_TEXSTATE_DWORDS);
+ 
+-   /* Either both are preamble state or neither are. */
+-   assert((nir_tex_state->intrinsic == nir_intrinsic_load_preamble) ==
+-          (nir_smp_state->intrinsic == nir_intrinsic_load_preamble));
+-
+    pco_ref tex_state;
+    pco_ref smp_state;
+ 
+@@ -2145,26 +2161,20 @@ static pco_instr *lower_smp(trans_ctx *tctx,
+    pco_ref smp_state_elem = pco_ref_null();
+    pco_ref smp_state_stride = pco_ref_null();
+ 
+-   bool is_dynidx_tex_state;
+-   bool is_dynidx_smp_state;
++   bool is_dynidx_tex_state = false;
++   bool is_dynidx_smp_state = false;
+ 
++   /* Each state is either loaded from its descriptor or computed in the
++    * preamble (e.g. a sampler with a constant LOD bias folded in); both end
++    * up in shared registers.
++    */
+    if (nir_tex_state->intrinsic == nir_intrinsic_load_preamble) {
+-      is_dynidx_tex_state = false;
+-      is_dynidx_smp_state = false;
+-
+       tex_state = pco_ref_hwreg_vec(nir_intrinsic_base(nir_tex_state),
+                                     PCO_REG_CLASS_SHARED,
+                                     ROGUE_NUM_TEXSTATE_DWORDS);
+-      smp_state = pco_ref_hwreg_vec(nir_intrinsic_base(nir_smp_state),
+-                                    PCO_REG_CLASS_SHARED,
+-                                    ROGUE_NUM_TEXSTATE_DWORDS);
+    } else {
+-      assert((nir_tex_state->intrinsic == nir_intrinsic_load_tex_state_pco) &&
+-             (nir_smp_state->intrinsic == nir_intrinsic_load_smp_state_pco));
+-
++      assert(nir_tex_state->intrinsic == nir_intrinsic_load_tex_state_pco);
+       is_dynidx_tex_state = !nir_src_is_const(nir_tex_state->src[0]);
+-      is_dynidx_smp_state = !nir_src_is_const(nir_smp_state->src[0]);
+-
+       tex_state = lookup_load_tex_smp_state(tctx,
+                                             nir_tex_state,
+                                             ROGUE_NUM_TEXSTATE_DWORDS,
+@@ -2172,7 +2182,15 @@ static pco_instr *lower_smp(trans_ctx *tctx,
+                                             false,
+                                             &tex_state_elem,
+                                             &tex_state_stride);
++   }
+ 
++   if (nir_smp_state->intrinsic == nir_intrinsic_load_preamble) {
++      smp_state = pco_ref_hwreg_vec(nir_intrinsic_base(nir_smp_state),
++                                    PCO_REG_CLASS_SHARED,
++                                    ROGUE_NUM_TEXSTATE_DWORDS);
++   } else {
++      assert(nir_smp_state->intrinsic == nir_intrinsic_load_smp_state_pco);
++      is_dynidx_smp_state = !nir_src_is_const(nir_smp_state->src[0]);
+       smp_state = lookup_load_tex_smp_state(tctx,
+                                             nir_smp_state,
+                                             ROGUE_NUM_TEXSTATE_DWORDS,
+@@ -2185,7 +2203,9 @@ static pco_instr *lower_smp(trans_ctx *tctx,
+    pco_ref shared_lod = pco_ref_null();
+ 
+    bool is_dyn = is_dynidx_tex_state || is_dynidx_smp_state;
+-   assert(!is_dyn || (nir_tex_state->intrinsic != nir_intrinsic_load_preamble));
++   /* A dynamically indexed state needs both elem/stride pairs. */
++   assert(!is_dyn || (nir_tex_state->intrinsic != nir_intrinsic_load_preamble &&
++                      nir_smp_state->intrinsic != nir_intrinsic_load_preamble));
+ 
+    pco_instr *smp =
+       pco_instr_create(tctx->func, !smp_flags.wrt, is_dyn ? 10u : 6u);
+-- 
+2.56.0
+
