@@ -3,7 +3,7 @@ maintainer="Ryan Brue <ryanbrue.dev@gmail.com>"
 pkgname=device-amazon-suez
 pkgdesc="Amazon Fire HD 10 (2017)"
 pkgver=5
-pkgrel=16
+pkgrel=17
 url="https://postmarketos.org"
 license="MIT"
 arch="aarch64"
@@ -25,6 +25,7 @@ makedepends="devicepkg-dev"
 # use for one; install_if means an image that already has vulkan-loader (any
 # of the UIs do) gets the driver, and a minimal one does not.
 subpackages="
+	$pkgname-firefox
 	$pkgname-vulkan
 "
 install="
@@ -55,6 +56,7 @@ source="
 	suez-mt6630-bdaddr@.service
 	suez-gtk-renderer.conf
 	suez-powervr-vulkan.conf
+	suez-prefs.js
 	suez-pstore-keep
 	suez-pstore-keep.conf
 	suez-stability.conf
@@ -283,6 +285,16 @@ package() {
 		"$pkgdir"/etc/systemd/user/pipewire-pulse.service
 }
 
+firefox() {
+	pkgdesc="Firefox ESR defaults for amazon-suez: render at the panel's fractional scale"
+	install_if="$pkgname=$pkgver-r$pkgrel firefox-esr"
+	# Firefox ESR ignores the 1.5 fractional scale by default, renders at 2x
+	# and KWin scales it down; at 1.5 its main pass costs about half the GPU.
+	# A default pref, so a profile can still override it.
+	install -Dm644 "$srcdir"/suez-prefs.js \
+		"$subpkgdir"/usr/lib/firefox-esr/defaults/pref/suez-prefs.js
+}
+
 vulkan() {
 	pkgdesc="Vulkan support for the PowerVR GX6250"
 	install_if="$pkgname=$pkgver-r$pkgrel vulkan-loader"
@@ -317,6 +329,7 @@ d2c153cb3af543a68ce8be24073a803fab66cd9561d003842658e77f7841abf4279bd83a21916a90
 90df791c68d4377cc6179406e6328d896b9ae72fcfa53dffca05498d3280901ad4aebad3cd05413171efc29d64f7779c91222517895ee53caef8b99dace1ea62  suez-mt6630-bdaddr@.service
 3fa35f1a7a891ded303efffb91880963d4872933f6e9d665d44f4bd6dfac2f38f5fe0ac535a57ea3bffc7ce4099dc10fa957840921bf420b53da10ce711bb1a6  suez-gtk-renderer.conf
 5c75e206ef78b51a328f2039d6410ca5fd01713e560b5bc87a1c6fedb0f7c94fbc4f2e698797d645a1027c8687ecf3d32535de949653ccdf18662b981a17fb22  suez-powervr-vulkan.conf
+93fe4fe082be244906dd1bdb16ec69527db4a4b702864b928f933cc39f16eae0228c987e49d0c94224263cfd8c4f89235bf200e0dbcf13f82a27d2d895159e88  suez-prefs.js
 4762ee3e6e81742afc0472e37c11939aafb0567005f426dad78d9ba80de478754bec3d98980b2582769db574d35b55cfb160fd019a205526a30dbb94b5bbb13b  suez-pstore-keep
 153c96069008f086467fcb7209f681783cd34b34d51485cd8e5073876d7331dea2f8b6b2f8e4399513dd84320f0685422fc202e307109a4a3a14b8ff7c399b46  suez-pstore-keep.conf
 35c47540da0f6adc6afecfa5ac1d2b2d10beef5cba655078fe7076c7a61af289ba586d0072cf88f4b918d0d07e1abbb98a7f00e362da38686e3767a5875199da  suez-stability.conf
