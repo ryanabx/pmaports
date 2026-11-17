@@ -20,6 +20,9 @@
 # state tracker refused its GPU PBO upload for anything larger and copied
 # on the CPU, waiting for the GPU (Firefox's video planes;
 # notes/BROWSER-PERF-2026-11-16.md in suez-work).
+# 0028 (r8): pco checks only src1 for NaN in NaN-preserving fmin/fmax
+# (min/max already return src1 for a NaN src0); every GLSL clamp() pays
+# this since 7e22c43f658; Firefox's YUV pass 15.9 -> 13.1 ms.
 #
 # Trimmed to what suez uses: gallium zink and llvmpipe, Vulkan imagination
 # and lavapipe; no VA, no rusticl, no Vulkan layers. Do not merge this into
@@ -27,7 +30,7 @@
 maintainer="Ryan Brue <ryanbrue.dev@gmail.com>"
 pkgname=mesa
 pkgver=27.0.0_git20261110
-pkgrel=7
+pkgrel=8
 _commit="5304cac24b08b8f7d4da00464dff6e7bc1d4a07b"
 pkgdesc="Mesa DRI OpenGL library (amazon-suez PowerVR fork)"
 url="https://www.mesa3d.org"
@@ -115,6 +118,7 @@ source="mesa-$_commit.tar.gz::https://gitlab.freedesktop.org/mesa/mesa/-/archive
 	0025-PROTOTYPE-pvr-only-32-bit-formats-take-the-linear-wi.patch
 	0026-PROTOTYPE-pvr-cache-the-SPM-end-of-tile-shader-too.patch
 	0027-PROTOTYPE-pvr-advertise-the-real-maxTexelBufferEleme.patch
+	0028-PROTOTYPE-pco-one-NaN-check-for-NaN-preserving-fmin-.patch
 	"
 builddir="$srcdir/mesa-$_commit"
 options="!check"
@@ -266,4 +270,5 @@ bbdc83b085939c9d433f83bc669b0f46beaeaab99bbac0ba1b9afc85ef3d7e8134399be4e9cab080
 0964e3de902b1574d7ae00aa38c06c59d2fad00fbc276359f30627a0fbaf8dc275925b1323d0e121bb96199bcd31de85c805f2a1d4e3c1c87e04fc3be26aa2a5  0025-PROTOTYPE-pvr-only-32-bit-formats-take-the-linear-wi.patch
 c19030a5306af6ac9f38a6deb630a851b0bae05d36c7669d2165eae642f97f7d7bc4d613d0b0cedb14b3602f71a97efb68008c370bcfef0128a3c82dc1ffb6ff  0026-PROTOTYPE-pvr-cache-the-SPM-end-of-tile-shader-too.patch
 0232fd823eabe832c5050d0ed6f17c1441da91a4e94eac3a71cbb6e5fb6df880c234a2784a04bcde3818e833d8390f37bc0e4a3311194679c959b293e7cebaaa  0027-PROTOTYPE-pvr-advertise-the-real-maxTexelBufferEleme.patch
+11ebdc4516257aeeaca376962aedc345d861e4694d6be24c13ea2cfec100df377268e119efd2f5f0c1b4700896061a377e146a0facba8e17c8d3537d7ee1319c  0028-PROTOTYPE-pco-one-NaN-check-for-NaN-preserving-fmin-.patch
 "
