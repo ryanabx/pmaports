@@ -1,13 +1,16 @@
-From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From de01e971e41738bd74f991e5879405752ffa9b21 Mon Sep 17 00:00:00 2001
 From: Ryan Brue <ryanbrue.dev@gmail.com>
 Date: Fri, 30 Oct 2026 22:38:55 -0500
-Subject: [PATCH] PROTOTYPE pvr: cache render targets for dynamic rendering
+Subject: [PATCH 02/35] PROTOTYPE pvr: cache render targets for dynamic
+ rendering
 
 Local measurement prototype for amazon-suez, never to be sent (Imagination
 declines LLM-generated code). From the 2026-10-09 fix3 prototype, rebased
 onto main: vkCmdBeginRendering() reuses the HWRT dataset and free list of
 an earlier dynamic render of the same size instead of creating and
 destroying them every time.
+
+(cherry picked from commit 97f49896990ec03bf44946ece75c5d3e3a97980f)
 ---
  src/imagination/vulkan/pvr_arch_cmd_buffer.c | 12 ++++
  src/imagination/vulkan/pvr_arch_device.c     |  5 ++
@@ -17,10 +20,10 @@ destroying them every time.
  5 files changed, 117 insertions(+)
 
 diff --git a/src/imagination/vulkan/pvr_arch_cmd_buffer.c b/src/imagination/vulkan/pvr_arch_cmd_buffer.c
-index 1ac8f4b90df..d037b675c56 100644
+index 307141246aa..c2154b529f0 100644
 --- a/src/imagination/vulkan/pvr_arch_cmd_buffer.c
 +++ b/src/imagination/vulkan/pvr_arch_cmd_buffer.c
-@@ -1284,6 +1284,9 @@ pvr_get_render_target(const struct pvr_renderpass_hwsetup_render *hw_render,
+@@ -1288,6 +1288,9 @@ pvr_get_render_target(const struct pvr_renderpass_hwsetup_render *hw_render,
        break;
     }
  
@@ -30,7 +33,7 @@ index 1ac8f4b90df..d037b675c56 100644
     return &rstate->render_targets[rt_idx];
  }
  
-@@ -1782,6 +1785,15 @@ static VkResult pvr_sub_cmd_gfx_job_init(const struct pvr_device_info *dev_info,
+@@ -1802,6 +1805,15 @@ static VkResult pvr_sub_cmd_gfx_job_init(const struct pvr_device_info *dev_info,
           spm_eot_state->pixel_event_program_data_offset;
     }
  

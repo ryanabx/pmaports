@@ -1,8 +1,8 @@
-From 95b7b1f21119a12afcad976e10c1662d53a829a9 Mon Sep 17 00:00:00 2001
+From 8645117faa62a1b46703206d1650d3dcca49b71b Mon Sep 17 00:00:00 2001
 From: Ryan Brue <ryanbrue.dev@gmail.com>
 Date: Tue, 17 Nov 2026 10:43:39 -0600
-Subject: [PATCH] PROTOTYPE pco: leave the default preamble off for compute
- shaders
+Subject: [PATCH 35/35] PROTOTYPE pco: leave the default preamble off for
+ compute shaders
 
 0018 turns Mesa !42747's preamble on by default for amazon-suez; it was
 measured on graphics only. On a GX6250 a compute shader that samples a
@@ -15,6 +15,7 @@ when PCO_DEBUG=preamble asks for it explicitly, as upstream. The constant
 LOD-bias fold, which needs the preamble, follows the same rule.
 
 Generated-by: LLM
+(cherry picked from commit 95b7b1f21119a12afcad976e10c1662d53a829a9)
 ---
  src/imagination/pco/pco_debug.c    | 10 +++++++++-
  src/imagination/pco/pco_internal.h |  9 +++++++++

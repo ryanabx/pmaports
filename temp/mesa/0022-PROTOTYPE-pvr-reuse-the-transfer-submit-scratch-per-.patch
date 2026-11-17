@@ -1,7 +1,8 @@
-From d856b6852a364bb2a72e8a2da1331068fa172884 Mon Sep 17 00:00:00 2001
+From 0a11ed22135dbe3ac12ee6e429044a10b13baacb Mon Sep 17 00:00:00 2001
 From: Ryan Brue <ryanbrue.dev@gmail.com>
 Date: Sat, 14 Nov 2026 23:13:38 -0600
-Subject: [PATCH] PROTOTYPE pvr: reuse the transfer submit scratch per context
+Subject: [PATCH 22/35] PROTOTYPE pvr: reuse the transfer submit scratch per
+ context
 
 Local measurement prototype for amazon-suez, never to be sent (Imagination
 declines LLM-generated code). The earlier prototype that moved struct
@@ -17,6 +18,7 @@ Measured on the board (task switcher, 4 opens/closes): longest close frame
 the flush thread's profile.
 
 Generated-by: LLM
+(cherry picked from commit d856b6852a364bb2a72e8a2da1331068fa172884)
 ---
  src/imagination/vulkan/pvr_arch_job_context.c |  1 +
  .../vulkan/pvr_arch_job_transfer.c            | 34 ++++++++++---------

@@ -1,7 +1,7 @@
-From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From 570042a1b7653ea05b94cab405073977ba20bfdb Mon Sep 17 00:00:00 2001
 From: Ryan Brue <ryanbrue.dev@gmail.com>
 Date: Thu, 5 Nov 2026 22:43:33 -0600
-Subject: [PATCH] PROTOTYPE pco: enable the preamble by default
+Subject: [PATCH 18/35] PROTOTYPE pco: enable the preamble by default
 
 Local experiment for amazon-suez, never to be sent (Imagination declines
 LLM-generated code in src/imagination).
@@ -13,6 +13,7 @@ the packaged driver needs no PCO_DEBUG in the session environment. The
 switch is part of the pipeline cache key.
 
 Generated-by: LLM
+(cherry picked from commit f890252b612e58574c98ac51995354945a713ada)
 ---
  src/imagination/pco/pco_debug.c            | 6 ++++++
  src/imagination/vulkan/pvr_arch_pipeline.c | 1 +

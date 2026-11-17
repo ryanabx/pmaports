@@ -1,7 +1,8 @@
-From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From 82c65cd8bcaeaa30ce3f2f0d6dab1b50b78fcae7 Mon Sep 17 00:00:00 2001
 From: Ryan Brue <ryanbrue.dev@gmail.com>
 Date: Mon, 16 Nov 2026 17:27:32 -0600
-Subject: [PATCH] PROTOTYPE pvr: advertise the real maxTexelBufferElements
+Subject: [PATCH 27/35] PROTOTYPE pvr: advertise the real
+ maxTexelBufferElements
 
 Buffer views are linear 2D images PVR_BUFFER_VIEW_WIDTH (8192) texels
 wide, and pco lowers a buffer index to (i % 8192, i / 8192), so the limit
@@ -12,12 +13,13 @@ CPU, waiting for the GPU each time: Firefox's video planes (1280x720 R8)
 took that path. 4096 rows matches maxImageDimension2D.
 
 Generated-by: LLM
+(cherry picked from commit bd821bb551393db6bd8e237d6d59ec5ca50c269b)
 ---
  src/imagination/vulkan/pvr_physical_device.c | 7 ++++++-
  1 file changed, 6 insertions(+), 1 deletion(-)
 
 diff --git a/src/imagination/vulkan/pvr_physical_device.c b/src/imagination/vulkan/pvr_physical_device.c
-index 1d1afdfdf58..5f66d75152a 100644
+index 01d248d84f9..8ad767855e2 100644
 --- a/src/imagination/vulkan/pvr_physical_device.c
 +++ b/src/imagination/vulkan/pvr_physical_device.c
 @@ -29,6 +29,7 @@
@@ -28,9 +30,9 @@ index 1d1afdfdf58..5f66d75152a 100644
  #include "pvr_device.h"
  #include "pvr_dump_info.h"
  #include "pvr_entrypoints.h"
-@@ -705,7 +706,11 @@ static bool pvr_physical_device_get_properties(
+@@ -710,7 +711,11 @@ static bool pvr_physical_device_get_properties(
        .maxImageDimension3D = pvr_get_texture_extent_max_z(dev_info),
-       .maxImageDimensionCube = 4096U,
+       .maxImageDimensionCube = max_render_size,
        .maxImageArrayLayers = rogue_get_render_size_max_z(dev_info),
 -      .maxTexelBufferElements = 64U * 1024U,
 +      /* Buffer views are linear 2D images PVR_BUFFER_VIEW_WIDTH texels wide

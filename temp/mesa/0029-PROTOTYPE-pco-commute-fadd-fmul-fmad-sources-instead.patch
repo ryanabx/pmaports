@@ -1,8 +1,8 @@
-From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From 09c8c3c7429ef711e0e7498d1e9f12516cd47b8c Mon Sep 17 00:00:00 2001
 From: Ryan Brue <ryanbrue.dev@gmail.com>
 Date: Mon, 16 Nov 2026 20:32:31 -0600
-Subject: [PATCH] PROTOTYPE pco: commute fadd/fmul/fmad sources instead of
- copying a shared register
+Subject: [PATCH 29/35] PROTOTYPE pco: commute fadd/fmul/fmad sources instead
+ of copying a shared register
 
 Shared and coefficient registers can only be read through S0, S2 and S3.
 A uniform in the second source of fadd/fmul/fmad (S1) was copied into a
@@ -13,12 +13,13 @@ Chromium's YUV shader (Angelfish) copied a matrix uniform before nearly
 every fmad.
 
 Generated-by: LLM
+(cherry picked from commit e3dc3d78915e113e3a99a20f4302110f21865c9c)
 ---
  src/imagination/pco/pco_legalize.c | 22 ++++++++++++++++++++++
  1 file changed, 22 insertions(+)
 
 diff --git a/src/imagination/pco/pco_legalize.c b/src/imagination/pco/pco_legalize.c
-index 5c0aef2517d..e5b2cdb0613 100644
+index 456e528a183..a2d2fc8cc0b 100644
 --- a/src/imagination/pco/pco_legalize.c
 +++ b/src/imagination/pco/pco_legalize.c
 @@ -99,6 +99,28 @@ static bool try_legalize_src_mappings(pco_instr *instr,

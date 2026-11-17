@@ -1,7 +1,7 @@
-From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From 502b3bb521d7cf19bfbfde459145318df8a302bc Mon Sep 17 00:00:00 2001
 From: Ryan Brue <ryanbrue.dev@gmail.com>
 Date: Sat, 14 Nov 2026 14:28:48 -0600
-Subject: [PATCH] PROTOTYPE pco: keep branches with expensive ALU ops as
+Subject: [PATCH 20/35] PROTOTYPE pco: keep branches with expensive ALU ops as
  branches
 
 nir_opt_peephole_select was allowed to flatten if/else blocks of up to
@@ -18,6 +18,7 @@ frame (20 to 30 fps presented); desktop drawer gestures unchanged.
 Local experiment: Imagination's driver does not take LLM-written code.
 
 Generated-by: LLM
+(cherry picked from commit c6529241cd1a07ee3c4b05793b3f9547ed5aa54d)
 ---
  src/imagination/pco/pco_nir.c | 2 +-
  1 file changed, 1 insertion(+), 1 deletion(-)

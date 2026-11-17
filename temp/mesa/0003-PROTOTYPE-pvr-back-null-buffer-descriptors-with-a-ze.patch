@@ -1,14 +1,16 @@
-From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From f558cc869692ca779bd8d324fbbfd6c3d501b9e0 Mon Sep 17 00:00:00 2001
 From: Ryan Brue <ryanbrue.dev@gmail.com>
 Date: Fri, 30 Oct 2026 23:15:30 -0500
-Subject: [PATCH] PROTOTYPE pvr: back null buffer descriptors with a zeroed
- buffer
+Subject: [PATCH 03/35] PROTOTYPE pvr: back null buffer descriptors with a
+ zeroed buffer
 
 Local measurement prototype for amazon-suez, never to be sent. Null
 uniform/storage buffer descriptors point at a 64 KiB zeroed buffer (size
 0) instead of address 0, and UBO accesses drop out of the null-descriptor
 lowering: no branch around every UBO load, so the preamble can hoist them
 (zink requires nullDescriptor). SSBOs, images and textures stay guarded.
+
+(cherry picked from commit 141f75229790087d6fbbaacdee8df707a267f0df)
 ---
  src/imagination/pco/pco_nir.c                   |  6 +++++-
  .../vulkan/pvr_arch_descriptor_set.c            | 17 +++++++++++++++--

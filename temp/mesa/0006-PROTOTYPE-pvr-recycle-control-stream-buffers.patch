@@ -1,12 +1,14 @@
-From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From 9b8d6d1625a5d22f15d38c1ad1ef215b6ec30b9e Mon Sep 17 00:00:00 2001
 From: Ryan Brue <ryanbrue.dev@gmail.com>
 Date: Sat, 31 Oct 2026 01:19:00 -0500
-Subject: [PATCH] PROTOTYPE pvr: recycle control stream buffers
+Subject: [PATCH 06/35] PROTOTYPE pvr: recycle control stream buffers
 
 Local measurement prototype for amazon-suez, never to be sent. Each
 graphics sub-command's control stream started on a new 4 KiB kernel
 buffer, freed again when the command buffer was reset. Keep up to 256 of
 them per device and reuse them, zeroed, as a new kernel buffer would be.
+
+(cherry picked from commit 4542b76ad0908f56ce8c50882641903c9807e155)
 ---
  src/imagination/vulkan/pvr_arch_csb.c    | 16 ++++---
  src/imagination/vulkan/pvr_arch_device.c |  4 ++

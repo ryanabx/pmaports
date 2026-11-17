@@ -1,8 +1,8 @@
-From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From 3097818cff7492e15b6c00cd35e7c4e23f2dd81c Mon Sep 17 00:00:00 2001
 From: Ryan Brue <ryanbrue.dev@gmail.com>
 Date: Sat, 31 Oct 2026 01:15:26 -0500
-Subject: [PATCH] PROTOTYPE pvr: sample null combined image samplers from a
- zero texture state
+Subject: [PATCH 04/35] PROTOTYPE pvr: sample null combined image samplers from
+ a zero texture state
 
 Local measurement prototype for amazon-suez, never to be sent. Null
 combined image samplers hold a 1x1 twiddled texture state over the zeroed
@@ -11,6 +11,8 @@ the null-descriptor lowering, so there is no branch around every sample
 (zink requires nullDescriptor). Texel buffers stay guarded: their null
 views are still zeroed. Known gaps: size queries on a null texture report
 1x1 instead of 0, and 3D or cube samples read a 2D state.
+
+(cherry picked from commit d9ec7ccffb858800dd8f19198a6b845d1d5c1cf8)
 ---
  src/imagination/pco/pco_nir.c                 |  7 ++++--
  .../pco/pco_nir_lower_null_descriptors.c      |  9 +++++--

@@ -1,7 +1,7 @@
-From f7a2b78122cba4483be27829d7c880987e4ed930 Mon Sep 17 00:00:00 2001
+From 3ccbf76cf4f86c2583e3d7ee476b50bd34f30ddc Mon Sep 17 00:00:00 2001
 From: Ryan Brue <ryanbrue.dev@gmail.com>
 Date: Sun, 15 Nov 2026 18:37:43 -0600
-Subject: [PATCH 24/24] PROTOTYPE pvr: cache render targets for up to 32 sizes
+Subject: [PATCH 24/35] PROTOTYPE pvr: cache render targets for up to 32 sizes
 
 The dynamic-rendering render target cache never evicts and held eight
 sizes, which one Plasma shell process fills (windows, panels, layers), so
@@ -9,6 +9,7 @@ every other size created a render target dataset and its free list for
 every render. Hold 32.
 
 Generated-by: LLM
+(cherry picked from commit f7a2b78122cba4483be27829d7c880987e4ed930)
 ---
  src/imagination/vulkan/pvr_device.h | 2 +-
  1 file changed, 1 insertion(+), 1 deletion(-)

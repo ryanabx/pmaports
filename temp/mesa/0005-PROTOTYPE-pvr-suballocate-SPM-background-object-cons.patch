@@ -1,11 +1,14 @@
-From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From bc57363de8096e154faafe9916b3ee936b637159 Mon Sep 17 00:00:00 2001
 From: Ryan Brue <ryanbrue.dev@gmail.com>
 Date: Sat, 31 Oct 2026 01:19:00 -0500
-Subject: [PATCH] PROTOTYPE pvr: suballocate SPM background-object constants
+Subject: [PATCH 05/35] PROTOTYPE pvr: suballocate SPM background-object
+ constants
 
 Local measurement prototype for amazon-suez, never to be sent. The
 background-object constants are a few dwords per render, but each
 vkCmdBeginRendering created a kernel buffer for them.
+
+(cherry picked from commit a3fa4254fc14d08bf77fa8768135f70bc4b65100)
 ---
  src/imagination/vulkan/pvr_arch_spm.c | 22 ++++++++++++----------
  src/imagination/vulkan/pvr_spm.c      |  2 +-

@@ -1,7 +1,8 @@
-From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From 0911ff4edb9af5cb3b1b1ce144cd543b1ced741a Mon Sep 17 00:00:00 2001
 From: Ryan Brue <ryanbrue.dev@gmail.com>
 Date: Mon, 16 Nov 2026 18:45:04 -0600
-Subject: [PATCH] PROTOTYPE pco: one NaN check for NaN-preserving fmin/fmax
+Subject: [PATCH 28/35] PROTOTYPE pco: one NaN check for NaN-preserving
+ fmin/fmax
 
 pco's min/max are "src0 < src1 ? src0 : src1" (">" for max) in one
 instruction group, and a comparison with a NaN operand is false, so a NaN
@@ -13,6 +14,7 @@ groups instead of three. GLSL min/max are NaN-preserving since
 (Firefox WebRender's YUV shader: 12 per pixel).
 
 Generated-by: LLM
+(cherry picked from commit 4d2cb802c6067c057cac303f0c3cac429b6a6fd5)
 ---
  src/imagination/pco/pco_nir_alu.c | 13 +++++--------
  1 file changed, 5 insertions(+), 8 deletions(-)

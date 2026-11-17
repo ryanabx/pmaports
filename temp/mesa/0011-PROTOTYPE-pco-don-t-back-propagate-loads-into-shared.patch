@@ -1,7 +1,7 @@
-From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From 2e74be9814d445f58207197816997e95df6685a6 Mon Sep 17 00:00:00 2001
 From: Ryan Brue <ryanbrue.dev@gmail.com>
 Date: Wed, 4 Nov 2026 07:01:49 -0600
-Subject: [PATCH] PROTOTYPE pco: don't back-propagate loads into shared
+Subject: [PATCH 11/35] PROTOTYPE pco: don't back-propagate loads into shared
  registers
 
 Local experiment for amazon-suez, never to be sent (Imagination declines
@@ -14,6 +14,7 @@ working preambles (fragment, and vk-sample's vertex) load into temps and
 copy. Keep loads, atomics and samples writing temps.
 
 Generated-by: LLM
+(cherry picked from commit 79971232c056790f8e4b8e53064b9d287d3d3eda)
 ---
  src/imagination/pco/pco_opt.c | 13 +++++++++++++
  1 file changed, 13 insertions(+)

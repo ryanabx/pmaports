@@ -1,7 +1,7 @@
-From 84e2bb9c30ff6236a0fdded40c363108afa94aa9 Mon Sep 17 00:00:00 2001
+From ad753af05b00e891fcc8692a859cd19f64c23f1a Mon Sep 17 00:00:00 2001
 From: Ryan Brue <ryanbrue.dev@gmail.com>
 Date: Tue, 17 Nov 2026 10:30:32 -0600
-Subject: [PATCH 33/34] PROTOTYPE pvr: submit every transfer prepare on the DRM
+Subject: [PATCH 33/35] PROTOTYPE pvr: submit every transfer prepare on the DRM
  winsys
 
 pvr_queue_transfer() splits a blit it cannot do in one go (a custom
@@ -17,6 +17,7 @@ Submit one TRANSFER_FRAG job per prepare in one ioctl; the jobs of a
 context run in order, the first waits and the last signals.
 
 Generated-by: LLM
+(cherry picked from commit 84e2bb9c30ff6236a0fdded40c363108afa94aa9)
 ---
  .../winsys/powervr/pvr_drm_job_transfer.c     | 49 +++++++++++++------
  1 file changed, 34 insertions(+), 15 deletions(-)

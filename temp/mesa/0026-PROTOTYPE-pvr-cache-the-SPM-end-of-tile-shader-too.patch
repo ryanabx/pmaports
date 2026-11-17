@@ -1,7 +1,7 @@
-From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From f76e8aeae14559da266ebe74ad9c420e02882c32 Mon Sep 17 00:00:00 2001
 From: Ryan Brue <ryanbrue.dev@gmail.com>
 Date: Mon, 16 Nov 2026 15:57:24 -0600
-Subject: [PATCH] PROTOTYPE pvr: cache the SPM end-of-tile shader too
+Subject: [PATCH 26/35] PROTOTYPE pvr: cache the SPM end-of-tile shader too
 
 On the dynamic rendering path every vkCmdBeginRendering sets up a whole
 render state, and with it compiles the SPM end-of-tile shader with pco:
@@ -20,6 +20,7 @@ Five scrolling layered labels, 4 interleaved rounds: qmlscene CPU
 rate unchanged.
 
 Generated-by: LLM
+(cherry picked from commit 374da5391fcb966911b5a93e82b317b01a9eef38)
 ---
  src/imagination/vulkan/pvr_arch_cmd_buffer.c | 219 ++++++++++---------
  src/imagination/vulkan/pvr_arch_spm.c        |  15 +-
@@ -27,7 +28,7 @@ Generated-by: LLM
  3 files changed, 144 insertions(+), 104 deletions(-)
 
 diff --git a/src/imagination/vulkan/pvr_arch_cmd_buffer.c b/src/imagination/vulkan/pvr_arch_cmd_buffer.c
-index a066e4625b0..d7a7809984b 100644
+index 7b758cc95da..9eecff3e57c 100644
 --- a/src/imagination/vulkan/pvr_arch_cmd_buffer.c
 +++ b/src/imagination/vulkan/pvr_arch_cmd_buffer.c
 @@ -60,6 +60,7 @@
@@ -158,7 +159,7 @@ index a066e4625b0..d7a7809984b 100644
  /* pbe_cs_words must be an array of length emit_count with
   * ROGUE_NUM_PBESTATE_STATE_WORDS entries
   */
-@@ -597,7 +711,6 @@ static VkResult pvr_sub_cmd_gfx_per_job_fragment_programs_create_and_upload(
+@@ -598,7 +712,6 @@ static VkResult pvr_sub_cmd_gfx_per_job_fragment_programs_create_and_upload(
     };
     uint32_t *staging_buffer;
     uint32_t usc_temp_count;
@@ -166,7 +167,7 @@ index a066e4625b0..d7a7809984b 100644
     VkResult result;
  
     bool has_tile_buffers = false;
-@@ -621,107 +734,17 @@ static VkResult pvr_sub_cmd_gfx_per_job_fragment_programs_create_and_upload(
+@@ -625,107 +738,17 @@ static VkResult pvr_sub_cmd_gfx_per_job_fragment_programs_create_and_upload(
           props.msaa_samples = 1;
     }
  

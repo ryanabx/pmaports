@@ -1,7 +1,7 @@
-From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From f557fbc12fc60600cf05019dc62cd3fd775b752f Mon Sep 17 00:00:00 2001
 From: Ryan Brue <ryanbrue.dev@gmail.com>
 Date: Mon, 16 Nov 2026 13:31:47 -0600
-Subject: [PATCH] PROTOTYPE pvr: only 32-bit formats take the linear
+Subject: [PATCH 25/35] PROTOTYPE pvr: only 32-bit formats take the linear
  window-size rule
 
 Local fix to 3b79e00da87 for amazon-suez, never to be sent. Linear R8
@@ -13,6 +13,7 @@ it, 2 of 2 runs each way. The window-sized buffers the rule is for are all
 formats stay twiddled.
 
 Generated-by: LLM
+(cherry picked from commit c171569ba236c20d4b6d803db45833174a35015d)
 ---
  src/imagination/vulkan/pvr_image.c | 8 ++++++++
  1 file changed, 8 insertions(+)

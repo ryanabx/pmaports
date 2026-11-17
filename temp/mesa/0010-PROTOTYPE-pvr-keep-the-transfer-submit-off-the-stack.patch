@@ -1,7 +1,7 @@
-From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From 5ec4cf67c8f842e096977719e3912465839ca145 Mon Sep 17 00:00:00 2001
 From: Ryan Brue <ryanbrue.dev@gmail.com>
 Date: Wed, 4 Nov 2026 06:46:59 -0600
-Subject: [PATCH] PROTOTYPE pvr: keep the transfer submit off the stack
+Subject: [PATCH 10/35] PROTOTYPE pvr: keep the transfer submit off the stack
 
 Local experiment for amazon-suez, never to be sent (Imagination declines
 LLM-generated code in src/imagination).
@@ -13,6 +13,7 @@ flush thread, Qt's render threads) hit the guard page and crashed. Allocate
 it per call instead.
 
 Generated-by: LLM
+(cherry picked from commit a28133517e60cc87b1ca8c86e06ec204e5f8915f)
 ---
  .../vulkan/pvr_arch_job_transfer.c            | 52 +++++++++++++++----
  1 file changed, 42 insertions(+), 10 deletions(-)

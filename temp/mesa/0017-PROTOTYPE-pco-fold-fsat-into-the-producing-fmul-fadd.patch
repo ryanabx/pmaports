@@ -1,7 +1,8 @@
-From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From c05e20b5e03d926429c7fca5f12925a6feb5417f Mon Sep 17 00:00:00 2001
 From: Ryan Brue <ryanbrue.dev@gmail.com>
 Date: Wed, 4 Nov 2026 09:13:46 -0600
-Subject: [PATCH] PROTOTYPE pco: fold fsat into the producing fmul/fadd/fmad
+Subject: [PATCH 17/35] PROTOTYPE pco: fold fsat into the producing
+ fmul/fadd/fmad
 
 Local experiment for amazon-suez, never to be sent (Imagination declines
 LLM-generated code in src/imagination).
@@ -15,6 +16,7 @@ from 31 to 27 instructions and 5.6 to 4.95 ms per full-screen layer
 interleaved); check passes with 16 and 40 stripes.
 
 Generated-by: LLM
+(cherry picked from commit a02f149d5ce66b3b82a84b7ddeb24469e3470d3f)
 ---
  src/imagination/pco/pco_opt.c              | 73 ++++++++++++++++++++++
  src/imagination/vulkan/pvr_arch_pipeline.c |  1 +

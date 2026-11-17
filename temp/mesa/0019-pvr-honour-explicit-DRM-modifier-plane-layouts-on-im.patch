@@ -1,7 +1,8 @@
-From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From aba24f1f9034a0f11da74c31779878d6e2c315c8 Mon Sep 17 00:00:00 2001
 From: Ryan Brue <ryanbrue.dev@gmail.com>
 Date: Fri, 13 Nov 2026 19:33:48 -0600
-Subject: [PATCH] pvr: honour explicit DRM modifier plane layouts on import
+Subject: [PATCH 19/35] pvr: honour explicit DRM modifier plane layouts on
+ import
 
 Importing a dmabuf whose planes share one buffer (GStreamer's udmabuf
 I420/NV12 frames, imported by GTK through zink) rendered garbage: the
@@ -25,6 +26,7 @@ Local: src/imagination does not take LLM-generated code upstream.
 
 Generated-by: LLM
 (cherry picked from commit 8ffac5314f146dbb216b68013197d8ccb72c7c84)
+(cherry picked from commit 7e11ad5e7d0aaf71fadc8624d2fd627dcfb6386b)
 ---
  src/imagination/vulkan/pvr_image.c | 119 +++++++++++++++++++++++------
  src/imagination/vulkan/pvr_image.h |  12 ++-

@@ -1,8 +1,8 @@
-From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From 66d2a0b3554be735ff8ba62df49c06995c5416b0 Mon Sep 17 00:00:00 2001
 From: Ryan Brue <ryanbrue.dev@gmail.com>
 Date: Wed, 4 Nov 2026 08:25:20 -0600
-Subject: [PATCH] PROTOTYPE pvr: cache load-op and end-of-tile shaders per
- device
+Subject: [PATCH 16/35] PROTOTYPE pvr: cache load-op and end-of-tile shaders
+ per device
 
 Local experiment for amazon-suez, never to be sent (Imagination declines
 LLM-generated code in src/imagination).
@@ -29,6 +29,7 @@ SUEZ_PVR_CACHE_DEBUG prints hits and misses. In phoc over one gesture:
 (16 and 40 stripes).
 
 Generated-by: LLM
+(cherry picked from commit e69b0e9d162313282c322a319c2e9eaf1b8e2d02)
 ---
  src/imagination/vulkan/pvr_arch_cmd_buffer.c | 113 ++++++++++-
  src/imagination/vulkan/pvr_arch_device.c     |   8 +
@@ -38,7 +39,7 @@ Generated-by: LLM
  5 files changed, 300 insertions(+), 17 deletions(-)
 
 diff --git a/src/imagination/vulkan/pvr_arch_cmd_buffer.c b/src/imagination/vulkan/pvr_arch_cmd_buffer.c
-index d037b675c56..a066e4625b0 100644
+index c2154b529f0..7b758cc95da 100644
 --- a/src/imagination/vulkan/pvr_arch_cmd_buffer.c
 +++ b/src/imagination/vulkan/pvr_arch_cmd_buffer.c
 @@ -68,6 +68,8 @@
@@ -50,7 +51,7 @@ index d037b675c56..a066e4625b0 100644
  #include "util/compiler.h"
  #include "util/list.h"
  #include "util/macros.h"
-@@ -619,17 +621,108 @@ static VkResult pvr_sub_cmd_gfx_per_job_fragment_programs_create_and_upload(
+@@ -623,17 +625,108 @@ static VkResult pvr_sub_cmd_gfx_per_job_fragment_programs_create_and_upload(
           props.msaa_samples = 1;
     }
  
@@ -203,7 +204,7 @@ index 120055d86af..e8eaa75b92b 100644
     vk_free(&device->vk.alloc, device);
  }
 diff --git a/src/imagination/vulkan/pvr_arch_mrt.c b/src/imagination/vulkan/pvr_arch_mrt.c
-index bd59ccd64c5..e292f8b3bf5 100644
+index 54f6621d852..050d0073383 100644
 --- a/src/imagination/vulkan/pvr_arch_mrt.c
 +++ b/src/imagination/vulkan/pvr_arch_mrt.c
 @@ -5,6 +5,8 @@
@@ -215,7 +216,7 @@ index bd59ccd64c5..e292f8b3bf5 100644
  
  #include "vk_log.h"
  
-@@ -575,13 +577,12 @@ VkResult pvr_arch_pds_unitex_state_program_create_and_upload(
+@@ -580,13 +582,12 @@ VkResult pvr_arch_pds_unitex_state_program_create_and_upload(
  static VkResult pvr_pds_fragment_program_create_and_upload(
     struct pvr_device *device,
     const VkAllocationCallbacks *allocator,
@@ -230,7 +231,7 @@ index bd59ccd64c5..e292f8b3bf5 100644
     uint32_t staging_buffer_size;
     uint32_t *staging_buffer;
     VkResult result;
-@@ -638,6 +639,109 @@ static VkResult pvr_pds_fragment_program_create_and_upload(
+@@ -643,6 +644,109 @@ static VkResult pvr_pds_fragment_program_create_and_upload(
     return VK_SUCCESS;
  }
  
@@ -340,7 +341,7 @@ index bd59ccd64c5..e292f8b3bf5 100644
  VkResult
  pvr_arch_load_op_shader_generate(struct pvr_device *device,
                                   const VkAllocationCallbacks *allocator,
-@@ -645,12 +749,79 @@ pvr_arch_load_op_shader_generate(struct pvr_device *device,
+@@ -650,12 +754,79 @@ pvr_arch_load_op_shader_generate(struct pvr_device *device,
  {
     const struct pvr_device_info *dev_info = &device->pdevice->dev_info;
     const uint32_t cache_line_size = pvr_get_slc_cache_line_size(dev_info);
@@ -423,7 +424,7 @@ index bd59ccd64c5..e292f8b3bf5 100644
                                          cache_line_size,
                                          &load_op->usc_frag_prog_bo);
  
-@@ -665,12 +836,12 @@ pvr_arch_load_op_shader_generate(struct pvr_device *device,
+@@ -670,12 +841,12 @@ pvr_arch_load_op_shader_generate(struct pvr_device *device,
     result =
        pvr_pds_fragment_program_create_and_upload(device,
                                                   allocator,
@@ -457,10 +458,10 @@ index 7f60fe4cae4..3ec0f3a4e45 100644
        uint32_t width;
        uint32_t height;
 diff --git a/src/imagination/vulkan/pvr_mrt.h b/src/imagination/vulkan/pvr_mrt.h
-index 249a913f770..816855b65fe 100644
+index dee8bc82e67..32a00a85489 100644
 --- a/src/imagination/vulkan/pvr_mrt.h
 +++ b/src/imagination/vulkan/pvr_mrt.h
-@@ -230,4 +230,8 @@ void PVR_PER_ARCH(mrt_load_op_state_cleanup)(const struct pvr_device *device,
+@@ -232,4 +232,8 @@ void PVR_PER_ARCH(mrt_load_op_state_cleanup)(const struct pvr_device *device,
  
  #endif /* PVR_PER_ARCH */
  

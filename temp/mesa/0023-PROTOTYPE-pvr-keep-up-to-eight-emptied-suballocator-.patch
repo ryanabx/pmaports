@@ -1,7 +1,7 @@
-From ae52e8d71de921da0ceb04de16433f1158f88768 Mon Sep 17 00:00:00 2001
+From 68ad026518776487ebb3fc5331487106f55156dd Mon Sep 17 00:00:00 2001
 From: Ryan Brue <ryanbrue.dev@gmail.com>
 Date: Sun, 15 Nov 2026 18:37:43 -0600
-Subject: [PATCH 23/24] PROTOTYPE pvr: keep up to eight emptied suballocator
+Subject: [PATCH 23/35] PROTOTYPE pvr: keep up to eight emptied suballocator
  buffers
 
 The suballocator kept one emptied buffer for reuse. A command buffer that
@@ -12,6 +12,7 @@ Mobile's action drawer created ~230 128 KiB buffers per close. Keep up to
 eight.
 
 Generated-by: LLM
+(cherry picked from commit ae52e8d71de921da0ceb04de16433f1158f88768)
 ---
  src/imagination/vulkan/pvr_bo.c | 25 +++++++++++++------------
  src/imagination/vulkan/pvr_bo.h |  9 +++++++--

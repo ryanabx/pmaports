@@ -1,7 +1,7 @@
-From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From 0be8b278d3ff93e66fe0afe9953d52bfa7e9ed5b Mon Sep 17 00:00:00 2001
 From: Ryan Brue <ryanbrue.dev@gmail.com>
 Date: Wed, 4 Nov 2026 07:42:00 -0600
-Subject: [PATCH] PROTOTYPE pvr: cache compiled graphics pipelines
+Subject: [PATCH 13/35] PROTOTYPE pvr: cache compiled graphics pipelines
 
 Local experiment for amazon-suez, never to be sent (Imagination declines
 LLM-generated code in src/imagination).
@@ -29,6 +29,7 @@ per launch, all hit from the second launch with an unchanged Mesa GL
 shader cache; gles-layers check and probes still pass.
 
 Generated-by: LLM
+(cherry picked from commit d4222b47bd4702bad2964f38a2f061d33f7c71d6)
 ---
  src/imagination/vulkan/pvr_arch_device.c   |  11 +
  src/imagination/vulkan/pvr_arch_pipeline.c | 467 +++++++++++++++++++--

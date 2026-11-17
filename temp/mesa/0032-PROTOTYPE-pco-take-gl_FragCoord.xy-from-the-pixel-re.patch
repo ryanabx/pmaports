@@ -1,7 +1,7 @@
-From 5ac56b6b1f527992df8becc726c99078ee3b45e2 Mon Sep 17 00:00:00 2001
+From 6b5b6e8f158d18d84736299f71b1155ccbacaeac Mon Sep 17 00:00:00 2001
 From: Ryan Brue <ryanbrue.dev@gmail.com>
 Date: Tue, 17 Nov 2026 09:50:31 -0600
-Subject: [PATCH 32/32] PROTOTYPE pco: take gl_FragCoord.xy from the pixel
+Subject: [PATCH 32/35] PROTOTYPE pco: take gl_FragCoord.xy from the pixel
  registers in pixel-rate transfer shaders
 
 For internal shaders pco picks the pixel or sample position registers at
@@ -15,6 +15,7 @@ With the previous patch the R8 copy shader goes from 31 instruction groups
 to 5; a 1280x720 R8 upload takes 1.1 ms of GPU time instead of 2.6.
 
 Generated-by: LLM
+(cherry picked from commit 5ac56b6b1f527992df8becc726c99078ee3b45e2)
 ---
  src/imagination/pco/pco_data.h      | 5 +++++
  src/imagination/pco/pco_trans_nir.c | 3 +++
@@ -52,10 +53,10 @@ index 79c23d3b2fc..6708ff28b2d 100644
                           dest,
                           fs_is_single_sampled(tctx),
 diff --git a/src/imagination/vulkan/pvr_usc.c b/src/imagination/vulkan/pvr_usc.c
-index b4ed742e055..5c121b2feb1 100644
+index 3ed51748e2a..3263f2cab2d 100644
 --- a/src/imagination/vulkan/pvr_usc.c
 +++ b/src/imagination/vulkan/pvr_usc.c
-@@ -907,6 +907,12 @@ pco_shader *pvr_uscgen_tq(pco_ctx *ctx,
+@@ -919,6 +919,12 @@ pco_shader *pvr_uscgen_tq(pco_ctx *ctx,
  
     pco_data data = { 0 };
  

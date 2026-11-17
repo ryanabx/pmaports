@@ -1,8 +1,8 @@
-From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From a4cb2f56d9791af2334670c7bb35063e2780b30b Mon Sep 17 00:00:00 2001
 From: Ryan Brue <ryanbrue.dev@gmail.com>
 Date: Wed, 4 Nov 2026 07:04:49 -0600
-Subject: [PATCH] PROTOTYPE pvr: don't advertise VK_EXT_image_2d_view_of_3d by
- default
+Subject: [PATCH 12/35] PROTOTYPE pvr: don't advertise
+ VK_EXT_image_2d_view_of_3d by default
 
 Local experiment for amazon-suez, never to be sent (Imagination declines
 LLM-generated code in src/imagination).
@@ -16,15 +16,16 @@ SUEZ_PVR_2D_VIEW_OF_3D=1 as the control). SUEZ_PVR_2D_VIEW_OF_3D=1
 advertises them again.
 
 Generated-by: LLM
+(cherry picked from commit dafeda077f1e381d82fdc00b2bf360ddd2c76068)
 ---
  src/imagination/vulkan/pvr_physical_device.c | 15 +++++++++++++++
  1 file changed, 15 insertions(+)
 
 diff --git a/src/imagination/vulkan/pvr_physical_device.c b/src/imagination/vulkan/pvr_physical_device.c
-index f5b138f4667..f025ac22bd1 100644
+index a71767c83f1..5af6cd8f591 100644
 --- a/src/imagination/vulkan/pvr_physical_device.c
 +++ b/src/imagination/vulkan/pvr_physical_device.c
-@@ -242,6 +242,10 @@ static void pvr_physical_device_get_supported_extensions(
+@@ -244,6 +244,10 @@ static void pvr_physical_device_get_supported_extensions(
  #endif
        .IMG_filter_linear_2d = true,
     };
@@ -35,7 +36,7 @@ index f5b138f4667..f025ac22bd1 100644
  }
  
  static void pvr_physical_device_get_supported_features(
-@@ -593,6 +597,17 @@ static void pvr_physical_device_get_supported_features(
+@@ -598,6 +602,17 @@ static void pvr_physical_device_get_supported_features(
        /* VK_KHR_internally_synchronized_queues */
        .internallySynchronizedQueues = true,
     };

@@ -1,8 +1,8 @@
-From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From d91be2d6f8fbd18326da4c66addfa715744ccbeb Mon Sep 17 00:00:00 2001
 From: Ryan Brue <ryanbrue.dev@gmail.com>
 Date: Wed, 4 Nov 2026 07:49:36 -0600
-Subject: [PATCH] PROTOTYPE pco: no ISP feedback for fragment shaders that
- cannot discard
+Subject: [PATCH 15/35] PROTOTYPE pco: no ISP feedback for fragment shaders
+ that cannot discard
 
 Local experiment for amazon-suez, never to be sent (Imagination declines
 LLM-generated code in src/imagination).
@@ -21,6 +21,7 @@ full-screen wlroots textured layer 7.85 -> 6.3 ms, colour layer
 probes pass.
 
 Generated-by: LLM
+(cherry picked from commit a33b478685efe3d72f29c4fefa364beb0ff09945)
 ---
  src/imagination/pco/pco_nir_pvfio.c        | 36 +++++++++++++++++++++-
  src/imagination/vulkan/pvr_arch_pipeline.c |  1 +

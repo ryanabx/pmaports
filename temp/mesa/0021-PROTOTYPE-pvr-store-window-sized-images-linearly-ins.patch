@@ -1,8 +1,8 @@
-From 3b79e00da871047857c0dc556c6d2a5b49d34fb6 Mon Sep 17 00:00:00 2001
+From 72ccc91fad7cbe41e6fad768b0a02913c68d2122 Mon Sep 17 00:00:00 2001
 From: Ryan Brue <ryanbrue.dev@gmail.com>
 Date: Sat, 14 Nov 2026 22:42:09 -0600
-Subject: [PATCH] PROTOTYPE pvr: store window-sized images linearly instead of
- twiddled
+Subject: [PATCH 21/35] PROTOTYPE pvr: store window-sized images linearly
+ instead of twiddled
 
 Local measurement prototype for amazon-suez, never to be sent (Imagination
 declines LLM-generated code). A twiddled image is padded to power-of-two
@@ -17,6 +17,7 @@ GPU memory after drawer use 660/659 -> 506/504 MB, available memory
 292-308 -> 437-442 MB, drawer frame pacing unchanged, no GPU faults.
 
 Generated-by: LLM
+(cherry picked from commit 3b79e00da871047857c0dc556c6d2a5b49d34fb6)
 ---
  src/imagination/vulkan/pvr_image.c | 43 ++++++++++++++++++++++++++++++
  1 file changed, 43 insertions(+)

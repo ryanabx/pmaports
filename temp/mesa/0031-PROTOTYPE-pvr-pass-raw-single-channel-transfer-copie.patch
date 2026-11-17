@@ -1,7 +1,7 @@
-From 2ed1ddd45413af820f5d4db9627761563c87d01f Mon Sep 17 00:00:00 2001
+From 72805e4128b0f1506bdead3cbd14c863a7f18a7a Mon Sep 17 00:00:00 2001
 From: Ryan Brue <ryanbrue.dev@gmail.com>
 Date: Tue, 17 Nov 2026 09:50:31 -0600
-Subject: [PATCH 31/32] PROTOTYPE pvr: pass raw single-channel transfer copies
+Subject: [PATCH 31/35] PROTOTYPE pvr: pass raw single-channel transfer copies
  through
 
 pvr_3d_copy_blit() turns a point-sampled same-format copy into a raw
@@ -18,6 +18,7 @@ instead of 2.6, a 640x360 RG8 one 0.6 instead of 0.8; byte-identical
 uploads, copies, blits and resolves at aligned sizes.
 
 Generated-by: LLM
+(cherry picked from commit 2ed1ddd45413af820f5d4db9627761563c87d01f)
 ---
  .../vulkan/pvr_arch_job_transfer.c            | 24 ++++++++++++++++++-
  1 file changed, 23 insertions(+), 1 deletion(-)

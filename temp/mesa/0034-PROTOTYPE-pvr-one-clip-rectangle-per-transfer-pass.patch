@@ -1,7 +1,7 @@
-From 65a39f97295136f98ec9c4abde5957c3c6c2cfc4 Mon Sep 17 00:00:00 2001
+From 3097575e965005e5b4d35166f45854c337e7702b Mon Sep 17 00:00:00 2001
 From: Ryan Brue <ryanbrue.dev@gmail.com>
 Date: Tue, 17 Nov 2026 10:30:32 -0600
-Subject: [PATCH 34/34] PROTOTYPE pvr: one clip rectangle per transfer pass
+Subject: [PATCH 34/35] PROTOTYPE pvr: one clip rectangle per transfer pass
 
 With two clip rectangles in one transfer prepare the TQ emits to two PBE
 render targets. On a GX6250 the second was never written and the first
@@ -16,6 +16,7 @@ job, with the previous patch). Root cause in the multi-target emission
 not found; this is a workaround.
 
 Generated-by: LLM
+(cherry picked from commit 65a39f97295136f98ec9c4abde5957c3c6c2cfc4)
 ---
  src/imagination/vulkan/pvr_arch_job_transfer.c | 8 +++++++-
  1 file changed, 7 insertions(+), 1 deletion(-)
