@@ -1,7 +1,7 @@
 # Amazon Fire TV remote (Bluetooth LE HID, advertises as "AR"; Amazon's
-# vendor ID 0x0171, product 0x0421). Select sends keypad Enter and Back the
-# keyboard page's Back usage (0xf1); Plasma Bigscreen activates on Return
-# and goes back on Escape, as its own HDMI-CEC mapping does.
+# vendor ID 0x0171, product 0x0421). Select sends keypad Enter; Plasma
+# Bigscreen's buttons and settings controls only take Return until its
+# Enter fix is released, so map it to Return here. Back (the keyboard
+# page's 0xf1, KEY_BACK) is left alone: Bigscreen handles KEY_BACK.
 evdev:input:b0005v0171p0421*
  KEYBOARD_KEY_70058=enter
- KEYBOARD_KEY_700f1=esc

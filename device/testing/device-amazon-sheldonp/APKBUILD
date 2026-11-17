@@ -3,7 +3,7 @@ maintainer="Ryan Brue <ryanbrue.dev@gmail.com>"
 pkgname=device-amazon-sheldonp
 pkgdesc="Amazon Fire TV Stick 3rd Gen (mainline)"
 pkgver=1
-pkgrel=7
+pkgrel=8
 url="https://postmarketos.org"
 license="MIT"
 arch="aarch64"
@@ -20,7 +20,7 @@ makedepends="devicepkg-dev"
 source="deviceinfo kernel-cmdline.conf unudhcpd.conf unudhcpd.confd
 	usb-signaller-developer-mode.conf 61-amazon-fire-tv-remote.hwdb
 	osk-on-demand.py osk-on-demand.service plasma-keyboard-lowmem.desktop
-	plasmashell-lowmem.conf"
+	plasmashell-lowmem.conf qtwebengine-lowend.conf"
 
 build() {
 	devicepkg_build $startdir $pkgname
@@ -35,7 +35,7 @@ package() {
 	# The same under systemd, where usb-signaller sets the address
 	install -Dm644 "$srcdir"/usb-signaller-developer-mode.conf \
 		"$pkgdir"/usr/lib/systemd/system/usb-signaller-developer-mode.service.d/sheldon-address.conf
-	# The Fire TV remote's Select and Back keys
+	# The Fire TV remote's Select key as Return
 	install -Dm644 "$srcdir"/61-amazon-fire-tv-remote.hwdb \
 		"$pkgdir"/usr/lib/udev/hwdb.d/61-amazon-fire-tv-remote.hwdb
 
@@ -53,6 +53,9 @@ package() {
 	# atlas: 103 -> 78 MiB of GPU memory (see the file).
 	install -Dm644 "$srcdir"/plasmashell-lowmem.conf \
 		"$pkgdir"/usr/lib/systemd/user/plasma-plasmashell.service.d/lowmem.conf
+	# QtWebEngine apps in Chromium's low-end mode (see the file).
+	install -Dm644 "$srcdir"/qtwebengine-lowend.conf \
+		"$pkgdir"/usr/lib/environment.d/60-qtwebengine-lowend.conf
 	# xwaylandvideobridge (screen sharing for X11 apps; there are none here)
 	# kept Xwayland running at ~120 MiB of GPU memory plus its own 51 MiB:
 	# mask its autostart unit. Undo: rm this link.
@@ -66,9 +69,10 @@ be2af51cbd6532a7c19eec48e1ebd78c6bb17394a7c4b59d0b9bb83d001e7b50cd535cc6a70a37ee
 fcd72a0ce0ddf35cfd44e8ec62828738668f8dafd2da92b6832ab9dd413e1cafb2604320bab48b70d366be4b8fabe89eb13bc5eb2c357900f8089e8ab338992e  unudhcpd.conf
 742504673aaf2840fa5acc376a4a89d53bc6f25df34c15d72be40a3e086536bbc7ab0175203fccfcc478166ca5aa61dc530de627f293df536a7292e371a278e1  unudhcpd.confd
 762774ebb719b8f0ee389adaed68e957bc8a90167e9be042b7ca28de191b102f0a79340df13d11f45c46561a22eaaaec81937e334c9cec5edbe51857111a1e9b  usb-signaller-developer-mode.conf
-6c5d7fac266eb639487f7559c2bc2621310e0975dd68721f629c53dc84a06311f6224e9eb9b92bb3a38a9b50e6badb7179504dc83e9ece0332cb7e7aac409c7c  61-amazon-fire-tv-remote.hwdb
+7a67b82f1099b942a62f27f0792cb314b9a32a672772a292e943304ccad927a8adf93369b936ac554ae7090c4912ff7706319729d54b7f1ee6d7cd0b74394ba1  61-amazon-fire-tv-remote.hwdb
 f7d11e953cc952a4cb98679c6fee5bce1d3994bbd940739b64a3974a134e459162112be6173a2bd26e27aa05e5266374739992242caa2db4450d224e059aed89  osk-on-demand.py
 67a8b691318fe8be30ce53875e1516c94a60ff35a2729a1945dc417be5a1b9c37fb9a410def83d8ad8591c7c6fc12eb93e2f0f6af9213359531b02563711aba9  osk-on-demand.service
 30d6e29896a1aa9a6314a67414aa582f9282598c455f8bd0ccf46b2da032b87ae41e6728749ded9949a2ed6d44c118171b301e9e867b37152d9a894db514aaa5  plasma-keyboard-lowmem.desktop
 78752b068de66dac13b217e45fd564048f025db5e36be3caa6820f244fc224a759f38523fce5fbe16541b9ce4bb7e98f271083ee39788bcebc92f81c0d0f5486  plasmashell-lowmem.conf
+d9041e2d10350ec9380d249508166f332aa27f9dca04c4b2d2d1d5ecdde82134693590f6145987978eb26cac19c9aa1edf6dd85b9f86f51d83888492d87cd4b1  qtwebengine-lowend.conf
 "
