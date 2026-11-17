@@ -40,6 +40,9 @@
 # render targets) wrote garbage or page-faulted on GX6250: copies with an
 # odd row length and odd height (e.g. glReadPixels of a 203x117 image) were
 # wrong or faulted. Every prepare is now a job, one clip rectangle per pass.
+# 0035 (r13): 0018's default preamble stays off for compute shaders: a
+# compute shader sampling a texture page-faulted the compute data master
+# with it (PCO_DEBUG=preamble still enables it there).
 #
 # Trimmed to what suez uses: gallium zink and llvmpipe, Vulkan imagination
 # and lavapipe; no VA, no rusticl, no Vulkan layers. Do not merge this into
@@ -47,7 +50,7 @@
 maintainer="Ryan Brue <ryanbrue.dev@gmail.com>"
 pkgname=mesa
 pkgver=27.0.0_git20261110
-pkgrel=12
+pkgrel=13
 _commit="5304cac24b08b8f7d4da00464dff6e7bc1d4a07b"
 pkgdesc="Mesa DRI OpenGL library (amazon-suez PowerVR fork)"
 url="https://www.mesa3d.org"
@@ -142,6 +145,7 @@ source="mesa-$_commit.tar.gz::https://gitlab.freedesktop.org/mesa/mesa/-/archive
 	0032-PROTOTYPE-pco-take-gl_FragCoord.xy-from-the-pixel-re.patch
 	0033-PROTOTYPE-pvr-submit-every-transfer-prepare-on-the-D.patch
 	0034-PROTOTYPE-pvr-one-clip-rectangle-per-transfer-pass.patch
+	0035-PROTOTYPE-pco-leave-the-default-preamble-off-for-com.patch
 	"
 builddir="$srcdir/mesa-$_commit"
 options="!check"
@@ -300,4 +304,5 @@ f0250556712ac89b5dca8f360a733bb4fea65d6926b478186678d3148414a678640590e81552cf87
 32545784f3ec59e87433ef69b226f216c1ef424134b34abea2fcc75dec872ae038171b9fd4e90a00119898989b4b9f7da32f3c6ab4685916406a6173990d6997  0032-PROTOTYPE-pco-take-gl_FragCoord.xy-from-the-pixel-re.patch
 ce3afa35c2563c384482720d99fc81715a5d0525fab5edbe246ae9c61eb0f4a21ff60018a5351a644fcc6ca85017611cdd3d0ae10ca7e61c86a29f43cb230ea1  0033-PROTOTYPE-pvr-submit-every-transfer-prepare-on-the-D.patch
 c5edc00c9fdbbdbcfefb997e96bda3ac6e44d8c397661c672454a9f1b06f019032a86c42e00246562aa1091c9a307c503c79d28e5ee8455dd91b3b84f6f52de1  0034-PROTOTYPE-pvr-one-clip-rectangle-per-transfer-pass.patch
+393dc75d17f32550695e37d067cc0f58664009bff585272076ee27a95c50af9732918c82d5ae35d49d5d89822efb512d9f10be3f3a7fc494ef2fba1cfe63fc02  0035-PROTOTYPE-pco-leave-the-default-preamble-off-for-com.patch
 "
