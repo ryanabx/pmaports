@@ -35,6 +35,11 @@
 # from the pixel registers in pixel-rate transfer shaders: the R8 copy
 # shader 31 -> 5 instruction groups; a 1280x720 R8 upload (video Y plane)
 # 2.6 -> 1.1 ms of GPU time (notes/XFER-2026-11-17.md in suez-work).
+# 0033+0034 (r12): the DRM winsys submitted only the first prepare of a
+# multi-pass transfer, and a prepare with two clip rectangles (two PBE
+# render targets) wrote garbage or page-faulted on GX6250: copies with an
+# odd row length and odd height (e.g. glReadPixels of a 203x117 image) were
+# wrong or faulted. Every prepare is now a job, one clip rectangle per pass.
 #
 # Trimmed to what suez uses: gallium zink and llvmpipe, Vulkan imagination
 # and lavapipe; no VA, no rusticl, no Vulkan layers. Do not merge this into
@@ -42,7 +47,7 @@
 maintainer="Ryan Brue <ryanbrue.dev@gmail.com>"
 pkgname=mesa
 pkgver=27.0.0_git20261110
-pkgrel=11
+pkgrel=12
 _commit="5304cac24b08b8f7d4da00464dff6e7bc1d4a07b"
 pkgdesc="Mesa DRI OpenGL library (amazon-suez PowerVR fork)"
 url="https://www.mesa3d.org"
@@ -135,6 +140,8 @@ source="mesa-$_commit.tar.gz::https://gitlab.freedesktop.org/mesa/mesa/-/archive
 	0030-PROTOTYPE-pco-fold-a-constant-LOD-bias-into-the-samp.patch
 	0031-PROTOTYPE-pvr-pass-raw-single-channel-transfer-copie.patch
 	0032-PROTOTYPE-pco-take-gl_FragCoord.xy-from-the-pixel-re.patch
+	0033-PROTOTYPE-pvr-submit-every-transfer-prepare-on-the-D.patch
+	0034-PROTOTYPE-pvr-one-clip-rectangle-per-transfer-pass.patch
 	"
 builddir="$srcdir/mesa-$_commit"
 options="!check"
@@ -291,4 +298,6 @@ c19030a5306af6ac9f38a6deb630a851b0bae05d36c7669d2165eae642f97f7d7bc4d613d0b0cedb
 f0250556712ac89b5dca8f360a733bb4fea65d6926b478186678d3148414a678640590e81552cf87b86864e99a9ba514dae92855283bc83cf624126a0bb93d71  0030-PROTOTYPE-pco-fold-a-constant-LOD-bias-into-the-samp.patch
 340e28e9e0570de34d8ebe35b253f8d103152f3c169288fdf7f00f8f47c81f8683c4523b0af4cfd4c240f3543c23816c75cf2114a8648a71d184ad3df8768235  0031-PROTOTYPE-pvr-pass-raw-single-channel-transfer-copie.patch
 32545784f3ec59e87433ef69b226f216c1ef424134b34abea2fcc75dec872ae038171b9fd4e90a00119898989b4b9f7da32f3c6ab4685916406a6173990d6997  0032-PROTOTYPE-pco-take-gl_FragCoord.xy-from-the-pixel-re.patch
+ce3afa35c2563c384482720d99fc81715a5d0525fab5edbe246ae9c61eb0f4a21ff60018a5351a644fcc6ca85017611cdd3d0ae10ca7e61c86a29f43cb230ea1  0033-PROTOTYPE-pvr-submit-every-transfer-prepare-on-the-D.patch
+c5edc00c9fdbbdbcfefb997e96bda3ac6e44d8c397661c672454a9f1b06f019032a86c42e00246562aa1091c9a307c503c79d28e5ee8455dd91b3b84f6f52de1  0034-PROTOTYPE-pvr-one-clip-rectangle-per-transfer-pass.patch
 "
