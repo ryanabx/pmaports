@@ -3,7 +3,7 @@ maintainer="Ryan Brue <ryanbrue.dev@gmail.com>"
 pkgname=device-amazon-suez
 pkgdesc="Amazon Fire HD 10 (2017)"
 pkgver=5
-pkgrel=18
+pkgrel=19
 url="https://postmarketos.org"
 license="MIT"
 arch="aarch64"
@@ -35,6 +35,7 @@ install="
 source="
 	50-powervr-vulkan.conf
 	51-gtk-renderer.conf
+	52-qsg-atlas.conf
 	61-powervr-drm-ignore.rules
 	90-suez-gadget-vbus.rules
 	90-suez-gauge-capacity.rules
@@ -172,6 +173,11 @@ package() {
 		"$pkgdir"/usr/lib/environment.d/51-gtk-renderer.conf
 	install -Dm644 "$srcdir"/suez-gtk-renderer.conf \
 		"$pkgdir"/usr/lib/systemd/system.conf.d/51-gtk-renderer.conf
+
+	# Qt Quick's atlas at 1024x1024: ~54 MB less pinned GPU memory in the
+	# idle Plasma Mobile session; the file has the measurements.
+	install -Dm644 "$srcdir"/52-qsg-atlas.conf \
+		"$pkgdir"/usr/lib/environment.d/52-qsg-atlas.conf
 
 	# SUSPEND POLICY
 	#
@@ -313,6 +319,7 @@ vulkan() {
 sha512sums="
 76ab946d5e09ddc8674c429aaf09ae6667aa39c00a68c32e0826f484e94d3f6de3aa6e20e63cba811cb65b08b8fa111535a17fc9585bbb0d22396bc95001fa02  50-powervr-vulkan.conf
 436ce8272abaa915745b857e907b9a970ff656e336ef2412c60df89ce92b1b79cc46ba434ce504075ce06ca33c23633c6418190f01e6c6264c705647e50faf10  51-gtk-renderer.conf
+614a7a4ce8dfe64b50f43e500499ae12d57082981b2d5a465fcb969d3281fe20f0444ff09f53ffb7f38265f1d9590f2c7f8900a232a05b379211ecc0b7db572d  52-qsg-atlas.conf
 854834243154653d29c2ac2d514199fb981caa77ec482352b9644803f8f8542899db72e29907e9fd1a1d5fb966665a92fb2154c93977df35d65b8b312a5c2de7  61-powervr-drm-ignore.rules
 ac282f372d5786a94dcc14c3ef0d8b95c0b8eca0b348515c86cc7510cfdf4a1dbd72c14f018b065a233e0ea2cc23e36c55f86ad8fb4012b995304f3abf563fe9  90-suez-gadget-vbus.rules
 4f3667cbf076748d4da584d50bd7ff6ee90408a4a591a69a65f7e414e1521a9de5181556cfc3b51609b4f95ac4ddba7e7ba2b5f4337bf4cc80f12d9052200d72  90-suez-gauge-capacity.rules
