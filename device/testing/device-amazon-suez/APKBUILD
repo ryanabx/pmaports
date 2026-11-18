@@ -3,7 +3,7 @@ maintainer="Ryan Brue <ryanbrue.dev@gmail.com>"
 pkgname=device-amazon-suez
 pkgdesc="Amazon Fire HD 10 (2017)"
 pkgver=5
-pkgrel=17
+pkgrel=18
 url="https://postmarketos.org"
 license="MIT"
 arch="aarch64"
@@ -54,6 +54,7 @@ source="
 	suez-hardlockup.service
 	suez-mt6630-addr
 	suez-mt6630-bdaddr@.service
+	suez-oomd-app.conf
 	suez-gtk-renderer.conf
 	suez-powervr-vulkan.conf
 	suez-prefs.js
@@ -276,6 +277,10 @@ package() {
 	ln -s ../suez-hardlockup.service \
 		"$pkgdir"/usr/lib/systemd/system/multi-user.target.wants/suez-hardlockup.service
 
+	# A tighter systemd-oomd limit for apps; see the comments in the file.
+	install -Dm644 "$srcdir"/suez-oomd-app.conf \
+		"$pkgdir"/usr/lib/systemd/user/app.slice.d/50-suez-oomd.conf
+
 	# Alpine's pipewire-systemd ships pipewire-pulse.socket without the
 	# service it triggers, which leaves every libpulse client -- the
 	# desktop's own sound panel included -- with "Connection refused" and no
@@ -327,6 +332,7 @@ d2c153cb3af543a68ce8be24073a803fab66cd9561d003842658e77f7841abf4279bd83a21916a90
 23a31b720d49046880090b671164dd06c7ec662246dbe4580938ef5f0c9b58b3c0dc5b1688b7110c76c3c1d7b4196497ff2b55149dd4b4aa479eeae4924d3c0a  suez-hardlockup.service
 05ad3c2dc2439292d502737e70d87337a94e02b18c2c64c9ef8b551838f6d66fb5084982b19390454c14613bb85fa79a8db66884de3679f8af6efc2e79185f3d  suez-mt6630-addr
 90df791c68d4377cc6179406e6328d896b9ae72fcfa53dffca05498d3280901ad4aebad3cd05413171efc29d64f7779c91222517895ee53caef8b99dace1ea62  suez-mt6630-bdaddr@.service
+b85003d389086f92509a8f922bf1a4bd1091c0070ffaf19a26e22bddba31691f229138ad496a609e449357b2ae591dfd185e361a481e5a4d7050d52b81bd28fc  suez-oomd-app.conf
 3fa35f1a7a891ded303efffb91880963d4872933f6e9d665d44f4bd6dfac2f38f5fe0ac535a57ea3bffc7ce4099dc10fa957840921bf420b53da10ce711bb1a6  suez-gtk-renderer.conf
 5c75e206ef78b51a328f2039d6410ca5fd01713e560b5bc87a1c6fedb0f7c94fbc4f2e698797d645a1027c8687ecf3d32535de949653ccdf18662b981a17fb22  suez-powervr-vulkan.conf
 93fe4fe082be244906dd1bdb16ec69527db4a4b702864b928f933cc39f16eae0228c987e49d0c94224263cfd8c4f89235bf200e0dbcf13f82a27d2d895159e88  suez-prefs.js
