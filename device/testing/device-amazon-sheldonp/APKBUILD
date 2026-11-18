@@ -3,7 +3,7 @@ maintainer="Ryan Brue <ryanbrue.dev@gmail.com>"
 pkgname=device-amazon-sheldonp
 pkgdesc="Amazon Fire TV Stick 3rd Gen (mainline)"
 pkgver=1
-pkgrel=8
+pkgrel=9
 url="https://postmarketos.org"
 license="MIT"
 arch="aarch64"
@@ -20,7 +20,7 @@ makedepends="devicepkg-dev"
 source="deviceinfo kernel-cmdline.conf unudhcpd.conf unudhcpd.confd
 	usb-signaller-developer-mode.conf 61-amazon-fire-tv-remote.hwdb
 	osk-on-demand.py osk-on-demand.service plasma-keyboard-lowmem.desktop
-	plasmashell-lowmem.conf qtwebengine-lowend.conf"
+	plasmashell-lowmem.conf qtwebengine-lowend.conf rt-uclamp.conf"
 
 build() {
 	devicepkg_build $startdir $pkgname
@@ -56,6 +56,9 @@ package() {
 	# QtWebEngine apps in Chromium's low-end mode (see the file).
 	install -Dm644 "$srcdir"/qtwebengine-lowend.conf \
 		"$pkgdir"/usr/lib/environment.d/60-qtwebengine-lowend.conf
+	# RT tasks without the top-OPP boost (see the file).
+	install -Dm644 "$srcdir"/rt-uclamp.conf \
+		"$pkgdir"/usr/lib/sysctl.d/60-sheldonp-rt-uclamp.conf
 	# xwaylandvideobridge (screen sharing for X11 apps; there are none here)
 	# kept Xwayland running at ~120 MiB of GPU memory plus its own 51 MiB:
 	# mask its autostart unit. Undo: rm this link.
@@ -75,4 +78,5 @@ f7d11e953cc952a4cb98679c6fee5bce1d3994bbd940739b64a3974a134e459162112be6173a2bd2
 30d6e29896a1aa9a6314a67414aa582f9282598c455f8bd0ccf46b2da032b87ae41e6728749ded9949a2ed6d44c118171b301e9e867b37152d9a894db514aaa5  plasma-keyboard-lowmem.desktop
 78752b068de66dac13b217e45fd564048f025db5e36be3caa6820f244fc224a759f38523fce5fbe16541b9ce4bb7e98f271083ee39788bcebc92f81c0d0f5486  plasmashell-lowmem.conf
 d9041e2d10350ec9380d249508166f332aa27f9dca04c4b2d2d1d5ecdde82134693590f6145987978eb26cac19c9aa1edf6dd85b9f86f51d83888492d87cd4b1  qtwebengine-lowend.conf
+a995c0aa47a88618c62594c59502a2762e79bd90b0220abd2ba813630cc6b7ee67ccd2e13b88c69cce9cde6b6ecc4288b7e31319de3ece998758ba8279c7ac69  rt-uclamp.conf
 "
