@@ -2,8 +2,8 @@
 # the sheldonp work repo (configs/mainline-arm{32,64}-bringup.config)
 maintainer="Ryan Brue <ryanbrue.dev@gmail.com>"
 pkgname=linux-amazon-sheldonp
-pkgver=7.4_rc1
-pkgrel=4
+pkgver=7.4_rc3
+pkgrel=1
 pkgdesc="Amazon Fire TV Stick 3rd Gen mainline kernel fork"
 arch="aarch64"
 _carch="arm64"
@@ -32,7 +32,7 @@ makedepends="
 "
 
 # There is no release tarball: build from the device branch with
-# pmbootstrap build --src (ryanabx/devices/amazon-sheldon, on v7.4-rc1).
+# pmbootstrap build --src (ryanabx/devices/amazon-sheldon, on v7.4-rc3).
 _config="config-$_flavor.$arch"
 _tramp="
 	trampoline64xz.S
@@ -163,7 +163,7 @@ package() {
 		"$pkgdir"/usr/share/kernel/$_flavor/kernel.release
 }
 sha512sums="
-1e1b47191c74f83d097af85d3df92dd4be17689b7c0118d909da33d008486777ab78f0166e3eb346c337bcb53eea7caabd94d8f0ba5d5d86988a3c682cd4175e  config-amazon-sheldonp.aarch64
+9fbfd4a836c1f8eb07242ae4c37b4a06104bd80e4cbdcd8f4fae1d17fa9f699e87b6615620511b91ea5cfc5ebfec940f942396177df4c2bfcf7e0a1cb0160c02  config-amazon-sheldonp.aarch64
 641a876f075c9f9c3dc182bb22ca07a2e041a84b0d8c41cc9505f3d55854a538244840501f1efa53349f4f4ef0ec0e6bf12b98736ab18375c3e3e921e7f9a736  trampoline64xz.S
 3dc0f0fcf5d36ebc3bdeb6f9e3289849fb60331be0e42c79edce188c56ed04b1fa8c787c824d9e6e72cd64173b10eab9fe263167ddeb88694e9983fb19c79eab  trampoline64xz.lds
 ddf10f3801994f9cd899a75e11b795b29f6d9959cba55314b6cc0fd0e68c59f08bd791eba4eb23ebd684b834b43c88a9cf0dbc29f41258b5e4f50f15f69f8203  xzboot.c
