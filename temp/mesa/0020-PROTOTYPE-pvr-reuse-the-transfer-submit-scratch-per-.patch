@@ -1,0 +1,111 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Ryan Brue <ryanbrue.dev@gmail.com>
+Date: Sat, 14 Nov 2026 23:13:38 -0600
+Subject: [PATCH 20/40] PROTOTYPE pvr: reuse the transfer submit scratch per
+ context
+
+Local measurement prototype for amazon-suez, never to be sent (Imagination
+declines LLM-generated code). The earlier prototype that moved struct
+pvr_transfer_submit (~380 KiB) off the stack allocated and freed it on
+every transfer. With musl an allocation that size is its own mmap, so each
+transfer faulted in and zeroed ~95 fresh pages and unmapped them again:
+the zink flush thread spent half its time there while KWin's task switcher
+uploaded its textures (~215 transfers per open). Keep one per transfer
+context instead; transfers on a context are serialised by its queue.
+
+Measured on the board (task switcher, 4 opens/closes): longest close frame
+176-272 -> 112-208 ms, opens 288-384 -> 160-384 ms; memset no longer in
+the flush thread's profile.
+
+Generated-by: LLM
+(cherry picked from commit d856b6852a364bb2a72e8a2da1331068fa172884)
+(cherry picked from commit 9a165ce3c72f72ca71e4f48c285c7f8d2e39fd1c)
+---
+ src/imagination/vulkan/pvr_arch_job_context.c |  1 +
+ .../vulkan/pvr_arch_job_transfer.c            | 34 ++++++++++---------
+ src/imagination/vulkan/pvr_job_context.h      |  6 ++++
+ 3 files changed, 25 insertions(+), 16 deletions(-)
+
+diff --git a/src/imagination/vulkan/pvr_arch_job_context.c b/src/imagination/vulkan/pvr_arch_job_context.c
+index 4565fc55be7..547a1bb1a0a 100644
+--- a/src/imagination/vulkan/pvr_arch_job_context.c
++++ b/src/imagination/vulkan/pvr_arch_job_context.c
+@@ -1406,5 +1406,6 @@ void pvr_arch_transfer_ctx_destroy(struct pvr_transfer_ctx *const ctx)
+    pvr_transfer_ctx_shaders_fini(device, ctx);
+    device->ws->ops->transfer_ctx_destroy(ctx->ws_ctx);
+    pvr_ctx_reset_cmd_fini(device, &ctx->reset_cmd);
++   vk_free(&device->vk.alloc, ctx->submit_scratch);
+    vk_free(&device->vk.alloc, ctx);
+ }
+diff --git a/src/imagination/vulkan/pvr_arch_job_transfer.c b/src/imagination/vulkan/pvr_arch_job_transfer.c
+index f271bdbb01a..02654c7efee 100644
+--- a/src/imagination/vulkan/pvr_arch_job_transfer.c
++++ b/src/imagination/vulkan/pvr_arch_job_transfer.c
+@@ -6028,32 +6028,34 @@ pvr_queue_transfer_submit(struct pvr_transfer_ctx *ctx,
+ /* PROTOTYPE: struct pvr_transfer_submit is ~380 KiB (16 prepares, each a
+  * full 3D state), more than a musl thread's 128 KiB default stack, so a
+  * transfer submitted from any thread but the main one overflowed it. Keep it
+- * on the heap.
++ * on the heap, once per transfer context: allocating it per transfer costs an
++ * mmap, ~95 zero-filled page faults and an munmap every time.
+  */
+ static VkResult pvr_queue_transfer(struct pvr_transfer_ctx *ctx,
+                                    struct pvr_transfer_cmd *transfer_cmd,
+                                    struct vk_sync *wait,
+                                    struct vk_sync *signal_sync)
+ {
+-   struct pvr_transfer_submit *submit =
+-      vk_zalloc(&ctx->device->vk.alloc,
+-                sizeof(*submit),
+-                8,
+-                VK_SYSTEM_ALLOCATION_SCOPE_COMMAND);
+-   VkResult result;
++   struct pvr_transfer_submit *submit = ctx->submit_scratch;
+ 
+-   if (!submit)
+-      return vk_error(ctx->device, VK_ERROR_OUT_OF_HOST_MEMORY);
++   if (!submit) {
++      submit = vk_alloc(&ctx->device->vk.alloc,
++                        sizeof(*submit),
++                        8,
++                        VK_SYSTEM_ALLOCATION_SCOPE_DEVICE);
++      if (!submit)
++         return vk_error(ctx->device, VK_ERROR_OUT_OF_HOST_MEMORY);
+ 
+-   result = pvr_queue_transfer_submit(ctx,
+-                                      transfer_cmd,
+-                                      wait,
+-                                      signal_sync,
+-                                      submit);
++      ctx->submit_scratch = submit;
++   }
+ 
+-   vk_free(&ctx->device->vk.alloc, submit);
++   submit->prep_count = 0U;
+ 
+-   return result;
++   return pvr_queue_transfer_submit(ctx,
++                                    transfer_cmd,
++                                    wait,
++                                    signal_sync,
++                                    submit);
+ }
+ 
+ VkResult pvr_arch_transfer_job_submit(struct pvr_transfer_ctx *ctx,
+diff --git a/src/imagination/vulkan/pvr_job_context.h b/src/imagination/vulkan/pvr_job_context.h
+index b04138c9837..201976a9b73 100644
+--- a/src/imagination/vulkan/pvr_job_context.h
++++ b/src/imagination/vulkan/pvr_job_context.h
+@@ -153,6 +153,12 @@ struct pvr_transfer_ctx {
+ 
+    struct pvr_pds_upload pds_unitex_code[PVR_TRANSFER_MAX_TEXSTATE_DMA]
+                                         [PVR_TRANSFER_MAX_UNIFORM_DMA];
++
++   /* Scratch for pvr_queue_transfer() (a struct pvr_transfer_submit, ~380
++    * KiB), kept for the context's lifetime. Transfers on one context are
++    * serialised by the queue.
++    */
++   void *submit_scratch;
+ };
+ 
+ /******************************************************************************

@@ -1,0 +1,53 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Ryan Brue <ryanbrue.dev@gmail.com>
+Date: Mon, 16 Nov 2026 18:45:04 -0600
+Subject: [PATCH 26/40] PROTOTYPE pco: one NaN check for NaN-preserving
+ fmin/fmax
+
+pco's min/max are "src0 < src1 ? src0 : src1" (">" for max) in one
+instruction group, and a comparison with a NaN operand is false, so a NaN
+src0 already gives src1. Only a NaN src1 has to be caught. The lowering
+checked both, and each check costs two groups (the boolean is
+materialised, then selected on), so a NaN-preserving min/max took five
+groups instead of three. GLSL min/max are NaN-preserving since
+7e22c43f658, so every clamp() in a GL shader through zink pays this
+(Firefox WebRender's YUV shader: 12 per pixel).
+
+Generated-by: LLM
+(cherry picked from commit 4d2cb802c6067c057cac303f0c3cac429b6a6fd5)
+(cherry picked from commit 987a47fc811e9ae9fa5f41f4cc0d7ba7f90e6322)
+---
+ src/imagination/pco/pco_nir_alu.c | 13 +++++--------
+ 1 file changed, 5 insertions(+), 8 deletions(-)
+
+diff --git a/src/imagination/pco/pco_nir_alu.c b/src/imagination/pco/pco_nir_alu.c
+index 25f7a5c5327..58228de839f 100644
+--- a/src/imagination/pco/pco_nir_alu.c
++++ b/src/imagination/pco/pco_nir_alu.c
+@@ -35,10 +35,10 @@ pco_nir_lower_alu_instr(nir_builder *b, nir_alu_instr *alu, void *cb_data)
+    switch (alu->op) {
+    case nir_op_fmax:
+    case nir_op_fmin:
+-      /* All hardware comparison instructions return false if any operand is NaN
+-       * so a NaN check before is needed.
+-       * Directly return the other operand if one of the operands is NaN,
+-       * otherwise return the operation result.
++      /* All hardware comparison instructions return false if any operand is NaN.
++       * min/max lower to "src0 < src1 ? src0 : src1" (">" for max), which
++       * therefore already returns src1 when src0 is NaN; only a NaN src1 needs
++       * a check, to return src0 instead.
+        */
+       if (!nir_alu_instr_is_nan_preserve(alu))
+          break;
+@@ -51,10 +51,7 @@ pco_nir_lower_alu_instr(nir_builder *b, nir_alu_instr *alu, void *cb_data)
+       nir_def *src1_def = nir_ssa_for_alu_src(b, alu, 1);
+ 
+       nir_def *fminmax_nan =
+-         nir_bcsel(b,
+-                   nir_fisnan(b, src0_def),
+-                   src1_def,
+-                   nir_bcsel(b, nir_fisnan(b, src1_def), src0_def, &alu->def));
++         nir_bcsel(b, nir_fisnan(b, src1_def), src0_def, &alu->def);
+       nir_def_rewrite_uses_after(&alu->def, fminmax_nan);
+ 
+       b->fp_math_ctrl = old_fp_math_ctrl;

@@ -1,0 +1,91 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Ryan Brue <ryanbrue.dev@gmail.com>
+Date: Sun, 15 Nov 2026 18:37:43 -0600
+Subject: [PATCH 21/40] PROTOTYPE pvr: keep up to eight emptied suballocator
+ buffers
+
+The suballocator kept one emptied buffer for reuse. A command buffer that
+uploads more than one buffer's worth per frame (descriptor uploads for a
+few hundred draws) then freed and allocated the rest every frame: a new
+kernel buffer object, zeroed, cache-cleaned and mapped each time. Plasma
+Mobile's action drawer created ~230 128 KiB buffers per close. Keep up to
+eight.
+
+Generated-by: LLM
+(cherry picked from commit ae52e8d71de921da0ceb04de16433f1158f88768)
+(cherry picked from commit 7b9525b98f36f8bd32cb0f184c02397001e2bb0d)
+---
+ src/imagination/vulkan/pvr_bo.c | 25 +++++++++++++------------
+ src/imagination/vulkan/pvr_bo.h |  9 +++++++--
+ 2 files changed, 20 insertions(+), 14 deletions(-)
+
+diff --git a/src/imagination/vulkan/pvr_bo.c b/src/imagination/vulkan/pvr_bo.c
+index 629c4f81fde..b830b02addf 100644
+--- a/src/imagination/vulkan/pvr_bo.c
++++ b/src/imagination/vulkan/pvr_bo.c
+@@ -526,7 +526,8 @@ void pvr_bo_suballocator_init(struct pvr_suballocator *allocator,
+ void pvr_bo_suballocator_fini(struct pvr_suballocator *allocator)
+ {
+    pvr_bo_free(allocator->device, allocator->bo);
+-   pvr_bo_free(allocator->device, allocator->bo_cached);
++   for (uint32_t i = 0; i < allocator->bo_cache_count; i++)
++      pvr_bo_free(allocator->device, allocator->bo_cache[i]);
+ 
+    simple_mtx_destroy(&allocator->mtx);
+ }
+@@ -610,15 +611,13 @@ VkResult pvr_bo_suballoc(struct pvr_suballocator *allocator,
+ 
+    alloc_size = MAX2(aligned_size, ALIGN_POT(allocator->default_size, align));
+ 
+-   if (allocator->bo_cached) {
+-      struct pvr_winsys_bo *bo_cached = allocator->bo_cached->bo;
+-
+-      if (alloc_size <= bo_cached->size)
+-         allocator->bo = allocator->bo_cached;
+-      else
+-         pvr_bo_free(allocator->device, allocator->bo_cached);
+-
+-      allocator->bo_cached = NULL;
++   for (uint32_t i = 0; i < allocator->bo_cache_count; i++) {
++      if (alloc_size <= allocator->bo_cache[i]->bo->size) {
++         allocator->bo = allocator->bo_cache[i];
++         allocator->bo_cache[i] =
++            allocator->bo_cache[--allocator->bo_cache_count];
++         break;
++      }
+    }
+ 
+    if (!allocator->bo) {
+@@ -667,8 +666,10 @@ void pvr_bo_suballoc_free(struct pvr_suballoc_bo *suballoc_bo)
+    simple_mtx_lock(&suballoc_bo->allocator->mtx);
+ 
+    if (p_atomic_read(&suballoc_bo->bo->ref_count) == 1 &&
+-       !suballoc_bo->allocator->bo_cached) {
+-      suballoc_bo->allocator->bo_cached = suballoc_bo->bo;
++       suballoc_bo->allocator->bo_cache_count < PVR_SUBALLOC_BO_CACHE_SIZE) {
++      struct pvr_suballocator *allocator = suballoc_bo->allocator;
++
++      allocator->bo_cache[allocator->bo_cache_count++] = suballoc_bo->bo;
+    } else {
+       pvr_bo_free(suballoc_bo->allocator->device, suballoc_bo->bo);
+    }
+diff --git a/src/imagination/vulkan/pvr_bo.h b/src/imagination/vulkan/pvr_bo.h
+index bf9c22a5882..c88b9fa3c45 100644
+--- a/src/imagination/vulkan/pvr_bo.h
++++ b/src/imagination/vulkan/pvr_bo.h
+@@ -72,8 +72,13 @@ struct pvr_suballocator {
+ 
+    /* Current buffer object where sub-allocations are made from */
+    struct pvr_bo *bo;
+-   /* Previous buffer that can be used when a new buffer object is needed */
+-   struct pvr_bo *bo_cached;
++   /* Emptied buffers kept for when a new buffer object is needed, so a
++    * command buffer that needs several per frame does not allocate and free
++    * them every frame.
++    */
++#define PVR_SUBALLOC_BO_CACHE_SIZE 8U
++   struct pvr_bo *bo_cache[PVR_SUBALLOC_BO_CACHE_SIZE];
++   uint32_t bo_cache_count;
+    /* Track from where to start the next sub-allocation */
+    uint32_t next_offset;
+ };

@@ -1,7 +1,7 @@
-From d9d5ac29d266862c8894217e4e812cf81aedac35 Mon Sep 17 00:00:00 2001
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Ryan Brue <ryanbrue.dev@gmail.com>
 Date: Fri, 30 Oct 2026 22:38:55 -0500
-Subject: [PATCH 02/35] PROTOTYPE pvr: cache render targets for dynamic
+Subject: [PATCH 02/40] PROTOTYPE pvr: cache render targets for dynamic
  rendering
 
 Local measurement prototype for amazon-suez, never to be sent (Imagination
@@ -11,6 +11,9 @@ an earlier dynamic render of the same size instead of creating and
 destroying them every time.
 
 (cherry picked from commit 97f49896990ec03bf44946ece75c5d3e3a97980f)
+(cherry picked from commit d9d5ac29d266862c8894217e4e812cf81aedac35)
+
+Generated-by: LLM
 ---
  src/imagination/vulkan/pvr_arch_cmd_buffer.c | 12 ++++
  src/imagination/vulkan/pvr_arch_device.c     |  5 ++
@@ -219,6 +222,3 @@ index 8f89cc19776..31539fd0548 100644
  
     uint64_t scratch_buffer_size;
     struct pvr_spm_scratch_buffer *scratch_buffer;
--- 
-2.56.0
-

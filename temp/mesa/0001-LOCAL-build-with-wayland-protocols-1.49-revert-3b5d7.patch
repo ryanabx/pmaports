@@ -1,7 +1,7 @@
-From 0cf79de227e16e61a9c62b21cbc9e11130e598b1 Mon Sep 17 00:00:00 2001
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Ryan Brue <ryanbrue.dev@gmail.com>
 Date: Tue, 17 Nov 2026 13:47:43 -0600
-Subject: [PATCH 01/35] LOCAL: build with wayland-protocols 1.49 (revert
+Subject: [PATCH 01/40] LOCAL: build with wayland-protocols 1.49 (revert
  3b5d7f1f188)
 
 Alpine edge has wayland-protocols 1.49 (11-17) and Mesa main requires
@@ -10,6 +10,7 @@ presentation protocol. Restore it until Alpine has 1.50; nothing changes
 when building against 1.50.
 
 Generated-by: LLM
+(cherry picked from commit 0cf79de227e16e61a9c62b21cbc9e11130e598b1)
 ---
  meson.build                         |  2 +-
  src/vulkan/wsi/wsi_common_wayland.c | 13 +++++++++++--
@@ -29,10 +30,10 @@ index 56c13e02c90..68e56faa871 100644
    dep_wayland_server = dependency('wayland-server', version : '>=1.18')
    if with_egl
 diff --git a/src/vulkan/wsi/wsi_common_wayland.c b/src/vulkan/wsi/wsi_common_wayland.c
-index 1e6ef08338d..5542f8becfd 100644
+index e38e282631b..738673c5957 100644
 --- a/src/vulkan/wsi/wsi_common_wayland.c
 +++ b/src/vulkan/wsi/wsi_common_wayland.c
-@@ -1496,6 +1496,12 @@ static const struct wp_presentation_listener presentation_listener = {
+@@ -1497,6 +1497,12 @@ static const struct wp_presentation_listener presentation_listener = {
  #define MESA_WL_FIXES_VERSION 1
  #endif
  
@@ -45,7 +46,7 @@ index 1e6ef08338d..5542f8becfd 100644
  static void
  registry_handle_global(void *data, struct wl_registry *registry,
                         uint32_t name, const char *interface, uint32_t version)
-@@ -1528,7 +1534,7 @@ registry_handle_global(void *data, struct wl_registry *registry,
+@@ -1529,7 +1535,7 @@ registry_handle_global(void *data, struct wl_registry *registry,
     if (strcmp(interface, wp_presentation_interface.name) == 0) {
        display->wp_presentation_notwrapped =
           wl_registry_bind(registry, name, &wp_presentation_interface,
@@ -54,7 +55,7 @@ index 1e6ef08338d..5542f8becfd 100644
        wp_presentation_add_listener(display->wp_presentation_notwrapped, &presentation_listener, display);
     } else if (strcmp(interface, wp_tearing_control_manager_v1_interface.name) == 0) {
        display->tearing_control_manager =
-@@ -3112,6 +3118,7 @@ presentation_handle_presented(void *data,
+@@ -3113,6 +3119,7 @@ presentation_handle_presented(void *data,
     struct wsi_wl_swapchain *chain = id->chain;
     uint64_t target_time = id->target_time;
  
@@ -62,7 +63,7 @@ index 1e6ef08338d..5542f8becfd 100644
     if (wp_presentation_get_version(chain->wsi_wl_surface->display->wp_presentation_notwrapped) >= 3) {
        if (flags & WP_PRESENTATION_FEEDBACK_KIND_FIXED_RATE) {
           wsi_swapchain_present_timing_update_refresh_rate(&chain->base, refresh, refresh, 1000);
-@@ -3121,7 +3128,9 @@ presentation_handle_presented(void *data,
+@@ -3122,7 +3129,9 @@ presentation_handle_presented(void *data,
           /* Just report Unknown if compositor doesn't tell us what kind of refresh rate we're running at. */
           wsi_swapchain_present_timing_update_refresh_rate(&chain->base, refresh, 0, 0);
        }
@@ -73,6 +74,3 @@ index 1e6ef08338d..5542f8becfd 100644
        /* Prior to v3 of presentation time, we can't know if we're running VRR
         * or FRR so just report "Unknown" instead. */
        wsi_swapchain_present_timing_update_refresh_rate(&chain->base, refresh, 0, 0);
--- 
-2.56.0
-

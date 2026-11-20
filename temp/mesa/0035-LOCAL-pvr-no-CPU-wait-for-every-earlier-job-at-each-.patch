@@ -1,0 +1,50 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Ryan Brue <ryanbrue.dev@gmail.com>
+Date: Wed, 11 Nov 2026 15:17:30 -0600
+Subject: [PATCH 35/40] LOCAL: pvr: no CPU wait for every earlier job at each
+ submission (PVR_SUBMIT_CPU_WAIT=1 restores it)
+
+Generated-by: LLM
+---
+ src/imagination/vulkan/pvr_arch_queue.c | 21 +++++++++++++++++++++
+ 1 file changed, 21 insertions(+)
+
+diff --git a/src/imagination/vulkan/pvr_arch_queue.c b/src/imagination/vulkan/pvr_arch_queue.c
+index cb6203eade7..6cfb1e3a50f 100644
+--- a/src/imagination/vulkan/pvr_arch_queue.c
++++ b/src/imagination/vulkan/pvr_arch_queue.c
+@@ -52,6 +52,7 @@
+ 
+ #include "util/macros.h"
+ #include "util/u_atomic.h"
++#include "util/u_debug.h"
+ #include "vk_alloc.h"
+ #include "vk_fence.h"
+ #include "vk_log.h"
+@@ -904,6 +905,26 @@ static VkResult pvr_clear_last_submits_syncs(struct pvr_queue *queue)
+    uint32_t wait_count = 0;
+    VkResult result;
+ 
++   /* LOCAL: don't wait on the CPU for every earlier job at each submission;
++    * that kept the GPU idle while the CPU prepared the next one (GE8300:
++    * ~4 ms of driver CPU a frame never overlapped ~9 ms of GPU at 1080p).
++    * Keep last_job_signal_sync instead: jobs of one type run in order, so
++    * the next submission's barriers and signals wait on the previous
++    * submission's last jobs on the GPU. Waits not consumed by the previous
++    * submission belong to it and are dropped (the kernel took their fences
++    * at submit). PVR_SUBMIT_CPU_WAIT=1 restores the old behaviour.
++    */
++   if (!debug_get_bool_option("PVR_SUBMIT_CPU_WAIT", false)) {
++      for (uint32_t i = 0; i < PVR_JOB_TYPE_MAX; i++) {
++         if (queue->next_job_wait_sync[i]) {
++            vk_sync_destroy(&queue->device->vk, queue->next_job_wait_sync[i]);
++            queue->next_job_wait_sync[i] = NULL;
++         }
++      }
++
++      return VK_SUCCESS;
++   }
++
+    for (uint32_t i = 0; i < PVR_JOB_TYPE_MAX; i++) {
+       if (queue->next_job_wait_sync[i]) {
+          waits[wait_count++] = (struct vk_sync_wait){

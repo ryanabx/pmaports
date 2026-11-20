@@ -1,0 +1,77 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Ryan Brue <ryanbrue.dev@gmail.com>
+Date: Thu, 19 Nov 2026 21:59:42 -0600
+Subject: [PATCH 36/40] PROTOTYPE pco: keep the helper test for multisampled
+ and A2C shaders
+
+Local experiment for the shared amazon-suez/amazon-sheldonp stack, never to
+be sent (Imagination declines LLM-generated code in src/imagination).
+
+The no-ISP-feedback change dropped the helper-invocation test whenever a
+fragment shader could not demote or terminate. A multisampled pipeline
+whose API sample mask leaves out samples, or alpha to coverage, can still
+need it. Keep it in those cases, as amazon-sheldonp's version of the
+change (its local patch 0029) did, and pass the static sample count to the
+compiler (fs.rasterization_samples was never set; from its local patch
+0028), 0 when unknown or dynamic.
+
+0029 also kept it for per-sample shaders. That is not taken: with one
+sample, per-sample execution is per-pixel, and nir_lower_blend sets
+uses_sample_shading on every shader that reads the destination, so every
+blended layer kept the test and ran punch-through (GX6250, gles-layers,
+interleaved: textured layer 4.22 -> 5.70 ms, colour quad 3.39 -> 4.98 ms
+with that guard).
+
+Assisted-by: LLM
+---
+ src/imagination/pco/pco_nir_pvfio.c        | 16 ++++++++++++----
+ src/imagination/vulkan/pvr_arch_pipeline.c |  9 +++++++++
+ 2 files changed, 21 insertions(+), 4 deletions(-)
+
+diff --git a/src/imagination/pco/pco_nir_pvfio.c b/src/imagination/pco/pco_nir_pvfio.c
+index f164b89e367..03ea2ebb1e4 100644
+--- a/src/imagination/pco/pco_nir_pvfio.c
++++ b/src/imagination/pco/pco_nir_pvfio.c
+@@ -585,10 +585,18 @@ static bool lower_isp_fb(nir_builder *b, struct pfo_state *state)
+     * (a sample-mask/sample-id sequence) and an ISP feedback, and ran as a
+     * punch-through pass. SUEZ_PCO_ALWAYS_ISP_FB=1 restores that.
+     */
+-   nir_def *discard_cond = (shader_can_discard(shader) ||
+-                            getenv("SUEZ_PCO_ALWAYS_ISP_FB"))
+-                              ? nir_is_helper_invocation(b, 1)
+-                              : NULL;
++   /* Only drop it where no sample can be killed for the shader either:
++    * single-sampled (known statically) and no alpha to coverage (from
++    * amazon-sheldonp's version of this change). Per-sample execution is no
++    * reason on its own: with one sample it is per-pixel, and nir_lower_blend
++    * marks every shader that reads the destination as per-sample.
++    */
++   const bool keep_helper_test = shader_can_discard(shader) ||
++                                 state->fs->rasterization_samples != 1 ||
++                                 state->fs->uses.alpha_to_coverage ||
++                                 getenv("SUEZ_PCO_ALWAYS_ISP_FB");
++   nir_def *discard_cond =
++      keep_helper_test ? nir_is_helper_invocation(b, 1) : NULL;
+ 
+    /* Drop depth writes and discard cond if early fragment tests. */
+    if (shader->info.fs.early_fragment_tests) {
+diff --git a/src/imagination/vulkan/pvr_arch_pipeline.c b/src/imagination/vulkan/pvr_arch_pipeline.c
+index 1775f22f248..110ca2ae372 100644
+--- a/src/imagination/vulkan/pvr_arch_pipeline.c
++++ b/src/imagination/vulkan/pvr_arch_pipeline.c
+@@ -2530,6 +2530,15 @@ pvr_preprocess_shader_data(pco_data *data,
+          (~state->ms->sample_mask &
+           BITFIELD_MASK(state->ms->rasterization_samples));
+ 
++      /* The static sample count, so the compiler can tell a single-sampled
++       * pipeline (0 = unknown or dynamic: assume multisampled).
++       */
++      data->fs.rasterization_samples = 0;
++      if (state->ms &&
++          !BITSET_TEST(state->dynamic,
++                       MESA_VK_DYNAMIC_MS_RASTERIZATION_SAMPLES))
++         data->fs.rasterization_samples = state->ms->rasterization_samples;
++
+       if (BITSET_TEST(state->dynamic, MESA_VK_DYNAMIC_CB_COLOR_WRITE_ENABLES) ||
+           (state->cb && state->cb->color_write_enables !=
+                            BITFIELD_MASK(MESA_VK_MAX_COLOR_ATTACHMENTS))) {

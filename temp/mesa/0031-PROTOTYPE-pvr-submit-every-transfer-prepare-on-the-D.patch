@@ -1,0 +1,107 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Ryan Brue <ryanbrue.dev@gmail.com>
+Date: Tue, 17 Nov 2026 10:30:32 -0600
+Subject: [PATCH 31/40] PROTOTYPE pvr: submit every transfer prepare on the DRM
+ winsys
+
+pvr_queue_transfer() splits a blit it cannot do in one go (a custom
+mapping: double stride, texel unwind, more clip rectangles than fit) into
+several prepares and hands them to the winsys together. The powervr DRM
+winsys submitted only cmds[0] (with an assert that is gone in release
+builds), so every pass after the first was dropped: for example a
+vkCmdCopyImageToBuffer into a buffer whose row length is odd and whose
+height is odd lost every odd row (GX6250; 15x7 R8: 45 of 105 bytes never
+written).
+
+Submit one TRANSFER_FRAG job per prepare in one ioctl; the jobs of a
+context run in order, the first waits and the last signals.
+
+Generated-by: LLM
+(cherry picked from commit 84e2bb9c30ff6236a0fdded40c363108afa94aa9)
+(cherry picked from commit 4d4150535494a56a26f53497a5086eae7a6b4aae)
+---
+ .../winsys/powervr/pvr_drm_job_transfer.c     | 49 +++++++++++++------
+ 1 file changed, 34 insertions(+), 15 deletions(-)
+
+diff --git a/src/imagination/vulkan/winsys/powervr/pvr_drm_job_transfer.c b/src/imagination/vulkan/winsys/powervr/pvr_drm_job_transfer.c
+index 9ae0f64dade..f4e68da5a2d 100644
+--- a/src/imagination/vulkan/winsys/powervr/pvr_drm_job_transfer.c
++++ b/src/imagination/vulkan/winsys/powervr/pvr_drm_job_transfer.c
+@@ -132,28 +132,37 @@ VkResult pvr_drm_winsys_transfer_submit(
+    const struct pvr_drm_winsys_transfer_ctx *drm_ctx =
+       to_pvr_drm_winsys_transfer_ctx(ctx);
+ 
+-   struct drm_pvr_sync_op sync_ops[2];
+-
+-   struct drm_pvr_job job_args = {
+-      .type = DRM_PVR_JOB_TYPE_TRANSFER_FRAG,
+-      .cmd_stream = (__u64)&submit_info->cmds[0].fw_stream[0],
+-      .cmd_stream_len = submit_info->cmds[0].fw_stream_len,
+-      .flags = pvr_winsys_transfer_flags_to_drm(&submit_info->cmds[0].flags),
+-      .context_handle = drm_ctx->handle,
+-      .sync_ops = DRM_PVR_OBJ_ARRAY(0, sync_ops),
+-   };
++   /* first_ops: the wait, and the signal too when there is one job. */
++   struct drm_pvr_sync_op first_ops[2], last_op;
++   uint32_t first_count = 0;
++   struct drm_pvr_job jobs[PVR_TRANSFER_MAX_PREPARES_PER_SUBMIT];
++   const uint32_t count = submit_info->cmd_count;
++
++   assert(count > 0 && count <= ARRAY_SIZE(jobs));
++
++   /* One job per prepare: a blit that the transfer code splits into several
++    * passes is several commands, and the jobs of one context run in order.
++    * The first waits, the last signals.
++    */
++   for (uint32_t i = 0; i < count; i++) {
++      jobs[i] = (struct drm_pvr_job){
++         .type = DRM_PVR_JOB_TYPE_TRANSFER_FRAG,
++         .cmd_stream = (__u64)&submit_info->cmds[i].fw_stream[0],
++         .cmd_stream_len = submit_info->cmds[i].fw_stream_len,
++         .flags = pvr_winsys_transfer_flags_to_drm(&submit_info->cmds[i].flags),
++         .context_handle = drm_ctx->handle,
++      };
++   }
+ 
+    struct drm_pvr_ioctl_submit_jobs_args args = {
+-      .jobs = DRM_PVR_OBJ_ARRAY(1, &job_args),
++      .jobs = DRM_PVR_OBJ_ARRAY(count, jobs),
+    };
+ 
+-   assert(submit_info->cmd_count == 1);
+-
+    if (submit_info->wait) {
+       struct vk_sync *sync = submit_info->wait;
+ 
+       assert(!(sync->flags & VK_SYNC_IS_TIMELINE));
+-      sync_ops[job_args.sync_ops.count++] = (struct drm_pvr_sync_op){
++      first_ops[first_count++] = (struct drm_pvr_sync_op){
+          .handle = vk_sync_as_drm_syncobj(sync)->syncobj,
+          .flags = DRM_PVR_SYNC_OP_FLAG_WAIT |
+                   DRM_PVR_SYNC_OP_FLAG_HANDLE_TYPE_SYNCOBJ,
+@@ -163,14 +172,24 @@ VkResult pvr_drm_winsys_transfer_submit(
+ 
+    if (signal_sync) {
+       assert(!(signal_sync->flags & VK_SYNC_IS_TIMELINE));
+-      sync_ops[job_args.sync_ops.count++] = (struct drm_pvr_sync_op){
++      last_op = (struct drm_pvr_sync_op){
+          .handle = vk_sync_as_drm_syncobj(signal_sync)->syncobj,
+          .flags = DRM_PVR_SYNC_OP_FLAG_SIGNAL |
+                   DRM_PVR_SYNC_OP_FLAG_HANDLE_TYPE_SYNCOBJ,
+          .value = 0,
+       };
++
++      if (count == 1) {
++         first_ops[first_count++] = last_op;
++      } else {
++         jobs[count - 1].sync_ops =
++            (struct drm_pvr_obj_array)DRM_PVR_OBJ_ARRAY(1, &last_op);
++      }
+    }
+ 
++   jobs[0].sync_ops =
++      (struct drm_pvr_obj_array)DRM_PVR_OBJ_ARRAY(first_count, first_ops);
++
+    /* Returns VK_ERROR_OUT_OF_DEVICE_MEMORY to match pvrsrv. */
+    return pvr_ioctlf(drm_ws->base.render_fd,
+                      DRM_IOCTL_PVR_SUBMIT_JOBS,
