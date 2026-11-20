@@ -40,7 +40,7 @@ index 19b38e3f5da..cf35690d491 100644
        return VK_ERROR_OUT_OF_DEVICE_MEMORY;
  
 diff --git a/src/imagination/vulkan/pvr_image.c b/src/imagination/vulkan/pvr_image.c
-index 90268de77c6..96ebe237e9a 100644
+index dca27918eeb..b3a959e8809 100644
 --- a/src/imagination/vulkan/pvr_image.c
 +++ b/src/imagination/vulkan/pvr_image.c
 @@ -40,6 +40,8 @@
@@ -52,7 +52,7 @@ index 90268de77c6..96ebe237e9a 100644
  #include "util/u_math.h"
  #include "vk_format.h"
  #include "vk_image.h"
-@@ -385,6 +387,18 @@ VkResult pvr_CreateImage(VkDevice _device,
+@@ -387,6 +389,18 @@ VkResult pvr_CreateImage(VkDevice _device,
        return vk_error(device, result);
     }
  

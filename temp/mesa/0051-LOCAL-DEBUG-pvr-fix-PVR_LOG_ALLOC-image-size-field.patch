@@ -9,10 +9,10 @@ Assisted-by: LLM
  1 file changed, 1 insertion(+), 1 deletion(-)
 
 diff --git a/src/imagination/vulkan/pvr_image.c b/src/imagination/vulkan/pvr_image.c
-index 96ebe237e9a..5c3d6404277 100644
+index b3a959e8809..efc0adacfc5 100644
 --- a/src/imagination/vulkan/pvr_image.c
 +++ b/src/imagination/vulkan/pvr_image.c
-@@ -396,7 +396,7 @@ VkResult pvr_CreateImage(VkDevice _device,
+@@ -398,7 +398,7 @@ VkResult pvr_CreateImage(VkDevice _device,
                image->vk.extent.depth, image->vk.format, image->vk.mip_levels,
                image->vk.array_layers, image->vk.samples, image->vk.tiling,
                image->memlayout, image->vk.usage,

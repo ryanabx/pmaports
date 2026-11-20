@@ -9,10 +9,10 @@ Assisted-by: LLM
  1 file changed, 2 insertions(+), 2 deletions(-)
 
 diff --git a/src/imagination/vulkan/pvr_image.c b/src/imagination/vulkan/pvr_image.c
-index 5c3d6404277..3f9807ecd8c 100644
+index efc0adacfc5..b2c111558b2 100644
 --- a/src/imagination/vulkan/pvr_image.c
 +++ b/src/imagination/vulkan/pvr_image.c
-@@ -391,11 +391,11 @@ VkResult pvr_CreateImage(VkDevice _device,
+@@ -393,11 +393,11 @@ VkResult pvr_CreateImage(VkDevice _device,
     if (debug_get_bool_option("PVR_LOG_ALLOC", false)) {
        fprintf(stderr,
                "pvr-alloc: image %ux%ux%u fmt %d mips %u layers %u samples %u "
