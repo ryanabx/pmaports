@@ -1,7 +1,7 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Ryan Brue <ryanbrue.dev@gmail.com>
 Date: Thu, 19 Nov 2026 22:00:50 -0600
-Subject: [PATCH 40/56] PROTOTYPE pvr: PVR_TWIDDLE_ALL=1 turns the linear
+Subject: [PATCH 40/57] PROTOTYPE pvr: PVR_TWIDDLE_ALL=1 turns the linear
  window-size rule off
 
 Local switch for the shared amazon-suez/amazon-sheldonp stack. Both

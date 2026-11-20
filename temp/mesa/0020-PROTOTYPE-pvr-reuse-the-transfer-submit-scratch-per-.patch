@@ -1,7 +1,7 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Ryan Brue <ryanbrue.dev@gmail.com>
 Date: Sat, 14 Nov 2026 23:13:38 -0600
-Subject: [PATCH 20/56] PROTOTYPE pvr: reuse the transfer submit scratch per
+Subject: [PATCH 20/57] PROTOTYPE pvr: reuse the transfer submit scratch per
  context
 
 Local measurement prototype for amazon-suez, never to be sent (Imagination

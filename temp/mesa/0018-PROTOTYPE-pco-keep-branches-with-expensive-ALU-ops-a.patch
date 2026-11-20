@@ -1,7 +1,7 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Ryan Brue <ryanbrue.dev@gmail.com>
 Date: Sat, 14 Nov 2026 14:28:48 -0600
-Subject: [PATCH 18/56] PROTOTYPE pco: keep branches with expensive ALU ops as
+Subject: [PATCH 18/57] PROTOTYPE pco: keep branches with expensive ALU ops as
  branches
 
 nir_opt_peephole_select was allowed to flatten if/else blocks of up to

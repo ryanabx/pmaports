@@ -1,7 +1,7 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Ryan Brue <ryanbrue.dev@gmail.com>
 Date: Wed, 11 Nov 2026 11:46:07 -0600
-Subject: [PATCH 45/56] LOCAL: pvr: even stride for one-row buffer copies and
+Subject: [PATCH 45/57] LOCAL: pvr: even stride for one-row buffer copies and
  fills, off the FAST_2D path
 
 Generated-by: LLM

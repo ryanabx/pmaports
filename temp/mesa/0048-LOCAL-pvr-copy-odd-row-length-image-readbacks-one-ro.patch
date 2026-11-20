@@ -1,0 +1,86 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Ryan Brue <ryanbrue.dev@gmail.com>
+Date: Thu, 19 Nov 2026 23:11:53 -0600
+Subject: [PATCH 48/57] LOCAL: pvr: copy odd-row-length image readbacks one row
+ at a time on format v1
+
+Local patch for the GE8300 (parameter format v1) on amazon-sheldonp; not to
+be sent (Imagination declines LLM-generated code in src/imagination).
+
+vkCmdCopyImageToBuffer into a buffer whose row length is odd takes the PBE
+double-stride workaround (the line stride is in 2-pixel units), which runs
+as a FAST_2D clip blit with a driver-written ISP control stream. On format
+v1 that faults at low addresses and leaves the buffer unwritten: through
+zink every glReadPixels of an odd-width surface came back wrong and reset
+the GPU (203x117 RGBA8: 23658 of 23751 texels, odd or even height).
+
+Copy such a region one row at a time. A single row's stride is never used,
+so each row gets an even one and takes the FAST_SCALE path, as one-row
+buffer copies already do (the previous v1 patch). Only for one layer, one
+depth slice and uncompressed formats; the rest keeps the original path.
+
+Assisted-by: LLM
+---
+ src/imagination/vulkan/rogue/pvr_blit.c | 49 +++++++++++++++++++++++++
+ 1 file changed, 49 insertions(+)
+
+diff --git a/src/imagination/vulkan/rogue/pvr_blit.c b/src/imagination/vulkan/rogue/pvr_blit.c
+index 2e141e797d2..c89248b44f2 100644
+--- a/src/imagination/vulkan/rogue/pvr_blit.c
++++ b/src/imagination/vulkan/rogue/pvr_blit.c
+@@ -1255,6 +1255,55 @@ pvr_copy_image_to_buffer_region(struct pvr_cmd_buffer *const cmd_buffer,
+       UNREACHABLE("");
+    }
+ 
++   /* LOCAL: on parameter format v1 (GE8300) a destination with an odd row
++    * length takes the PBE double-stride path, a FAST_2D clip blit that
++    * faults there and leaves the buffer unwritten. Copy such a region one
++    * row at a time: a single row's stride is never used, so each row gets
++    * an even one and takes the normal path (as one-row buffer copies do).
++    * Only for one layer, one depth slice and uncompressed formats, which is
++    * what readbacks are.
++    */
++   const struct pvr_device_info *dev_info =
++      &cmd_buffer->device->pdevice->dev_info;
++   const uint32_t row_length = region->bufferRowLength
++                                  ? region->bufferRowLength
++                                  : region->imageExtent.width;
++
++   if (PVR_HAS_FEATURE(dev_info, simple_internal_parameter_format) &&
++       PVR_GET_FEATURE_VALUE(dev_info, simple_parameter_format_version, 0U) ==
++          1U &&
++       (row_length & 1U) && row_length > 1U &&
++       region->imageExtent.height > 1U && region->imageExtent.depth == 1U &&
++       vk_image_subresource_layer_count(&image->vk,
++                                        &region->imageSubresource) == 1U &&
++       !vk_format_is_compressed(image->vk.format)) {
++      const uint64_t row_size =
++         (uint64_t)row_length * vk_format_get_blocksize(dst_format);
++
++      for (uint32_t y = 0U; y < region->imageExtent.height; y++) {
++         VkBufferImageCopy2 row = *region;
++         VkResult result;
++
++         row.bufferOffset = region->bufferOffset + y * row_size;
++         row.bufferRowLength = ALIGN_POT(region->imageExtent.width, 2U);
++         row.bufferImageHeight = 1U;
++         row.imageOffset.y = region->imageOffset.y + (int32_t)y;
++         row.imageExtent.height = 1U;
++
++         result = pvr_copy_image_to_buffer_region_format(cmd_buffer,
++                                                         image,
++                                                         buffer_dev_addr,
++                                                         buffer_alignment,
++                                                         &row,
++                                                         src_format,
++                                                         dst_format);
++         if (result != VK_SUCCESS)
++            return result;
++      }
++
++      return VK_SUCCESS;
++   }
++
+    return pvr_copy_image_to_buffer_region_format(cmd_buffer,
+                                                  image,
+                                                  buffer_dev_addr,

@@ -1,7 +1,7 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Ryan Brue <ryanbrue.dev@gmail.com>
 Date: Thu, 5 Nov 2026 22:43:33 -0600
-Subject: [PATCH 16/56] PROTOTYPE pco: enable the preamble by default
+Subject: [PATCH 16/57] PROTOTYPE pco: enable the preamble by default
 
 Local experiment for amazon-suez, never to be sent (Imagination declines
 LLM-generated code in src/imagination).

@@ -1,7 +1,7 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Ryan Brue <ryanbrue.dev@gmail.com>
 Date: Mon, 9 Nov 2026 21:25:53 -0600
-Subject: [PATCH 43/56] LOCAL: pvr: ISP merge values on parameter format v1
+Subject: [PATCH 43/57] LOCAL: pvr: ISP merge values on parameter format v1
 
 Local test patch for the GE8300 (22.68.54.30) on amazon-sheldonp; not to
 be sent. Mesa leaves the HWRT ISP merge bounds and scales at zero on

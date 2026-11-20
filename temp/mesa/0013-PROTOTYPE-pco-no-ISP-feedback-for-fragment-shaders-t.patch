@@ -1,7 +1,7 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Ryan Brue <ryanbrue.dev@gmail.com>
 Date: Wed, 4 Nov 2026 07:49:36 -0600
-Subject: [PATCH 13/56] PROTOTYPE pco: no ISP feedback for fragment shaders
+Subject: [PATCH 13/57] PROTOTYPE pco: no ISP feedback for fragment shaders
  that cannot discard
 
 Local experiment for amazon-suez, never to be sent (Imagination declines

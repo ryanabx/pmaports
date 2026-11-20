@@ -1,7 +1,7 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Ryan Brue <ryanbrue.dev@gmail.com>
 Date: Sun, 15 Nov 2026 18:37:43 -0600
-Subject: [PATCH 22/56] PROTOTYPE pvr: cache render targets for up to 32 sizes
+Subject: [PATCH 22/57] PROTOTYPE pvr: cache render targets for up to 32 sizes
 
 The dynamic-rendering render target cache never evicts and held eight
 sizes, which one Plasma shell process fills (windows, panels, layers), so

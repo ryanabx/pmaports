@@ -1,7 +1,7 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Ryan Brue <ryanbrue.dev@gmail.com>
 Date: Mon, 9 Nov 2026 21:15:43 -0600
-Subject: [PATCH 42/56] LOCAL: pvr: terminate clip in tiles on parameter format
+Subject: [PATCH 42/57] LOCAL: pvr: terminate clip in tiles on parameter format
  v1
 
 Local test patch for the GE8300 (22.68.54.30) on amazon-sheldonp; not to

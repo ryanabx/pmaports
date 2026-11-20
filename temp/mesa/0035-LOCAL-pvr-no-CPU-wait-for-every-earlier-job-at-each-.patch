@@ -1,7 +1,7 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Ryan Brue <ryanbrue.dev@gmail.com>
 Date: Wed, 11 Nov 2026 15:17:30 -0600
-Subject: [PATCH 35/56] LOCAL: pvr: no CPU wait for every earlier job at each
+Subject: [PATCH 35/57] LOCAL: pvr: no CPU wait for every earlier job at each
  submission (PVR_SUBMIT_CPU_WAIT=1 restores it)
 
 Generated-by: LLM

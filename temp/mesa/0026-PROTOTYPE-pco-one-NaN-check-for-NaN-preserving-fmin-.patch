@@ -1,7 +1,7 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Ryan Brue <ryanbrue.dev@gmail.com>
 Date: Mon, 16 Nov 2026 18:45:04 -0600
-Subject: [PATCH 26/56] PROTOTYPE pco: one NaN check for NaN-preserving
+Subject: [PATCH 26/57] PROTOTYPE pco: one NaN check for NaN-preserving
  fmin/fmax
 
 pco's min/max are "src0 < src1 ? src0 : src1" (">" for max) in one

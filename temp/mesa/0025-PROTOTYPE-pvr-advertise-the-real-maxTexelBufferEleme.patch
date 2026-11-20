@@ -1,7 +1,7 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Ryan Brue <ryanbrue.dev@gmail.com>
 Date: Mon, 16 Nov 2026 17:27:32 -0600
-Subject: [PATCH 25/56] PROTOTYPE pvr: advertise the real
+Subject: [PATCH 25/57] PROTOTYPE pvr: advertise the real
  maxTexelBufferElements
 
 Buffer views are linear 2D images PVR_BUFFER_VIEW_WIDTH (8192) texels

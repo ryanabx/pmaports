@@ -1,7 +1,7 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Ryan Brue <ryanbrue.dev@gmail.com>
 Date: Mon, 16 Nov 2026 15:57:24 -0600
-Subject: [PATCH 24/56] PROTOTYPE pvr: cache the SPM end-of-tile shader too
+Subject: [PATCH 24/57] PROTOTYPE pvr: cache the SPM end-of-tile shader too
 
 On the dynamic rendering path every vkCmdBeginRendering sets up a whole
 render state, and with it compiles the SPM end-of-tile shader with pco:

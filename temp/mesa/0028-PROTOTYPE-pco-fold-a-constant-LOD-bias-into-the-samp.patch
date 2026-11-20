@@ -1,7 +1,7 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Ryan Brue <ryanbrue.dev@gmail.com>
 Date: Tue, 17 Nov 2026 01:23:50 -0600
-Subject: [PATCH 28/56] PROTOTYPE pco: fold a constant LOD bias into the
+Subject: [PATCH 28/57] PROTOTYPE pco: fold a constant LOD bias into the
  sampler state
 
 A sample with an LOD bias passes the bias per pixel (lod_mode bias,

@@ -1,7 +1,7 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Ryan Brue <ryanbrue.dev@gmail.com>
 Date: Sat, 31 Oct 2026 01:19:00 -0500
-Subject: [PATCH 05/56] PROTOTYPE pvr: recycle control stream buffers
+Subject: [PATCH 05/57] PROTOTYPE pvr: recycle control stream buffers
 
 Local measurement prototype for amazon-suez, never to be sent. Each
 graphics sub-command's control stream started on a new 4 KiB kernel
