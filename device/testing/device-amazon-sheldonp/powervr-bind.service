@@ -1,0 +1,17 @@
+# Bind the GE8300 to the mainline powervr driver before the desktop starts.
+# Its BVNC is not in the driver's supported list yet, so the driver needs
+# exp_hw_support=1. powervr.conf sets it when powervr is a module (the
+# package kernel); this sets it through sysfs and probes again where the
+# driver is built in (development kernels), and does nothing otherwise.
+[Unit]
+Description=Bind the PowerVR GE8300 (experimental hardware support)
+Before=tinydm.service
+ConditionPathExists=/sys/module/powervr/parameters/exp_hw_support
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/bin/sh -c 'echo 1 > /sys/module/powervr/parameters/exp_hw_support; [ -e /dev/dri/by-path/platform-13000000.gpu-render ] || echo 13000000.gpu > /sys/bus/platform/drivers_probe; for i in $(seq 50); do [ -e /dev/dri/by-path/platform-13000000.gpu-render ] && exit 0; sleep 0.1; done; exit 1'
+
+[Install]
+WantedBy=multi-user.target
