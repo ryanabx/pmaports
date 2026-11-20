@@ -1,0 +1,72 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Ryan Brue <ryanbrue.dev@gmail.com>
+Date: Tue, 17 Nov 2026 09:50:31 -0600
+Subject: [PATCH 30/56] PROTOTYPE pco: take gl_FragCoord.xy from the pixel
+ registers in pixel-rate transfer shaders
+
+For internal shaders pco picks the pixel or sample position registers at
+run time from the coverage mask (pck.cov, shift, test, select: six
+instruction groups per component). A transfer shader that is not sample
+rate runs on a single-sampled ISP (pvr_msaa_state() only leaves it
+multisampled for sample-rate or iterated shaders, and iterated ones read
+a varying), so the driver can say so: pco_fs_data.pixel_rate_pos.
+
+With the previous patch the R8 copy shader goes from 31 instruction groups
+to 5; a 1280x720 R8 upload takes 1.1 ms of GPU time instead of 2.6.
+
+Generated-by: LLM
+(cherry picked from commit 5ac56b6b1f527992df8becc726c99078ee3b45e2)
+(cherry picked from commit 20276b227ac0560492f4f6e1ba5044bf3eacd92c)
+---
+ src/imagination/pco/pco_data.h      | 5 +++++
+ src/imagination/pco/pco_trans_nir.c | 3 +++
+ src/imagination/vulkan/pvr_usc.c    | 6 ++++++
+ 3 files changed, 14 insertions(+)
+
+diff --git a/src/imagination/pco/pco_data.h b/src/imagination/pco/pco_data.h
+index c713061034f..de1712920ed 100644
+--- a/src/imagination/pco/pco_data.h
++++ b/src/imagination/pco/pco_data.h
+@@ -105,6 +105,11 @@ typedef struct _pco_fs_data {
+ 
+    uint16_t rasterization_samples;
+ 
++   /** Known at compile time to run once per pixel on a single-sampled ISP
++    * (internal shaders): gl_FragCoord.xy can come straight from the pixel
++    * registers. */
++   bool pixel_rate_pos;
++
+    pco_range tile_buffers;
+ 
+    pco_range sample_locations;
+diff --git a/src/imagination/pco/pco_trans_nir.c b/src/imagination/pco/pco_trans_nir.c
+index 79c23d3b2fc..6708ff28b2d 100644
+--- a/src/imagination/pco/pco_trans_nir.c
++++ b/src/imagination/pco/pco_trans_nir.c
+@@ -539,6 +539,9 @@ static pco_instr *trans_load_input_fs(trans_ctx *tctx,
+          pco_ref xy_p[] = { pco_ref_hwreg(PCO_SR_X_P, PCO_REG_CLASS_SPEC),
+                             pco_ref_hwreg(PCO_SR_Y_P, PCO_REG_CLASS_SPEC) };
+ 
++         if (fs_data->pixel_rate_pos)
++            return pco_mov(&tctx->b, dest, xy_p[component]);
++
+          return pco_csel(&tctx->b,
+                          dest,
+                          fs_is_single_sampled(tctx),
+diff --git a/src/imagination/vulkan/pvr_usc.c b/src/imagination/vulkan/pvr_usc.c
+index 3ed51748e2a..3263f2cab2d 100644
+--- a/src/imagination/vulkan/pvr_usc.c
++++ b/src/imagination/vulkan/pvr_usc.c
+@@ -919,6 +919,12 @@ pco_shader *pvr_uscgen_tq(pco_ctx *ctx,
+ 
+    pco_data data = { 0 };
+ 
++   /* Not sample rate: pvr_msaa_state() only leaves the ISP multisampled for
++    * sample-rate (full_rate) or iterated shaders, and the latter take their
++    * coordinates from a varying.
++    */
++   data.fs.pixel_rate_pos = !shader_props->full_rate;
++
+    switch (pixel_size) {
+    case 1:
+       data.fs.output_formats[FRAG_RESULT_DATA0] = PIPE_FORMAT_R32_UINT;

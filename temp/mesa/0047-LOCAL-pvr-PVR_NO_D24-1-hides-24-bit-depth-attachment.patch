@@ -1,0 +1,55 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Ryan Brue <ryanbrue.dev@gmail.com>
+Date: Thu, 19 Nov 2026 22:01:21 -0600
+Subject: [PATCH 47/56] LOCAL: pvr: PVR_NO_D24=1 hides 24-bit depth attachments
+ on format v1
+
+Local patch for the GE8300 on amazon-sheldonp; not to be sent. Its local
+patches 0010 ("no 24-bit depth attachments on parameter format v1") and
+0024 ("offer 24-bit depth attachments again ... PVR_NO_D24=1 hides them")
+squashed for the shared stack: with an integer ZLS load format the ISP
+rejected every depth-writing object, and the float ZLS load format for
+unloaded integer depth (previous patch) made D16, D24 and D24S8 match
+llvmpipe, so D24 stays offered and PVR_NO_D24=1 restores the workaround.
+
+Assisted-by: LLM
+---
+ src/imagination/vulkan/pvr_formats.c | 18 +++++++++++++++++-
+ 1 file changed, 17 insertions(+), 1 deletion(-)
+
+diff --git a/src/imagination/vulkan/pvr_formats.c b/src/imagination/vulkan/pvr_formats.c
+index f45396a0bf8..0db00a7c237 100644
+--- a/src/imagination/vulkan/pvr_formats.c
++++ b/src/imagination/vulkan/pvr_formats.c
+@@ -39,6 +39,7 @@
+ #include "pvr_macros.h"
+ #include "pvr_physical_device.h"
+ 
++#include "util/u_debug.h"
+ #include "util/bitpack_helpers.h"
+ #include "util/bitscan.h"
+ #include "util/compiler.h"
+@@ -315,7 +316,22 @@ pvr_get_image_format_features2(struct pvr_physical_device *pdevice,
+       }
+    }
+ 
+-   if (pvr_format->bind & PVR_BIND_DEPTH_STENCIL) {
++   /* On simple parameter format v1 (GE8300) an integer ZLS load format made
++    * the ISP reject every depth-writing object while nothing was loaded;
++    * the float ZLS load format for unloaded integer depth fixes that, so the
++    * 24-bit depth formats are offered. PVR_NO_D24=1 hides them as
++    * attachments there (zink then picks D32_SFLOAT(_S8_UINT)); D16 stays,
++    * Vulkan requires it.
++    */
++   const bool skip_int_depth =
++      debug_get_bool_option("PVR_NO_D24", false) &&
++      PVR_GET_FEATURE_VALUE(&pdevice->dev_info,
++                            simple_parameter_format_version,
++                            0) == 1 &&
++      (vk_format == VK_FORMAT_X8_D24_UNORM_PACK32 ||
++       vk_format == VK_FORMAT_D24_UNORM_S8_UINT);
++
++   if ((pvr_format->bind & PVR_BIND_DEPTH_STENCIL) && !skip_int_depth) {
+       flags |= VK_FORMAT_FEATURE_2_DEPTH_STENCIL_ATTACHMENT_BIT |
+                VK_FORMAT_FEATURE_2_BLIT_DST_BIT |
+                VK_FORMAT_FEATURE_2_SAMPLED_IMAGE_DEPTH_COMPARISON_BIT;

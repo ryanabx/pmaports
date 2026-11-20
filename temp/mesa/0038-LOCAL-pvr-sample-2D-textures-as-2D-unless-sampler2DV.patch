@@ -1,0 +1,72 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Ryan Brue <ryanbrue.dev@gmail.com>
+Date: Thu, 19 Nov 2026 22:00:21 -0600
+Subject: [PATCH 38/56] LOCAL: pvr: sample 2D textures as 2D unless
+ sampler2DViewOf3D is enabled
+
+The texture lowering turned every non-array 2D sample into a 3D one (a
+z slice loaded from the descriptor metadata, a third coordinate and an
+explicit LOD bias of 0) whenever image2DViewOf3D was enabled. Sampling
+a 2D view of a 3D image needs sampler2DViewOf3D, though; image2DViewOf3D
+is for storage images. zink enables image2DViewOf3D and leaves
+sampler2DViewOf3D off, so every texture read in KWin and Qt took the 3D
+path. Key the sampling path on sampler2DViewOf3D (new pco_common_data
+flag); the image path keeps image2DViewOf3D.
+
+(shared stack: the pipeline-cache hash hunk dropped; this stack's
+cache hashes all enabled features.)
+
+Assisted-by: LLM
+---
+ src/imagination/pco/pco_data.h             | 1 +
+ src/imagination/pco/pco_nir_tex.c          | 9 ++++++++-
+ src/imagination/vulkan/pvr_arch_pipeline.c | 3 +++
+ 3 files changed, 12 insertions(+), 1 deletion(-)
+
+diff --git a/src/imagination/pco/pco_data.h b/src/imagination/pco/pco_data.h
+index de1712920ed..8ad027ce8b4 100644
+--- a/src/imagination/pco/pco_data.h
++++ b/src/imagination/pco/pco_data.h
+@@ -243,6 +243,7 @@ typedef struct _pco_common_data {
+    bool robust_buffer_access;
+    bool null_descriptor;
+    bool image_2d_view_of_3d;
++   bool sampler_2d_view_of_3d; /** LOCAL: sampling 2D views of 3D images. */
+    bool image_sliced_view_of_3d;
+    bool multiview;
+ } pco_common_data;
+diff --git a/src/imagination/pco/pco_nir_tex.c b/src/imagination/pco/pco_nir_tex.c
+index 3c424023db0..7f81c5978c8 100644
+--- a/src/imagination/pco/pco_nir_tex.c
++++ b/src/imagination/pco/pco_nir_tex.c
+@@ -589,8 +589,15 @@ static bool lower_tex(nir_builder *b, nir_tex_instr *tex, void *cb_data)
+          nir_vec2(b,
+                   nir_umod_imm(b, tex_srcs[nir_tex_src_coord], 8192),
+                   nir_udiv_imm(b, tex_srcs[nir_tex_src_coord], 8192));
+-   } else if (data->common.image_2d_view_of_3d && tex->op != nir_texop_lod &&
++   } else if (data->common.sampler_2d_view_of_3d &&
++              tex->op != nir_texop_lod &&
+               tex->sampler_dim == GLSL_SAMPLER_DIM_2D && !tex->is_array) {
++      /* LOCAL: sampling a 2D view of a 3D image needs sampler2DViewOf3D;
++       * image2DViewOf3D covers storage images only (the image path below).
++       * Keyed on image2DViewOf3D, every 2D texture read went through the 3D
++       * path (a descriptor metadata load, three coordinates, an explicit
++       * LOD) whenever an application enabled image2DViewOf3D, as zink does.
++       */
+       tex->sampler_dim = GLSL_SAMPLER_DIM_3D;
+       params.sampler_dim = tex->sampler_dim;
+ 
+diff --git a/src/imagination/vulkan/pvr_arch_pipeline.c b/src/imagination/vulkan/pvr_arch_pipeline.c
+index 110ca2ae372..125f7da88d3 100644
+--- a/src/imagination/vulkan/pvr_arch_pipeline.c
++++ b/src/imagination/vulkan/pvr_arch_pipeline.c
+@@ -2644,6 +2644,9 @@ static void pvr_early_init_shader_data(pco_data *data,
+    data->common.image_2d_view_of_3d =
+       device->vk.enabled_features.image2DViewOf3D;
+ 
++   data->common.sampler_2d_view_of_3d =
++      device->vk.enabled_features.sampler2DViewOf3D;
++
+    data->common.image_sliced_view_of_3d =
+       device->vk.enabled_features.imageSlicedViewOf3D;
+ 

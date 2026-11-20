@@ -1,0 +1,40 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Ryan Brue <ryanbrue.dev@gmail.com>
+Date: Mon, 16 Nov 2026 13:31:47 -0600
+Subject: [PATCH 23/56] PROTOTYPE pvr: only 32-bit formats take the linear
+ window-size rule
+
+Local fix to 3b79e00da87 for amazon-suez, never to be sent. Linear R8
+images sample wrong: Firefox uploads software-decoded video as three R8
+planes, and with them linear the video showed at half size in the top-left
+quadrant with the rest clamped (or garbled). Exempting 1-byte formats fixed
+it, 2 of 2 runs each way. The window-sized buffers the rule is for are all
+32-bit (RGBA8, D24S8/D32), so keep it to those; 8, 16, 64 and 128-bit
+formats stay twiddled.
+
+Generated-by: LLM
+(cherry picked from commit c171569ba236c20d4b6d803db45833174a35015d)
+(cherry picked from commit 23c4ea8a2719d1a4e800c34694c3c4eeea894b4a)
+---
+ src/imagination/vulkan/pvr_image.c | 8 ++++++++
+ 1 file changed, 8 insertions(+)
+
+diff --git a/src/imagination/vulkan/pvr_image.c b/src/imagination/vulkan/pvr_image.c
+index f7614994fb0..4870ff3d4c5 100644
+--- a/src/imagination/vulkan/pvr_image.c
++++ b/src/imagination/vulkan/pvr_image.c
+@@ -62,6 +62,14 @@ static bool pvr_image_twiddle_padding_is_wasteful(const struct pvr_image *image)
+        image->vk.array_layers > 1 || image->vk.samples > VK_SAMPLE_COUNT_1_BIT)
+       return false;
+ 
++   /* Only 32-bit texels: the window-sized buffers this is for are RGBA8 and
++    * D24S8/D32. A linear R8 image samples wrong here (Firefox's software-
++    * decoded video planes came out at half size, the rest clamped), and the
++    * other sizes are untested.
++    */
++   if (vk_format_get_blocksize(image->vk.format) != 4)
++      return false;
++
+    return util_next_power_of_two64(w) * util_next_power_of_two64(h) * 4 >
+           w * h * 5;
+ }

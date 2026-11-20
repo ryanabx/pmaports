@@ -1,0 +1,74 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Ryan Brue <ryanbrue.dev@gmail.com>
+Date: Tue, 10 Nov 2026 21:25:37 -0600
+Subject: [PATCH 34/56] LOCAL: zink: free expired cached BOs once per frame
+
+pb_cache only frees expired buffers when another buffer is added, so a
+client that stops freeing keeps its last freed buffers forever. On a
+1.35-scaled output Qt first renders a window at buffer scale 2, then
+at 1.35; the first depth/stencil buffer (35 MiB at 2844x1600 D32S8 for
+plasma-keyboard) went into the cache and stayed there, pinned, on a
+1 GiB device. Release expired entries at each end-of-frame flush.
+
+Generated-by: LLM
+---
+ src/gallium/auxiliary/pipebuffer/pb_cache.c | 17 +++++++++++++++++
+ src/gallium/auxiliary/pipebuffer/pb_cache.h |  1 +
+ src/gallium/drivers/zink/zink_context.c     |  4 ++++
+ 3 files changed, 22 insertions(+)
+
+diff --git a/src/gallium/auxiliary/pipebuffer/pb_cache.c b/src/gallium/auxiliary/pipebuffer/pb_cache.c
+index 7fcb13b7099..f107cb48220 100644
+--- a/src/gallium/auxiliary/pipebuffer/pb_cache.c
++++ b/src/gallium/auxiliary/pipebuffer/pb_cache.c
+@@ -244,6 +244,23 @@ pb_cache_reclaim_buffer(struct pb_cache *mgr, pb_size size,
+    return NULL;
+ }
+ 
++/**
++ * Free the buffers that have been in the cache longer than its timeout.
++ * Expired buffers are otherwise only freed when another buffer is added,
++ * so an idle client keeps its last freed buffers forever.
++ */
++void
++pb_cache_release_expired(struct pb_cache *mgr)
++{
++   simple_mtx_lock(&mgr->mutex);
++   if (mgr->num_buffers) {
++      unsigned current_time_ms = time_get_ms(mgr);
++      for (unsigned i = 0; i < mgr->num_heaps; i++)
++         release_expired_buffers_locked(mgr, &mgr->buckets[i], current_time_ms);
++   }
++   simple_mtx_unlock(&mgr->mutex);
++}
++
+ /**
+  * Empty the cache. Useful when there is not enough memory.
+  */
+diff --git a/src/gallium/auxiliary/pipebuffer/pb_cache.h b/src/gallium/auxiliary/pipebuffer/pb_cache.h
+index 2fa50e1a20f..b35d53cb821 100644
+--- a/src/gallium/auxiliary/pipebuffer/pb_cache.h
++++ b/src/gallium/auxiliary/pipebuffer/pb_cache.h
+@@ -72,6 +72,7 @@ struct pb_buffer_lean *pb_cache_reclaim_buffer(struct pb_cache *mgr, pb_size siz
+                                           unsigned alignment, unsigned usage,
+                                           unsigned bucket_index);
+ unsigned pb_cache_release_all_buffers(struct pb_cache *mgr);
++void pb_cache_release_expired(struct pb_cache *mgr);
+ void pb_cache_init_entry(struct pb_cache *mgr, struct pb_cache_entry *entry,
+                          struct pb_buffer_lean *buf, unsigned bucket_index);
+ void pb_cache_init(struct pb_cache *mgr, unsigned num_heaps,
+diff --git a/src/gallium/drivers/zink/zink_context.c b/src/gallium/drivers/zink/zink_context.c
+index 9ee68fe7b4a..e4e4e5ae77f 100644
+--- a/src/gallium/drivers/zink/zink_context.c
++++ b/src/gallium/drivers/zink/zink_context.c
+@@ -4841,6 +4841,10 @@ zink_flush(struct pipe_context *pctx,
+    if (flags & PIPE_FLUSH_END_OF_FRAME) {
+       p_atomic_set(&ctx->hud.frame_submits, ctx->hud.frame_submits_current);
+       ctx->hud.frame_submits_current = 0;
++      /* Free cached BOs past their timeout once per frame: a window that
++       * shrank keeps its old depth buffer cached until the next free
++       * otherwise, which may never come in an idle client. */
++      pb_cache_release_expired(&screen->pb.bo_cache);
+    }
+ 
+    if (pfence) {

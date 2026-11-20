@@ -1,0 +1,68 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Ryan Brue <ryanbrue.dev@gmail.com>
+Date: Tue, 17 Nov 2026 09:50:31 -0600
+Subject: [PATCH 29/56] PROTOTYPE pvr: pass raw single-channel transfer copies
+ through
+
+pvr_3d_copy_blit() turns a point-sampled same-format copy into a raw
+integer one (8 bits as R8_UINT, 16 as R8G8_UINT, 32 as R32_UINT), and
+the transfer shader for R8_UINT/R8G8_UINT then clamps all four sampled
+channels and packs them into one register (UU8888, 16 instruction
+groups), although the sampled value already is the packed pixel; R32_UINT
+took RAW64 and sampled and wrote two registers.
+
+Copy 16 bits as R16_UINT and give every single-channel unsigned copy with
+no MSAA and no component picking RAW32: one sample, one output. On a
+GX6250 a 1280x720 R8 upload (a video Y plane) takes 1.5 ms of GPU time
+instead of 2.6, a 640x360 RG8 one 0.6 instead of 0.8; byte-identical
+uploads, copies, blits and resolves at aligned sizes.
+
+Generated-by: LLM
+(cherry picked from commit 2ed1ddd45413af820f5d4db9627761563c87d01f)
+(cherry picked from commit 538fc6aeb07403797de2c76371f82e9258b6d661)
+---
+ .../vulkan/pvr_arch_job_transfer.c            | 24 ++++++++++++++++++-
+ 1 file changed, 23 insertions(+), 1 deletion(-)
+
+diff --git a/src/imagination/vulkan/pvr_arch_job_transfer.c b/src/imagination/vulkan/pvr_arch_job_transfer.c
+index 02654c7efee..4648ffa6a58 100644
+--- a/src/imagination/vulkan/pvr_arch_job_transfer.c
++++ b/src/imagination/vulkan/pvr_arch_job_transfer.c
+@@ -2908,6 +2908,28 @@ static VkResult pvr_3d_copy_blit_core(struct pvr_transfer_ctx *ctx,
+       state->shader_props.pick_component =
+          pvr_pick_component_needed(&state->custom_mapping);
+ 
++      /* Same single-channel unsigned format at both ends, single-sampled (the
++       * raw copies of pvr_3d_copy_blit): the sampled value already is the
++       * packed pixel, so pass it through instead of clamping and packing every
++       * channel. Not when a component has to be picked out of it.
++       */
++      {
++         const VkFormat src_format = transfer_cmd->sources[0].surface.vk_format;
++         const VkFormat dst_format = transfer_cmd->dst.vk_format;
++
++         if (!state->shader_props.pick_component && src_format == dst_format &&
++             !vk_format_is_depth_or_stencil(dst_format) &&
++             vk_format_is_int(dst_format) && !vk_format_is_sint(dst_format) &&
++             vk_format_get_nr_components(dst_format) == 1U &&
++             vk_format_get_blocksizebits(dst_format) <= 32U &&
++             transfer_cmd->sources[0].surface.sample_count <= 1U &&
++             transfer_cmd->dst.sample_count <= 1U &&
++             (transfer_cmd->flags & PVR_TRANSFER_CMD_FLAGS_DSMERGE) == 0U) {
++            state->shader_props.layer_props.pbe_format =
++               PVR_TRANSFER_PBE_PIXEL_SRC_RAW32;
++         }
++      }
++
+       if (state->filter[0] == PVR_FILTER_LINEAR &&
+           pvr_requires_usc_linear_filter(
+              transfer_cmd->sources[0].surface.vk_format)) {
+@@ -5639,7 +5661,7 @@ static VkResult pvr_3d_copy_blit(struct pvr_transfer_ctx *ctx,
+                int_cmd.sources[0].surface.vk_format = VK_FORMAT_R8_UINT;
+                break;
+             case 16U:
+-               int_cmd.sources[0].surface.vk_format = VK_FORMAT_R8G8_UINT;
++               int_cmd.sources[0].surface.vk_format = VK_FORMAT_R16_UINT;
+                break;
+             case 24U:
+                int_cmd.sources[0].surface.vk_format = VK_FORMAT_R8G8B8_UINT;

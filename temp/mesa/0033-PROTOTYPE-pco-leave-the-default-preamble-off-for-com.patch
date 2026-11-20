@@ -1,0 +1,101 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Ryan Brue <ryanbrue.dev@gmail.com>
+Date: Tue, 17 Nov 2026 10:43:39 -0600
+Subject: [PATCH 33/56] PROTOTYPE pco: leave the default preamble off for
+ compute shaders
+
+0018 turns Mesa !42747's preamble on by default for amazon-suez; it was
+measured on graphics only. On a GX6250 a compute shader that samples a
+texture (texelFetch of a sampler2D, written to a storage buffer)
+page-faults the compute data master with the preamble, and is exact
+without it; compute shaders without texture access are fine either way.
+
+Keep the default for graphics stages, and give compute a preamble only
+when PCO_DEBUG=preamble asks for it explicitly, as upstream. The constant
+LOD-bias fold, which needs the preamble, follows the same rule.
+
+Generated-by: LLM
+(cherry picked from commit 95b7b1f21119a12afcad976e10c1662d53a829a9)
+(cherry picked from commit d7d18445f4fd7e96eb6e5e4656cd20cc254c1a9f)
+---
+ src/imagination/pco/pco_debug.c    | 10 +++++++++-
+ src/imagination/pco/pco_internal.h |  9 +++++++++
+ src/imagination/pco/pco_nir.c      |  2 +-
+ src/imagination/pco/pco_nir_tex.c  |  2 +-
+ 4 files changed, 20 insertions(+), 3 deletions(-)
+
+diff --git a/src/imagination/pco/pco_debug.c b/src/imagination/pco/pco_debug.c
+index 052aa0e122d..bda19d4be02 100644
+--- a/src/imagination/pco/pco_debug.c
++++ b/src/imagination/pco/pco_debug.c
+@@ -75,6 +75,12 @@ uint64_t pco_debug_print = 0U;
+ DEBUG_GET_ONCE_OPTION(pco_skip_passes, "PCO_SKIP_PASSES", "")
+ const char *pco_skip_passes = "";
+ 
++/* PROTOTYPE (amazon-suez): the preamble is on because of the default below,
++ * not because PCO_DEBUG asked for it; then it is left off for compute, where
++ * a shader that samples a texture page-faulted the compute data master.
++ */
++bool pco_preamble_by_default = false;
++
+ DEBUG_GET_ONCE_OPTION(pco_color, "PCO_COLOR", NULL)
+ bool pco_color = false;
+ 
+@@ -86,8 +92,10 @@ static void pco_debug_init_once(void)
+    /* PROTOTYPE (amazon-suez): the experimental preamble is on by default;
+     * SUEZ_PCO_NO_PREAMBLE=1 turns it off again.
+     */
+-   if (!getenv("SUEZ_PCO_NO_PREAMBLE"))
++   if (!getenv("SUEZ_PCO_NO_PREAMBLE") && !(pco_debug & PCO_DEBUG_PREAMBLE)) {
+       pco_debug |= PCO_DEBUG_PREAMBLE;
++      pco_preamble_by_default = true;
++   }
+    pco_debug_print = debug_get_option_pco_debug_print();
+    pco_skip_passes = debug_get_option_pco_skip_passes();
+ 
+diff --git a/src/imagination/pco/pco_internal.h b/src/imagination/pco/pco_internal.h
+index fa722e81dc1..942b0b602d1 100644
+--- a/src/imagination/pco/pco_internal.h
++++ b/src/imagination/pco/pco_internal.h
+@@ -77,6 +77,15 @@ extern uint64_t pco_debug;
+ 
+ #define PCO_DEBUG(flag) unlikely(pco_debug &(PCO_DEBUG_##flag))
+ 
++extern bool pco_preamble_by_default;
++
++/* PROTOTYPE (amazon-suez): whether a shader of this stage gets a preamble. */
++static inline bool pco_preamble_enabled(mesa_shader_stage stage)
++{
++   return PCO_DEBUG(PREAMBLE) &&
++          !(pco_preamble_by_default && stage == MESA_SHADER_COMPUTE);
++}
++
+ enum pco_debug_print {
+    PCO_DEBUG_PRINT_VS = BITFIELD64_BIT(0),
+    PCO_DEBUG_PRINT_FS = BITFIELD64_BIT(1),
+diff --git a/src/imagination/pco/pco_nir.c b/src/imagination/pco/pco_nir.c
+index 88a1a0e4d7a..cb009cb83e1 100644
+--- a/src/imagination/pco/pco_nir.c
++++ b/src/imagination/pco/pco_nir.c
+@@ -1112,7 +1112,7 @@ void pco_lower_nir(pco_ctx *ctx, nir_shader *nir, pco_data *data)
+       NIR_PASS(_, nir, pco_nir_lower_vs_intrinsics);
+    }
+ 
+-   if (!nir->info.internal && PCO_DEBUG(PREAMBLE)) {
++   if (!nir->info.internal && pco_preamble_enabled(nir->info.stage)) {
+       NIR_PASS(_, nir, nir_opt_reassociate, nir_reassociate_scalar_math |
+                                             nir_reassociate_cse_heuristic);
+ 
+diff --git a/src/imagination/pco/pco_nir_tex.c b/src/imagination/pco/pco_nir_tex.c
+index 3bb61f87d55..3c424023db0 100644
+--- a/src/imagination/pco/pco_nir_tex.c
++++ b/src/imagination/pco/pco_nir_tex.c
+@@ -280,7 +280,7 @@ nir_intrinsic_instr *pco_emit_nir_smp(nir_builder *b, pco_smp_params *params)
+    nir_block *cursor_block = nir_cursor_current_block(b->cursor);
+    bool top_level = cursor_block->cf_node.parent == &b->impl->cf_node;
+    if (params->lod_bias && smp_load && tex_load && !params->addr_lo &&
+-       PCO_DEBUG(PREAMBLE) && top_level &&
++       pco_preamble_enabled(b->shader->info.stage) && top_level &&
+        smp_load->intrinsic == nir_intrinsic_load_smp_state_pco &&
+        tex_load->intrinsic == nir_intrinsic_load_tex_state_pco &&
+        nir_src_is_const(smp_load->src[0]) &&

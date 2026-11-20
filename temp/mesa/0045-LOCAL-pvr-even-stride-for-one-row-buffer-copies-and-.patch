@@ -1,0 +1,38 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Ryan Brue <ryanbrue.dev@gmail.com>
+Date: Wed, 11 Nov 2026 11:46:07 -0600
+Subject: [PATCH 45/56] LOCAL: pvr: even stride for one-row buffer copies and
+ fills, off the FAST_2D path
+
+Generated-by: LLM
+---
+ src/imagination/vulkan/rogue/pvr_blit.c | 9 ++++++++-
+ 1 file changed, 8 insertions(+), 1 deletion(-)
+
+diff --git a/src/imagination/vulkan/rogue/pvr_blit.c b/src/imagination/vulkan/rogue/pvr_blit.c
+index 7705f81d624..2e141e797d2 100644
+--- a/src/imagination/vulkan/rogue/pvr_blit.c
++++ b/src/imagination/vulkan/rogue/pvr_blit.c
+@@ -1514,6 +1514,12 @@ static VkResult pvr_cmd_copy_buffer_region(struct pvr_cmd_buffer *cmd_buffer,
+             transfer_cmd->clear_color[i].ui = fill_data;
+       }
+ 
++      /* LOCAL: one row's stride is never used, so give it the even stride
++       * the PBE wants (2-pixel units). An odd one sends the copy through
++       * the double-stride workaround, a FAST_2D clip blit with a
++       * driver-written ISP control stream, which faults on format v1
++       * (GE8300) and drops the copy.
++       */
+       pvr_setup_buffer_surface(&transfer_cmd->dst,
+                                &transfer_cmd->scissor,
+                                dst_addr,
+@@ -1522,7 +1528,8 @@ static VkResult pvr_cmd_copy_buffer_region(struct pvr_cmd_buffer *cmd_buffer,
+                                vk_format,
+                                width,
+                                height,
+-                               width);
++                               height == 1 && width > 1 ? ALIGN_POT(width, 2)
++                                                        : width);
+ 
+       if (transfer_cmd->source_count > 0) {
+          transfer_cmd->sources[0].mappings[0].dst_rect = transfer_cmd->scissor;

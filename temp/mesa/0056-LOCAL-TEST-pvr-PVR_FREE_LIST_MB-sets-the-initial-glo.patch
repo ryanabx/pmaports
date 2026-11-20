@@ -1,0 +1,51 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Ryan Brue <ryanbrue.dev@gmail.com>
+Date: Thu, 19 Nov 2026 22:01:52 -0600
+Subject: [PATCH 56/56] LOCAL TEST: pvr: PVR_FREE_LIST_MB sets the initial
+ global free list
+
+Local experiment for the GE8300 on amazon-sheldonp; not to be sent. When
+the TA runs out of parameter memory the firmware tries to pause the PM
+(PM_PAGE_MANAGEOP) to grow the free list, the pause is never
+acknowledged, the GPU is reset and a page fault follows. Allow a larger
+initial free list to test whether that is the only problem.
+
+(shared stack: placed after the secondary-device size, the same
+place; the 16 MiB v1 default of local patch 0011 is not carried: free
+lists do grow on the GE8300, notes/sheldonp/gpu-plan.md.)
+
+Assisted-by: LLM
+---
+ src/imagination/vulkan/pvr_arch_device.c | 12 ++++++++++++
+ 1 file changed, 12 insertions(+)
+
+diff --git a/src/imagination/vulkan/pvr_arch_device.c b/src/imagination/vulkan/pvr_arch_device.c
+index e4ac12db1c1..93f01f63d6f 100644
+--- a/src/imagination/vulkan/pvr_arch_device.c
++++ b/src/imagination/vulkan/pvr_arch_device.c
+@@ -38,6 +38,7 @@
+ #include "pvr_rt_dataset.h"
+ #include "pvr_tex_state.h"
+ #include "pvr_utrace.h"
++#include "util/u_debug.h"
+ #include "util/os_misc.h"
+ 
+ #define PVR_GLOBAL_FREE_LIST_INITIAL_SIZE (2U * 1024U * 1024U)
+@@ -908,6 +909,17 @@ VkResult PVR_PER_ARCH(create_device)(struct pvr_physical_device *pdevice,
+       initial_free_list_size = PVR_SECONDARY_DEVICE_FREE_LIST_INITAL_SIZE;
+    }
+ 
++   /* LOCAL TEST: PVR_FREE_LIST_MB overrides the initial global free list
++    * size (amazon-sheldonp's session sets it per process).
++    */
++   {
++      const int64_t mb = debug_get_num_option("PVR_FREE_LIST_MB", 0);
++
++      if (mb > 0)
++         initial_free_list_size =
++            MIN2((uint64_t)mb * 1024U * 1024U, PVR_GLOBAL_FREE_LIST_MAX_SIZE);
++   }
++
+    /* Call as early as possible so we're allocated as low an address as
+     * possible for the zero page.
+     */

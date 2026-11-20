@@ -1,0 +1,53 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Ryan Brue <ryanbrue.dev@gmail.com>
+Date: Tue, 10 Nov 2026 22:34:28 -0600
+Subject: [PATCH 54/56] LOCAL TEST: pvr: PVR_TQ_ABS writes absolute transfer
+ stream addresses
+
+Generated-by: LLM
+---
+ src/imagination/vulkan/pvr_arch_job_transfer.c | 17 +++++++++++++----
+ 1 file changed, 13 insertions(+), 4 deletions(-)
+
+diff --git a/src/imagination/vulkan/pvr_arch_job_transfer.c b/src/imagination/vulkan/pvr_arch_job_transfer.c
+index 8c33276fd16..47e457c5e5f 100644
+--- a/src/imagination/vulkan/pvr_arch_job_transfer.c
++++ b/src/imagination/vulkan/pvr_arch_job_transfer.c
+@@ -3447,6 +3447,17 @@ static void pvr_isp_prim_block_pds_state(const struct pvr_device_info *dev_info,
+    *cs_ptr_out = cs_ptr;
+ }
+ 
++/* LOCAL TEST: PVR_TQ_ABS=1 writes absolute transfer control stream
++ * addresses. With BRN 65273 the DDK puts its TQ heap at 0x0, so the firmware
++ * seems to add 0 where mainline Mesa assumes the transfer heap's base.
++ */
++static uint64_t pvr_tq_heap_base(const struct pvr_device *device)
++{
++   if (debug_get_bool_option("PVR_TQ_ABS", false))
++      return 0;
++   return device->heaps.transfer_frag_heap->base_addr.addr;
++}
++
+ static void pvr_isp_prim_block_isp_state(const struct pvr_device_info *dev_info,
+                                          UNUSED uint32_t tsp_comp_format_in_dw,
+                                          uint32_t tsp_data_size_in_bytes,
+@@ -4165,8 +4176,7 @@ static VkResult pvr_isp_ctrl_stream(const struct pvr_device_info *dev_info,
+       return result;
+ 
+    stream_base_vaddr =
+-      PVR_DEV_ADDR(pvr_cs_bo->dev_addr.addr -
+-                   ctx->device->heaps.transfer_frag_heap->base_addr.addr);
++      PVR_DEV_ADDR(pvr_cs_bo->dev_addr.addr - pvr_tq_heap_base(ctx->device));
+ 
+    cs_ptr = pvr_bo_suballoc_get_map_addr(pvr_cs_bo);
+    blk_cs_ptr = cs_ptr + region_arrays_size / sizeof(uint32_t);
+@@ -4581,8 +4591,7 @@ static VkResult pvr_isp_ctrl_stream(const struct pvr_device_info *dev_info,
+ 
+    pvr_csb_pack (&regs->isp_mtile_base, CR_ISP_MTILE_BASE, reg) {
+       reg.addr =
+-         PVR_DEV_ADDR(pvr_cs_bo->dev_addr.addr -
+-                      ctx->device->heaps.transfer_frag_heap->base_addr.addr);
++         PVR_DEV_ADDR(pvr_cs_bo->dev_addr.addr - pvr_tq_heap_base(ctx->device));
+    }
+ 
+    pvr_csb_pack (&regs->isp_render, CR_ISP_RENDER, reg) {

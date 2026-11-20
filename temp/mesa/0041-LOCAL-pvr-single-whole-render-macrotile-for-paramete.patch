@@ -1,0 +1,69 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Ryan Brue <ryanbrue.dev@gmail.com>
+Date: Mon, 9 Nov 2026 20:03:44 -0600
+Subject: [PATCH 41/56] LOCAL: pvr: single whole-render macrotile for parameter
+ format v1
+
+Local test patch for the GE8300 (22.68.54.30) on amazon-sheldonp; not to
+be sent. rogue_get_num_macrotiles_xy() already gives 1x1 macrotiles for
+format v1, but pvr_arch_rt_mtile_info_init() only knew the v2 layout, so
+region headers were sized for 1/16 of the render and the tiler wrote
+past them. Make the one macrotile cover every tile, one region header
+per tile, and skip the v2-only 2x2 tile alignment.
+
+Assisted-by: LLM
+---
+ .../include/hwdef/rogue_hw_utils.h            |  9 ++++-----
+ src/imagination/vulkan/pvr_arch_job_render.c  | 19 +++++++++++++++----
+ 2 files changed, 19 insertions(+), 9 deletions(-)
+
+diff --git a/src/imagination/include/hwdef/rogue_hw_utils.h b/src/imagination/include/hwdef/rogue_hw_utils.h
+index a859059e9b6..b6e7f7376ab 100644
+--- a/src/imagination/include/hwdef/rogue_hw_utils.h
++++ b/src/imagination/include/hwdef/rogue_hw_utils.h
+@@ -154,11 +154,10 @@ rogue_get_isp_num_tiles_xy(const struct pvr_device_info *dev_info,
+    *x_out = DIV_ROUND_UP(width * scale_x, tile_samples_x);
+    *y_out = DIV_ROUND_UP(height * scale_y, tile_samples_y);
+ 
+-   if (PVR_HAS_FEATURE(dev_info, simple_internal_parameter_format)) {
+-      assert(PVR_GET_FEATURE_VALUE(dev_info,
+-                                   simple_parameter_format_version,
+-                                   0U) == 2U);
+-      /* Align to a 2x2 tile block. */
++   if (PVR_HAS_FEATURE(dev_info, simple_internal_parameter_format) &&
++       PVR_GET_FEATURE_VALUE(dev_info, simple_parameter_format_version, 0U) ==
++          2U) {
++      /* Format v2: align to a 2x2 tile block. */
+       *x_out = ALIGN_POT(*x_out, 2);
+       *y_out = ALIGN_POT(*y_out, 2);
+    }
+diff --git a/src/imagination/vulkan/pvr_arch_job_render.c b/src/imagination/vulkan/pvr_arch_job_render.c
+index f1cc515f263..36641d519e9 100644
+--- a/src/imagination/vulkan/pvr_arch_job_render.c
++++ b/src/imagination/vulkan/pvr_arch_job_render.c
+@@ -126,10 +126,21 @@ void pvr_arch_rt_mtile_info_init(const struct pvr_device_info *dev_info,
+ 
+    rogue_get_num_macrotiles_xy(dev_info, &info->mtiles_x, &info->mtiles_y);
+ 
+-   if (PVR_HAS_FEATURE(dev_info, simple_internal_parameter_format)) {
+-      assert(PVR_GET_FEATURE_VALUE(dev_info,
+-                                   simple_parameter_format_version,
+-                                   0) == 2);
++   if (PVR_HAS_FEATURE(dev_info, simple_internal_parameter_format) &&
++       PVR_GET_FEATURE_VALUE(dev_info, simple_parameter_format_version, 0) !=
++          2) {
++      /* Format v1: rogue_get_num_macrotiles_xy() gives a single macrotile,
++       * so it has to cover the whole render, one region header per tile.
++       */
++      info->mtile_x1 = info->num_tiles_x;
++      info->mtile_y1 = info->num_tiles_y;
++      info->mtile_x2 = 0;
++      info->mtile_y2 = 0;
++      info->mtile_x3 = 0;
++      info->mtile_y3 = 0;
++      info->x_tile_max = info->num_tiles_x - 1;
++      info->y_tile_max = info->num_tiles_y - 1;
++   } else if (PVR_HAS_FEATURE(dev_info, simple_internal_parameter_format)) {
+       /* Set up 16 macrotiles with a multiple of 2x2 tiles per macrotile,
+        * which is aligned to a tile group.
+        */

@@ -1,0 +1,73 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Ryan Brue <ryanbrue.dev@gmail.com>
+Date: Mon, 9 Nov 2026 23:33:25 -0600
+Subject: [PATCH 49/56] LOCAL DEBUG: pvr: PVR_LOG_ALLOC logs images and memory
+ allocations
+
+Debug aid for amazon-sheldonp; never sent. To find what pins 165 MiB of
+GPU memory in plasma-keyboard and 133 MiB in plasmashell.
+
+Assisted-by: LLM
+---
+ src/imagination/vulkan/pvr_device.c |  8 ++++++++
+ src/imagination/vulkan/pvr_image.c  | 14 ++++++++++++++
+ 2 files changed, 22 insertions(+)
+
+diff --git a/src/imagination/vulkan/pvr_device.c b/src/imagination/vulkan/pvr_device.c
+index 19b38e3f5da..cf35690d491 100644
+--- a/src/imagination/vulkan/pvr_device.c
++++ b/src/imagination/vulkan/pvr_device.c
+@@ -63,6 +63,7 @@
+ #include "util/macros.h"
+ #include "util/mesa-blake3.h"
+ #include "util/os_misc.h"
++#include "util/u_debug.h"
+ #include "util/u_math.h"
+ #include "vk_device_memory.h"
+ #include "vk_extensions.h"
+@@ -279,6 +280,13 @@ VkResult pvr_AllocateMemory(VkDevice _device,
+    VkDeviceSize aligned_alloc_size =
+       ALIGN_POT(pAllocateInfo->allocationSize, device->ws->page_size);
+ 
++   /* LOCAL DEBUG: PVR_LOG_ALLOC=1 logs memory allocations. */
++   if (debug_get_bool_option("PVR_LOG_ALLOC", false)) {
++      fprintf(stderr, "pvr-alloc: memory %" PRIu64 " KiB type %u\n",
++              (uint64_t)aligned_alloc_size / 1024,
++              pAllocateInfo->memoryTypeIndex);
++   }
++
+    if (aligned_alloc_size > mem_heap->size)
+       return VK_ERROR_OUT_OF_DEVICE_MEMORY;
+ 
+diff --git a/src/imagination/vulkan/pvr_image.c b/src/imagination/vulkan/pvr_image.c
+index 90268de77c6..96ebe237e9a 100644
+--- a/src/imagination/vulkan/pvr_image.c
++++ b/src/imagination/vulkan/pvr_image.c
+@@ -40,6 +40,8 @@
+ #include "hwdef/rogue_hw_utils.h"
+ #include "util/macros.h"
+ #include "util/u_debug.h"
++#include <stdio.h>
++#include <inttypes.h>
+ #include "util/u_math.h"
+ #include "vk_format.h"
+ #include "vk_image.h"
+@@ -385,6 +387,18 @@ VkResult pvr_CreateImage(VkDevice _device,
+       return vk_error(device, result);
+    }
+ 
++   /* LOCAL DEBUG: PVR_LOG_ALLOC=1 logs images and memory allocations. */
++   if (debug_get_bool_option("PVR_LOG_ALLOC", false)) {
++      fprintf(stderr,
++              "pvr-alloc: image %ux%ux%u fmt %d mips %u layers %u samples %u "
++              "tiling %d layout %d usage 0x%x size %" PRIu64 " KiB\n",
++              image->vk.extent.width, image->vk.extent.height,
++              image->vk.extent.depth, image->vk.format, image->vk.mip_levels,
++              image->vk.array_layers, image->vk.samples, image->vk.tiling,
++              image->memlayout, image->vk.usage,
++              (uint64_t)image->size / 1024);
++   }
++
+    *pImage = pvr_image_to_handle(image);
+ 
+    return VK_SUCCESS;

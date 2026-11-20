@@ -1,0 +1,45 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Ryan Brue <ryanbrue.dev@gmail.com>
+Date: Thu, 19 Nov 2026 22:00:40 -0600
+Subject: [PATCH 39/56] PROTOTYPE pvr: pipeline cache key and bypass for the
+ shared stack's switches
+
+Local experiment for the shared amazon-suez/amazon-sheldonp stack, never to
+be sent (Imagination declines LLM-generated code in src/imagination).
+
+SUEZ_PVR_2D_VIEW_OF_3D is gone with the patch that hid image2DViewOf3D
+(replaced by keying 2D-view-of-3D sampling on sampler2DViewOf3D, whose
+state the key already covers through the enabled features); hash
+PVR_NULL_TEX_CHECK instead, which changes what the compiler emits. Skip
+the cache when PCO_DEBUG_PRINT is set, so the shaders are compiled and
+printed (amazon-sheldonp's local patch 0034).
+
+Assisted-by: LLM
+---
+ src/imagination/vulkan/pvr_arch_pipeline.c | 6 ++++--
+ 1 file changed, 4 insertions(+), 2 deletions(-)
+
+diff --git a/src/imagination/vulkan/pvr_arch_pipeline.c b/src/imagination/vulkan/pvr_arch_pipeline.c
+index 125f7da88d3..fc11eefdba1 100644
+--- a/src/imagination/vulkan/pvr_arch_pipeline.c
++++ b/src/imagination/vulkan/pvr_arch_pipeline.c
+@@ -3056,7 +3056,7 @@ pvr_gfx_pipeline_cache_key(const struct pvr_device *device,
+ 
+    pvr_gfx_cache_hash_str(&ctx, "PCO_DEBUG");
+    pvr_gfx_cache_hash_str(&ctx, "PVR_DEBUG");
+-   pvr_gfx_cache_hash_str(&ctx, "SUEZ_PVR_2D_VIEW_OF_3D");
++   pvr_gfx_cache_hash_str(&ctx, "PVR_NULL_TEX_CHECK");
+    pvr_gfx_cache_hash_str(&ctx, "SUEZ_PVR_CWE");
+    pvr_gfx_cache_hash_str(&ctx, "SUEZ_PCO_ALWAYS_ISP_FB");
+    pvr_gfx_cache_hash_str(&ctx, "SUEZ_PCO_NO_FOLD_SAT");
+@@ -3318,7 +3318,9 @@ pvr_graphics_pipeline_compile(struct pvr_device *const device,
+       !(pCreateInfo->flags &
+         (VK_PIPELINE_CREATE_CAPTURE_STATISTICS_BIT_KHR |
+          VK_PIPELINE_CREATE_CAPTURE_INTERNAL_REPRESENTATIONS_BIT_KHR)) &&
+-      !getenv("SUEZ_PVR_NO_PIPELINE_CACHE");
++      !getenv("SUEZ_PVR_NO_PIPELINE_CACHE") &&
++      /* A cache hit compiles nothing, so nothing would be printed. */
++      !getenv("PCO_DEBUG_PRINT");
+    struct vk_pipeline_cache_object *cached = NULL;
+    blake3_hash cache_key;
+    pco_data cached_vs_data, cached_fs_data;

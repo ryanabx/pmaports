@@ -1,0 +1,37 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Ryan Brue <ryanbrue.dev@gmail.com>
+Date: Tue, 10 Nov 2026 23:20:39 -0600
+Subject: [PATCH 44/56] LOCAL: pvr: never allocate device address 0 from a heap
+ based at 0
+
+Generated-by: LLM
+---
+ src/imagination/vulkan/winsys/powervr/pvr_drm.c | 15 ++++++++++++---
+ 1 file changed, 12 insertions(+), 3 deletions(-)
+
+diff --git a/src/imagination/vulkan/winsys/powervr/pvr_drm.c b/src/imagination/vulkan/winsys/powervr/pvr_drm.c
+index 889b50866c7..b209362bf92 100644
+--- a/src/imagination/vulkan/winsys/powervr/pvr_drm.c
++++ b/src/imagination/vulkan/winsys/powervr/pvr_drm.c
+@@ -740,9 +740,18 @@ static VkResult pvr_drm_setup_heaps(struct pvr_drm_winsys *const drm_ws)
+       winsys_heaps[i]->static_data_offsets =
+          static_data_descriptions[i].offsets;
+ 
+-      util_vma_heap_init(&winsys_heaps[i]->vma_heap,
+-                         vma_heap_begin_addr.addr,
+-                         vma_heap_size);
++      /* LOCAL: a heap at device address 0 (the transfer heap at 0x0 for
++       * BRN 65273, as in the DDK) must not hand out address 0: util_vma
++       * returns 0 for failure. Skip its first 64 KiB.
++       */
++      if (vma_heap_begin_addr.addr == 0) {
++         util_vma_heap_init(&winsys_heaps[i]->vma_heap, 64 * 1024,
++                            vma_heap_size - 64 * 1024);
++      } else {
++         util_vma_heap_init(&winsys_heaps[i]->vma_heap,
++                            vma_heap_begin_addr.addr,
++                            vma_heap_size);
++      }
+ 
+       winsys_heaps[i]->vma_heap.alloc_high = false;
+ 

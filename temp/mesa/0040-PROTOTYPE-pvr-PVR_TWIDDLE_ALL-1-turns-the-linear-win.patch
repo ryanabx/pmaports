@@ -1,0 +1,39 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Ryan Brue <ryanbrue.dev@gmail.com>
+Date: Thu, 19 Nov 2026 22:00:50 -0600
+Subject: [PATCH 40/56] PROTOTYPE pvr: PVR_TWIDDLE_ALL=1 turns the linear
+ window-size rule off
+
+Local switch for the shared amazon-suez/amazon-sheldonp stack. Both
+devices' linear-layout patches had an off switch only on amazon-sheldonp
+(PVR_TWIDDLE_ALL); keep it, so a layout A/B needs no rebuild (used on
+2026-11-19 to show linear R8 samples right on a GE8300).
+
+Assisted-by: LLM
+---
+ src/imagination/vulkan/pvr_image.c | 5 +++++
+ 1 file changed, 5 insertions(+)
+
+diff --git a/src/imagination/vulkan/pvr_image.c b/src/imagination/vulkan/pvr_image.c
+index 4870ff3d4c5..90268de77c6 100644
+--- a/src/imagination/vulkan/pvr_image.c
++++ b/src/imagination/vulkan/pvr_image.c
+@@ -39,6 +39,7 @@
+ #include "pvr_tex_state.h"
+ #include "hwdef/rogue_hw_utils.h"
+ #include "util/macros.h"
++#include "util/u_debug.h"
+ #include "util/u_math.h"
+ #include "vk_format.h"
+ #include "vk_image.h"
+@@ -58,6 +59,10 @@ static bool pvr_image_twiddle_padding_is_wasteful(const struct pvr_image *image)
+    const uint64_t w = image->vk.extent.width;
+    const uint64_t h = image->vk.extent.height;
+ 
++   /* PVR_TWIDDLE_ALL=1 keeps every optimal image twiddled, to compare. */
++   if (debug_get_bool_option("PVR_TWIDDLE_ALL", false))
++      return false;
++
+    if (image->vk.image_type != VK_IMAGE_TYPE_2D || image->vk.mip_levels > 1 ||
+        image->vk.array_layers > 1 || image->vk.samples > VK_SAMPLE_COUNT_1_BIT)
+       return false;

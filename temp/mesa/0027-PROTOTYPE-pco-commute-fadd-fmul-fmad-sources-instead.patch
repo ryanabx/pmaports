@@ -1,0 +1,54 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Ryan Brue <ryanbrue.dev@gmail.com>
+Date: Mon, 16 Nov 2026 20:32:31 -0600
+Subject: [PATCH 27/56] PROTOTYPE pco: commute fadd/fmul/fmad sources instead
+ of copying a shared register
+
+Shared and coefficient registers can only be read through S0, S2 and S3.
+A uniform in the second source of fadd/fmul/fmad (S1) was copied into a
+temp by a mov group of its own, once per use, per pixel. The first two
+sources commute: when the swap makes both readable, swap them instead.
+Only without source modifiers, whose support differs between the slots.
+Chromium's YUV shader (Angelfish) copied a matrix uniform before nearly
+every fmad.
+
+Generated-by: LLM
+(cherry picked from commit e3dc3d78915e113e3a99a20f4302110f21865c9c)
+(cherry picked from commit 8d394ed91d63d51c8ee8bbfe498b5f7fc1aa12d9)
+---
+ src/imagination/pco/pco_legalize.c | 22 ++++++++++++++++++++++
+ 1 file changed, 22 insertions(+)
+
+diff --git a/src/imagination/pco/pco_legalize.c b/src/imagination/pco/pco_legalize.c
+index 456e528a183..a2d2fc8cc0b 100644
+--- a/src/imagination/pco/pco_legalize.c
++++ b/src/imagination/pco/pco_legalize.c
+@@ -99,6 +99,28 @@ static bool try_legalize_src_mappings(pco_instr *instr,
+    bool progress = false;
+    bool needs_s124;
+ 
++   /* fadd/fmul/fmad (first two sources) commute: if the second source can't
++    * be read through its slot (a shared or coefficient register in S1) but
++    * the first can take its place and vice versa, swap them rather than
++    * copying the register into a temp with a mov of its own.
++    */
++   if ((instr->op == PCO_OP_FADD || instr->op == PCO_OP_FMUL ||
++        instr->op == PCO_OP_FMAD) &&
++       info->src_intrn_map[0] && info->src_intrn_map[1] &&
++       !pco_ref_has_mods_set(instr->src[0]) &&
++       !pco_ref_has_mods_set(instr->src[1])) {
++      enum pco_io io0 = PCO_IO_S0 + info->src_intrn_map[0] - 1;
++      enum pco_io io1 = PCO_IO_S0 + info->src_intrn_map[1] - 1;
++
++      if (!ref_src_map_valid(instr->src[1], io1, NULL) &&
++          ref_src_map_valid(instr->src[1], io0, NULL) &&
++          ref_src_map_valid(instr->src[0], io1, NULL)) {
++         pco_ref tmp = instr->src[0];
++         instr->src[0] = instr->src[1];
++         instr->src[1] = tmp;
++      }
++   }
++
+    /* Check dests. */
+    pco_foreach_instr_dest (pdest, instr) {
+       unsigned dest_index = pdest - instr->dest;

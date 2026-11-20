@@ -1,0 +1,76 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Ryan Brue <ryanbrue.dev@gmail.com>
+Date: Tue, 10 Nov 2026 22:25:58 -0600
+Subject: [PATCH 52/56] LOCAL DEBUG: pvr: PVR_LOG_TQ logs every transfer
+ command
+
+Generated-by: LLM
+---
+ .../vulkan/pvr_arch_job_transfer.c            | 40 +++++++++++++++++++
+ 1 file changed, 40 insertions(+)
+
+diff --git a/src/imagination/vulkan/pvr_arch_job_transfer.c b/src/imagination/vulkan/pvr_arch_job_transfer.c
+index 9a3df8a6810..c5fdc672170 100644
+--- a/src/imagination/vulkan/pvr_arch_job_transfer.c
++++ b/src/imagination/vulkan/pvr_arch_job_transfer.c
+@@ -22,6 +22,8 @@
+  */
+ 
+ #include <assert.h>
++#include <inttypes.h>
++#include <stdio.h>
+ #include <stdbool.h>
+ #include <stddef.h>
+ #include <stdint.h>
+@@ -46,6 +48,7 @@
+ #include "util/bitscan.h"
+ #include "util/list.h"
+ #include "util/macros.h"
++#include "util/u_debug.h"
+ #include "util/u_math.h"
+ #define XXH_INLINE_ALL
+ #include "util/xxhash.h"
+@@ -6115,6 +6118,43 @@ VkResult pvr_arch_transfer_job_submit(struct pvr_transfer_ctx *ctx,
+          last_cmd_signal_sync = signal_sync;
+       }
+ 
++      /* LOCAL DEBUG: PVR_LOG_TQ=1 logs every transfer command. */
++      if (debug_get_bool_option("PVR_LOG_TQ", false)) {
++         static unsigned seq;
++         const struct pvr_transfer_cmd_surface *d = &transfer_cmd->dst;
++         fprintf(stderr,
++                 "pvr-tq %u: flags 0x%x srcs %u dst 0x%" PRIx64
++                 " %ux%u stride %u fmt %d layout %d samples %u"
++                 " scissor %d,%d %ux%u\n",
++                 seq++, transfer_cmd->flags, transfer_cmd->source_count,
++                 d->dev_addr.addr, d->width, d->height, d->stride,
++                 d->vk_format, d->mem_layout, d->sample_count,
++                 transfer_cmd->scissor.offset.x, transfer_cmd->scissor.offset.y,
++                 transfer_cmd->scissor.extent.width,
++                 transfer_cmd->scissor.extent.height);
++         for (uint32_t i = 0; i < transfer_cmd->source_count; i++) {
++            const struct pvr_transfer_cmd_source *src = &transfer_cmd->sources[i];
++            fprintf(stderr,
++                    "pvr-tq    src %u: 0x%" PRIx64 " %ux%u stride %u fmt %d"
++                    " layout %d samples %u maps %u",
++                    i, src->surface.dev_addr.addr, src->surface.width,
++                    src->surface.height, src->surface.stride,
++                    src->surface.vk_format, src->surface.mem_layout,
++                    src->surface.sample_count, src->mapping_count);
++            for (uint32_t m = 0; m < src->mapping_count; m++)
++               fprintf(stderr, " [%d,%d %ux%u -> %d,%d %ux%u]",
++                       src->mappings[m].src_rect.offset.x,
++                       src->mappings[m].src_rect.offset.y,
++                       src->mappings[m].src_rect.extent.width,
++                       src->mappings[m].src_rect.extent.height,
++                       src->mappings[m].dst_rect.offset.x,
++                       src->mappings[m].dst_rect.offset.y,
++                       src->mappings[m].dst_rect.extent.width,
++                       src->mappings[m].dst_rect.extent.height);
++            fprintf(stderr, "\n");
++         }
++      }
++
+       result = pvr_queue_transfer(ctx,
+                                   transfer_cmd,
+                                   first_cmd_wait_sync,

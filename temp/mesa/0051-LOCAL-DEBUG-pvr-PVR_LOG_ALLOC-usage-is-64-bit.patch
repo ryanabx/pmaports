@@ -1,0 +1,28 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Ryan Brue <ryanbrue.dev@gmail.com>
+Date: Mon, 9 Nov 2026 23:47:44 -0600
+Subject: [PATCH 51/56] LOCAL DEBUG: pvr: PVR_LOG_ALLOC usage is 64-bit
+
+Assisted-by: LLM
+---
+ src/imagination/vulkan/pvr_image.c | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/src/imagination/vulkan/pvr_image.c b/src/imagination/vulkan/pvr_image.c
+index 5c3d6404277..3f9807ecd8c 100644
+--- a/src/imagination/vulkan/pvr_image.c
++++ b/src/imagination/vulkan/pvr_image.c
+@@ -391,11 +391,11 @@ VkResult pvr_CreateImage(VkDevice _device,
+    if (debug_get_bool_option("PVR_LOG_ALLOC", false)) {
+       fprintf(stderr,
+               "pvr-alloc: image %ux%ux%u fmt %d mips %u layers %u samples %u "
+-              "tiling %d layout %d usage 0x%x size %" PRIu64 " KiB\n",
++              "tiling %d layout %d usage 0x%" PRIx64 " size %" PRIu64 " KiB\n",
+               image->vk.extent.width, image->vk.extent.height,
+               image->vk.extent.depth, image->vk.format, image->vk.mip_levels,
+               image->vk.array_layers, image->vk.samples, image->vk.tiling,
+-              image->memlayout, image->vk.usage,
++              image->memlayout, (uint64_t)image->vk.usage,
+               (uint64_t)image->total_size / 1024);
+    }
+ 

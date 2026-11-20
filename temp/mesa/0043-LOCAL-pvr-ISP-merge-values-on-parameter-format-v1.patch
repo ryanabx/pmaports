@@ -1,0 +1,36 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Ryan Brue <ryanbrue.dev@gmail.com>
+Date: Mon, 9 Nov 2026 21:25:53 -0600
+Subject: [PATCH 43/56] LOCAL: pvr: ISP merge values on parameter format v1
+
+Local test patch for the GE8300 (22.68.54.30) on amazon-sheldonp; not to
+be sent. Mesa leaves the HWRT ISP merge bounds and scales at zero on
+roguexe cores with 16x16 tiles, but Fire OS's DDK (libsrv_um.so,
+RGXAddRenderTarget) computes them for this core with the same formulas.
+With zeros, triangles that write depth (PDS triangle merging enabled)
+were all dropped.
+
+Assisted-by: LLM
+---
+ src/imagination/vulkan/pvr_arch_job_render.c | 7 ++++++-
+ 1 file changed, 6 insertions(+), 1 deletion(-)
+
+diff --git a/src/imagination/vulkan/pvr_arch_job_render.c b/src/imagination/vulkan/pvr_arch_job_render.c
+index 36641d519e9..bc859ab0a61 100644
+--- a/src/imagination/vulkan/pvr_arch_job_render.c
++++ b/src/imagination/vulkan/pvr_arch_job_render.c
+@@ -563,8 +563,13 @@ static void pvr_rt_dataset_ws_create_info_init(
+    create_info->layers = rt_dataset->layers;
+ 
+    /* ISP register values. */
++   /* The DDK computes these on simple parameter format v1 too (GE8300);
++    * without them, PDS triangle merging drops depth-writing triangles.
++    */
+    if (PVR_HAS_ENHANCEMENT(dev_info, 42307) &&
+-       !(PVR_HAS_FEATURE(dev_info, roguexe) && mtile_info->tile_size_x == 16)) {
++       (!(PVR_HAS_FEATURE(dev_info, roguexe) && mtile_info->tile_size_x == 16) ||
++        PVR_GET_FEATURE_VALUE(dev_info, simple_parameter_format_version, 0) ==
++           1)) {
+       float value;
+ 
+       if (rt_dataset->width != 0) {

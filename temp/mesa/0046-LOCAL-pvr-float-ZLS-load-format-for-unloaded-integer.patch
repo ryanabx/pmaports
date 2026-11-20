@@ -1,0 +1,39 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Ryan Brue <ryanbrue.dev@gmail.com>
+Date: Wed, 11 Nov 2026 12:11:47 -0600
+Subject: [PATCH 46/56] LOCAL: pvr: float ZLS load format for unloaded integer
+ depth on format v1
+
+Generated-by: LLM
+---
+ src/imagination/vulkan/pvr_arch_job_render.c | 17 +++++++++++++++++
+ 1 file changed, 17 insertions(+)
+
+diff --git a/src/imagination/vulkan/pvr_arch_job_render.c b/src/imagination/vulkan/pvr_arch_job_render.c
+index bc859ab0a61..e279be7b70a 100644
+--- a/src/imagination/vulkan/pvr_arch_job_render.c
++++ b/src/imagination/vulkan/pvr_arch_job_render.c
+@@ -1002,6 +1002,23 @@ static void pvr_frag_state_stream_init(struct pvr_render_ctx *ctx,
+          value.zloadformat = job->ds.zls_format;
+          value.zstoreformat = job->ds.zls_format;
+ 
++         /* LOCAL: on format v1 (GE8300) the ISP rejects every depth-writing
++          * object while ZLOADFORMAT is an integer format (16BITINT,
++          * 24BITINT), even with compare ALWAYS and nothing loaded, and works
++          * with a float one. When the depth isn't loaded, the load format
++          * only sets the ISP's internal depth format, so use F32Z; the store
++          * format stays the buffer's. That also makes ISP_BGOBJDEPTH a
++          * float, which imagination/linux-firmware#17 found this core
++          * wants. Depth that is loaded stays broken (F32Z misreads it).
++          */
++         if (PVR_HAS_FEATURE(dev_info, simple_internal_parameter_format) &&
++             !PVR_HAS_FEATURE(dev_info, simple_internal_parameter_format_v2) &&
++             job->has_depth_attachment && !job->ds.load.d &&
++             (job->ds.zls_format == ROGUE_CR_ZLS_FORMAT_TYPE_16BITINT ||
++              job->ds.zls_format == ROGUE_CR_ZLS_FORMAT_TYPE_24BITINT)) {
++            value.zloadformat = ROGUE_CR_ZLS_FORMAT_TYPE_F32Z;
++         }
++
+          zload_format = value.zloadformat;
+       }
+ 

@@ -1,13 +1,22 @@
+# 2026-11-20 (r0): the patches are cut from the SHARED amazon-suez/amazon-sheldonp
+# stack, Mesa branch shared/pvr (~/Projects/Linux/mesa, worktree
+# worktrees/mesa-shared; on the fork) at c785e58c4749 on main 6ff9e9bf993:
+# the shared layer (1-40), then the GE8300 format-v1 layer (41-47) and its debug/test switches (48-56). Which device's version of each
+# duplicated fix was kept, and why: device-mainline-work
+# notes/MESA-UNIFY-2026-11-19.md. LOCAL EXPERIMENTS, never to be sent
+# (Imagination declines LLM-generated code in src/imagination). The history
+# below describes the earlier per-device series.
+#
 # Forked from Alpine's main/mesa (aports master, 26.2.6-r0) by way of the
-# amazon-suez temp/mesa aport, for amazon-sheldonp GPU bring-up: plain Mesa
-# main, NO local patches, to test the PowerVR GE8300 (22.68.54.30) with
+# amazon-suez temp/mesa aport, for amazon-sheldonp GPU bring-up: Mesa main
+# with local patches, to test the PowerVR GE8300 (22.68.54.30) with
 # the latest pvr driver. Trimmed: gallium zink and llvmpipe, Vulkan
 # imagination and lavapipe. Do not merge this into pmaports master.
 maintainer="Ryan Brue <ryanbrue.dev@gmail.com>"
 pkgname=mesa
-pkgver=27.0.0_git20261109
-pkgrel=37
-_commit="1c87c60187064c60a10378fa79e20debf0941f97"
+pkgver=27.0.0_git20261120
+pkgrel=0
+_commit="6ff9e9bf99326b479efc8042aa68cdb1af103d19"
 pkgdesc="Mesa DRI OpenGL library (amazon-sheldonp PowerVR test build)"
 url="https://www.mesa3d.org"
 arch="aarch64"
@@ -67,42 +76,62 @@ makedepends="
 	zstd-dev
 	"
 source="mesa-$_commit.tar.gz::https://gitlab.freedesktop.org/mesa/mesa/-/archive/$_commit/mesa-$_commit.tar.gz
-	0001-pvr-format-v1-single-macrotile.patch
-	0002-pvr-transfer-submit-on-heap.patch
-	0003-pvr-debug-dump-region-headers.patch
-	0004-pvr-terminate-clip-in-tiles-v1.patch
-	0005-pvr-isp-merge-values-v1.patch
-	0007-pvr-free-list-mb-test.patch
-	0008-pvr-no-dbias-int-test.patch
-	0009-pvr-zls-format-test.patch
-	0010-pvr-no-d24-attachments-v1.patch
-	0011-pvr-free-list-16mb-v1.patch
-	0012-pvr-linear-large-npot-images.patch
-	0013-pvr-debug-log-alloc.patch
-	0014-pvr-linear-depth-too.patch
-	0015-pvr-pad-linear-depth.patch
-	0016-zink-release-expired-bos-per-frame.patch
-	0017-pvr-debug-log-tq.patch
-	0018-pvr-tq-abs-test.patch
-	0019-pvr-heap-at-zero.patch
-	0020-pvr-bgdepth-float-d24-test.patch
-	0021-pvr-debug-log-tq-cs.patch
-	0022-pvr-one-row-buffer-copy-even-stride.patch
-	0023-pvr-v1-unloaded-integer-depth-float-zload.patch
-	0024-pvr-v1-offer-d24-again.patch
-	0025-pvr-no-cpu-wait-per-submit.patch
-	0026-pvr-rt-dataset-pool.patch
-	0027-pvr-csb-bo-cache.patch
-	0028-pvr-static-ms-state-no-punch-through.patch
-	0029-pvr-no-helper-feedback-plain-fs.patch
-	0030-pco-test-no-null-tex.patch
-	0031-pvr-null-tex-dummy.patch
-	0032-pvr-pipeline-cache.patch
-	0033-pvr-sampler-2d-view-of-3d.patch
-	0034-pvr-pipeline-cache-pco-debug-print.patch
-	0035-pco-smp-data-used-comps.patch
-	0036-pco-smp-data-used-comps-build-fix.patch
-	0037-zink-debug-log-swapchain.patch
+	0001-LOCAL-build-with-wayland-protocols-1.49-revert-3b5d7.patch
+	0002-PROTOTYPE-pvr-cache-render-targets-for-dynamic-rende.patch
+	0003-PROTOTYPE-pvr-back-null-buffer-descriptors-with-a-ze.patch
+	0004-PROTOTYPE-pvr-suballocate-SPM-background-object-cons.patch
+	0005-PROTOTYPE-pvr-recycle-control-stream-buffers.patch
+	0006-PROTOTYPE-pvr-reuse-the-SPM-scratch-buffer-for-any-s.patch
+	0007-PROTOTYPE-pco-size-smp-data-vectors-to-the-words-use.patch
+	0008-PROTOTYPE-pvr-pco-compile-static-MSAA-state-into-fra.patch
+	0009-PROTOTYPE-pvr-keep-the-transfer-submit-off-the-stack.patch
+	0010-PROTOTYPE-pco-don-t-back-propagate-loads-into-shared.patch
+	0011-PROTOTYPE-pvr-cache-compiled-graphics-pipelines.patch
+	0012-PROTOTYPE-pvr-don-t-advertise-VK_EXT_color_write_ena.patch
+	0013-PROTOTYPE-pco-no-ISP-feedback-for-fragment-shaders-t.patch
+	0014-PROTOTYPE-pvr-cache-load-op-and-end-of-tile-shaders-.patch
+	0015-PROTOTYPE-pco-fold-fsat-into-the-producing-fmul-fadd.patch
+	0016-PROTOTYPE-pco-enable-the-preamble-by-default.patch
+	0017-pvr-honour-explicit-DRM-modifier-plane-layouts-on-im.patch
+	0018-PROTOTYPE-pco-keep-branches-with-expensive-ALU-ops-a.patch
+	0019-PROTOTYPE-pvr-store-window-sized-images-linearly-ins.patch
+	0020-PROTOTYPE-pvr-reuse-the-transfer-submit-scratch-per-.patch
+	0021-PROTOTYPE-pvr-keep-up-to-eight-emptied-suballocator-.patch
+	0022-PROTOTYPE-pvr-cache-render-targets-for-up-to-32-size.patch
+	0023-PROTOTYPE-pvr-only-32-bit-formats-take-the-linear-wi.patch
+	0024-PROTOTYPE-pvr-cache-the-SPM-end-of-tile-shader-too.patch
+	0025-PROTOTYPE-pvr-advertise-the-real-maxTexelBufferEleme.patch
+	0026-PROTOTYPE-pco-one-NaN-check-for-NaN-preserving-fmin-.patch
+	0027-PROTOTYPE-pco-commute-fadd-fmul-fmad-sources-instead.patch
+	0028-PROTOTYPE-pco-fold-a-constant-LOD-bias-into-the-samp.patch
+	0029-PROTOTYPE-pvr-pass-raw-single-channel-transfer-copie.patch
+	0030-PROTOTYPE-pco-take-gl_FragCoord.xy-from-the-pixel-re.patch
+	0031-PROTOTYPE-pvr-submit-every-transfer-prepare-on-the-D.patch
+	0032-PROTOTYPE-pvr-one-clip-rectangle-per-transfer-pass.patch
+	0033-PROTOTYPE-pco-leave-the-default-preamble-off-for-com.patch
+	0034-LOCAL-zink-free-expired-cached-BOs-once-per-frame.patch
+	0035-LOCAL-pvr-no-CPU-wait-for-every-earlier-job-at-each-.patch
+	0036-PROTOTYPE-pco-keep-the-helper-test-for-multisampled-.patch
+	0037-LOCAL-pvr-a-zero-texture-for-null-sampled-images-no-.patch
+	0038-LOCAL-pvr-sample-2D-textures-as-2D-unless-sampler2DV.patch
+	0039-PROTOTYPE-pvr-pipeline-cache-key-and-bypass-for-the-.patch
+	0040-PROTOTYPE-pvr-PVR_TWIDDLE_ALL-1-turns-the-linear-win.patch
+	0041-LOCAL-pvr-single-whole-render-macrotile-for-paramete.patch
+	0042-LOCAL-pvr-terminate-clip-in-tiles-on-parameter-forma.patch
+	0043-LOCAL-pvr-ISP-merge-values-on-parameter-format-v1.patch
+	0044-LOCAL-pvr-never-allocate-device-address-0-from-a-hea.patch
+	0045-LOCAL-pvr-even-stride-for-one-row-buffer-copies-and-.patch
+	0046-LOCAL-pvr-float-ZLS-load-format-for-unloaded-integer.patch
+	0047-LOCAL-pvr-PVR_NO_D24-1-hides-24-bit-depth-attachment.patch
+	0048-LOCAL-DEBUG-pvr-PVR_DUMP_RGN-dumps-region-headers-on.patch
+	0049-LOCAL-DEBUG-pvr-PVR_LOG_ALLOC-logs-images-and-memory.patch
+	0050-LOCAL-DEBUG-pvr-fix-PVR_LOG_ALLOC-image-size-field.patch
+	0051-LOCAL-DEBUG-pvr-PVR_LOG_ALLOC-usage-is-64-bit.patch
+	0052-LOCAL-DEBUG-pvr-PVR_LOG_TQ-logs-every-transfer-comma.patch
+	0053-LOCAL-DEBUG-pvr-PVR_LOG_TQ-also-logs-each-pass-s-con.patch
+	0054-LOCAL-TEST-pvr-PVR_TQ_ABS-writes-absolute-transfer-s.patch
+	0055-LOCAL-DEBUG-zink-ZINK_LOG_SWAPCHAIN-1-logs-kopper-sw.patch
+	0056-LOCAL-TEST-pvr-PVR_FREE_LIST_MB-sets-the-initial-glo.patch
 	"
 builddir="$srcdir/mesa-$_commit"
 options="!check"
@@ -226,41 +255,61 @@ _vulkan() {
 }
 
 sha512sums="
-a616e838d97ae8111f8af74d1f41d3df83696446404ec6f47a4259fb3a256434c9f6310128b2dd9c6ca55ca0511d8b80db850bbcdb4fefec452763fc40bff0f3  mesa-1c87c60187064c60a10378fa79e20debf0941f97.tar.gz
-ffab38eb80eb9344488951e8e69990813fbca3ff112224bd24bd81371d02721b3b28af60cec61550786580f4135f4c8f4258422de3142790f6acb381b674d261  0001-pvr-format-v1-single-macrotile.patch
-1b6170e358528584602c517e6d92a1a45833e44036c2b51fada1a5f1e713895f49510ee98bd003e34dac16ecc8b41df47149cd97a2d8bab026aa9cbe69679770  0002-pvr-transfer-submit-on-heap.patch
-e4f2e8a395076f4e97fa712240256e4f1f424c1697b8039d319d2381726a630f3fbac431ba17452e456ee010d80d6950356df516063d90c0b1afcdd56f9e818a  0003-pvr-debug-dump-region-headers.patch
-284d1a0ba6615ce91ea1632c8d8302533a73b8e57a3847ee6f9318f215239e8f007d04ad514ddd7c5fb7d04e5d9e206c54b6dcc4b3d9ff6253625430e7a06cb7  0004-pvr-terminate-clip-in-tiles-v1.patch
-7b8386e2ad5d131e1f4f90f9aec593a5b7dd8c03dea96f17421c25eb06885c30def285899db12ebbe8918d1bed8c069f589fa64457e0d8700b8343a5d1186aec  0005-pvr-isp-merge-values-v1.patch
-f04259c6bb30a6f549cc40c6d19467220c62f61f4b4a9ff38515118a107a6855a4ad60efe894fe3ec1ed0bf6313c5ae9831062b88f788c07075ab47732c108f1  0007-pvr-free-list-mb-test.patch
-27301b176df15b794d2b203dd1e5bc030073d20014dc8ff3db786b66d78fc6f1d3cfacefe129afc3943fa18b2745e8dd48e594545cd31c9b44d73a26b0eb9712  0008-pvr-no-dbias-int-test.patch
-3e52fc4af206cafc54d032e4676b5bfa8ca68acc50c611736e4158b9b8ca06462c0f0c9e42482a06c8a8f6c50a04d4a9d83f87bce13140024d37fe247848ee5e  0009-pvr-zls-format-test.patch
-6474da4c997084a0ec7fe4206af527fb6c70b1592da0cb39a76f832bffd27e621687be3317bf3afbb69b21b821d766615e799d40ff2aa5e095d5a51922ef9135  0010-pvr-no-d24-attachments-v1.patch
-837ccd0a1ea9d01faaa0cc97eb660f7ebb758beec312104b6730c8bdc45a15a9e8522139c392c3444ee69c682b690e39472934c443db8a7d5256166d48cdfd31  0011-pvr-free-list-16mb-v1.patch
-3fbf2a442d89913ef7bf11567815cc54cd6cd6f69e646b9ca7f4aaa7308bbd1d119c3daa10a12e1d548316541e09ea362a2da68889b8fd2d635062ecb66259b3  0012-pvr-linear-large-npot-images.patch
-bd2e52617a73bce6cf59d5a4b8200a8cbb43d47c8bad44dd107f54b2245e701be62e65c40e4f4fa38afe8d764605426b3c82d7046ed18592e5b03a195792a367  0013-pvr-debug-log-alloc.patch
-e9772f368ef07549ae11f7552bf23a4060d208696bbb69aeefa66943a7b47e17ab2ac4cb6cb09c958b9d21d5833db736813aa2f9fbcd6126c4ad32f9a4323d19  0014-pvr-linear-depth-too.patch
-82a999505402e538f03a3a32da80ccb82f896e56a5f1e3fdcc9ab4b0c4ef0fbe66f6287e35591d6d92008659fe1e0302bcb08ce2d754a83902bd7ec34f82f89a  0015-pvr-pad-linear-depth.patch
-cb15e8bcfa7811caaed97365ba72205727c103b64593e35055c4d765dcf5c1afa432bee583026d807e6da0d2f646f767fe681939cd442bced8f9cc863541cc12  0016-zink-release-expired-bos-per-frame.patch
-5b787f096956682a656bdab1f8c47fcb1577535662426600a7c24c215c5acb3f4003231eac5ac13c87498f11e87020e6693cc0109c821eb72f7d11056a0d5553  0017-pvr-debug-log-tq.patch
-af5e6a0a59518b489434521cf473f33c6471c624753b068b45912b7235ffede7bdac271210ff38151158d542a51c3aede80ec0b032a093b678a456b23d0a65a2  0018-pvr-tq-abs-test.patch
-460536aa102c953a1d7faa3056afc68f97ec678f6bf72f620ca2cea3901d575d81642e638c2c0fd6421f17aafe79c00cec08bb2c8fc6eb2fae9386cb7e744d6f  0019-pvr-heap-at-zero.patch
-eadc6e6641f87ca30b3ec337149d2d456ab214baef676de8cc265ba0c552b2cad071e607c4d5299276edde5021e9f6ef84bf43d33f2cf651128d2802417f3c03  0020-pvr-bgdepth-float-d24-test.patch
-9bb841f17f15a34ffaba66f26b6113422ed6e0a7e4b9e356ef08f500915ff063f08a102b65e92defdd93c33d160d724ef29287c6847a9b59ac91f2da03b63e6b  0021-pvr-debug-log-tq-cs.patch
-0471702e0dcba9d04d0e26ba3872ca9fd6f877ea10f962aa08d87e90716bb6bfc256996da7745f4d5b8ae633ec3c59d3713bee14376fe4876cd508c6113e0d51  0022-pvr-one-row-buffer-copy-even-stride.patch
-461ab9fe03e0615f6ef12835be89fdb3e595cefe3a432669ad104d346069cd364d76b54054f0a0e575ce2739334db992b00ab54d9922611d1d57b9444ef08586  0023-pvr-v1-unloaded-integer-depth-float-zload.patch
-66eebaee6d5cb36defb425ea15d153a415c4964b54d84e1871405e7ad61a10c80b7ca68defcd21f21d21fe019fb4deb870599c887c1a3009e96cb0f9fb704852  0024-pvr-v1-offer-d24-again.patch
-7499c2d06a02affea8eb8131bdc95bbaec8c57e70a765733e5b2ddcfa4431d28ccb758baf57e05af2c36dbf615c0490ed8214713cd49ed52e27413158e17a0d2  0025-pvr-no-cpu-wait-per-submit.patch
-03ce36108208cfb1c2b0be36f1498a7cb555cf48239f563739bfc53ec275266e60234c7fea932f1acef6694ac04a230e75050bb19357a20335be911e0f2a4193  0026-pvr-rt-dataset-pool.patch
-b25721efd4bb99cb3a3a13e8eeac47e11873442f11d161692a2869bc583c49be1c66be2aee47b871be3c8e2d520baf43d0d13b67ce5aa96aabc73a2ea1c84c99  0027-pvr-csb-bo-cache.patch
-0bd4629cc7d0d474d23cb5c11609955dd415ec0615a999f53b10bf7e3351d5cb61670b1fba385ba33c91bbea9e559c83e4625f6d118313cd95c2c1d6dcbc5ca4  0028-pvr-static-ms-state-no-punch-through.patch
-b106f26193a74900ab39f03625780d531cd23a268a891c64cbb5f7ccda3cdc8ac95c38a1a305d0e559750b1d5a4b69d5fca484955f4b6c0029fd2c08561ed106  0029-pvr-no-helper-feedback-plain-fs.patch
-62344ef667a66cebe4822389f182489421aeef3bb856b1c5337f13736c7ccd97b3ee2da7480b56000f2dd7ed8bdac9ba17a1e919e43bb28fdb05d903946be6ca  0030-pco-test-no-null-tex.patch
-291f232b6f926327169e25c36cd922b620934fa5b09ec4827aa685229e47d13953538f2a96e58c5b4d604134f4c9a9ad4a544f1e4a9be49f2e0e9586a2e29940  0031-pvr-null-tex-dummy.patch
-136c894faf8d1fd05fa746d87eb1885d5eea098054a260a12125e600d3a9a5c0f9bbc1d1f37b7e74f8a2a4bca03bda55156e517d49ce19f3d2c0b3bef1b27e6a  0032-pvr-pipeline-cache.patch
-cfa98c91061e2c5db8ddeec0b4826257d86f1b43008a506c301df3919cd7ce8b7cb89353a457c5117c7fa266409f2954e3b673f8bfe52c90aa3e8fb8b8a93784  0033-pvr-sampler-2d-view-of-3d.patch
-4609d49db5fa24024903c817f2eccd294febca55ea7eb134e15878d03d7d506592d6ec69f2d9e347add09a552737e82c8d268f26371c8d93d8c9715318d3a8aa  0034-pvr-pipeline-cache-pco-debug-print.patch
-b3caf3d938d736817f2054e6984c87e13401ee24a0ea5fd1f0f324be97715d57225bb08fa5866c19c54d4eb05fe1630a595c31ec2aa2c39e3dcabb458991455b  0035-pco-smp-data-used-comps.patch
-41dc692c0330dfb734d5d1391be07c7a538074e981a89566a9313d3c7f713612fe302aa6e60f4b3dfeec08001b8a2f3df572f026ab30a0ff2af56d78251987c1  0036-pco-smp-data-used-comps-build-fix.patch
-31fcd26b6db229d5eb683e3fb20f00504255b5a91941e03fe9a217256551fc7c054ddb51b1eed9ad9b90f42d66e66ed09ea54afbfb528dbcbb2b3c624d2aaffc  0037-zink-debug-log-swapchain.patch
+eb2e257dcb8cfbb4378a387824b4b75f29a3c52da41a81b1d7fae1959b190a0789f9ddb2b6c852ea1080ca8b17ff8a5e76f75e5ae5dfb0f63179fccaecd2a9e6  mesa-6ff9e9bf99326b479efc8042aa68cdb1af103d19.tar.gz
+ace3ae9a2f26779dd74748d158bba43b2498e5316ebda5caf2eba2e2eb9d1070bc0c7f198c35d14ff1cc0ff21382b487f56750b7d0b85f9c28a4c1e547de7162  0001-LOCAL-build-with-wayland-protocols-1.49-revert-3b5d7.patch
+e3aa26763d0bcf41b7227e2d8cd869f08b430fdaa3848f7a690d4e3795a825fed89d8cb45afd3141f9487bd799781c16e4f4f48da51d1ba998c03367a921edf3  0002-PROTOTYPE-pvr-cache-render-targets-for-dynamic-rende.patch
+6b6cd128303c4f4e9c301393ab666e4efd5f4f39238a4633f0bff54e764bbddb2f2214c2849e3e45fbb61b2f271280883620b72a456f1f70909de751f3fa17b0  0003-PROTOTYPE-pvr-back-null-buffer-descriptors-with-a-ze.patch
+bf813dc08cbd98b23345119f73f870c7c997b8b4b618be06eab6fe76bc82f41f3e28711901ec5770ccff1e9e52d6d836e78b4699abde037b70e9987d406128df  0004-PROTOTYPE-pvr-suballocate-SPM-background-object-cons.patch
+3aa2ef6ef078620c9c7bde28f762e8bd57a8a3d4b5a88ee6f5129218fc5ce95628af02034dbc62511280acca7068ac31a9709688fe4092c6237ae13f8551835f  0005-PROTOTYPE-pvr-recycle-control-stream-buffers.patch
+d1d889b49c210fe121937769147fe0b4ccb7e7b3eb300a3222be4390a0f7653f56fad1a28a40f88d1c03b67fd1ed702aae7d973d923ec7aa935fbf07f39683b6  0006-PROTOTYPE-pvr-reuse-the-SPM-scratch-buffer-for-any-s.patch
+b9084098c46c0b99ed61cbce4a3e811196afa2adb37226cb3c5e00fa31b9fa343c1da2ed1518f5a7e2c7484ec99564f6c56eac5fa300e479f7ce79068cc9d3c3  0007-PROTOTYPE-pco-size-smp-data-vectors-to-the-words-use.patch
+12f889b6c48baf0a753e31d749fcd97985a0c03f4b50288e2315f60a944d29bf766c0fb6f5e794d2c35165479bef05ee74f0d91d3301d9537f24257aac133d9c  0008-PROTOTYPE-pvr-pco-compile-static-MSAA-state-into-fra.patch
+bdbc90b718ecf301c93794ebdff38a713cbbbd965dae2035912dbeb1168e189d362396231aad4a5ba55c69c07f5f8443ceef107b66402671c2dd3a9918ac19b5  0009-PROTOTYPE-pvr-keep-the-transfer-submit-off-the-stack.patch
+8b20dcfa65d872a8f4c5bfd8cd0159864caa3fc9825832653ae4c82565f142d1c79b4809c47ccf6b61b3c8349d4d3e48f1c5c9dcdda14127b26259e82a944162  0010-PROTOTYPE-pco-don-t-back-propagate-loads-into-shared.patch
+57737f655b9245c5d37e9f39b551bf3ca3bed234d19e40035050ca6d9e5f10dfee439ce5765935171048ffbfd3706aa4b3f747e686f515faada4736851f7aad5  0011-PROTOTYPE-pvr-cache-compiled-graphics-pipelines.patch
+76377188d5e175bf7d49ed444b2f8443e3a251ae1156877c5e474d62adb12ec932a683cda6914b859fdb70cba30651751d87e18d1a818488a7f69e75fa901929  0012-PROTOTYPE-pvr-don-t-advertise-VK_EXT_color_write_ena.patch
+ae89853d9bcad109eaa9844b8bd5134b90be0cb13e23177718ece9b857d5a3a70f0757a2488c248c5a0c8b69528f83376a24fade0fe6495fbeae6fa0b482c5f8  0013-PROTOTYPE-pco-no-ISP-feedback-for-fragment-shaders-t.patch
+8dbf9cbdd05172a8acf9ccf24c203123ea4a3b81783d2435b8271b60ca56c389b15bbff8eb226b413d71fb97d4c53b67f9730af5a27e3fd5f51a200653d49e5a  0014-PROTOTYPE-pvr-cache-load-op-and-end-of-tile-shaders-.patch
+ef43ed1b128e1a68e5e4a896d6c6862dc869a8d1e515593de86317bcb4e904e7fb1b6293f34215969f0783e905bfde2881ec838ec6b43ad4e41d57a371b87953  0015-PROTOTYPE-pco-fold-fsat-into-the-producing-fmul-fadd.patch
+4fb72462c1f7c136265d01f69bd8a0e82b8ac882ead02fa6178b1003818c92b97791b5ea3c87a834c9bd5f0d95a1f2b6834a60ad26f46538bbac90a9d5dd1cb1  0016-PROTOTYPE-pco-enable-the-preamble-by-default.patch
+d6c48a5d886c938692c54aabdc85f4d4b7bc449c5278c9d841f863a9c4886bc77ddefe17ef643953e7724ce1de00346f4c653c0f114dda9880d7a6d62a75913a  0017-pvr-honour-explicit-DRM-modifier-plane-layouts-on-im.patch
+4fd740780bed112e8863abcd47b79e7bfbdc066c8c8dd62a64a43163fc05dc718afcf000e6ccff85c2b1592c4a7c8279951c1eeb76e6b510568e46b77bf4e32e  0018-PROTOTYPE-pco-keep-branches-with-expensive-ALU-ops-a.patch
+af526d1fe88cf9dc614cad4762f8f2556655bbe54f8082029bf1e53e43ae805727d2bf9dd6800820e19d0c2e6be2fb02dd50b1cde369cae627ababe3b91902b5  0019-PROTOTYPE-pvr-store-window-sized-images-linearly-ins.patch
+99879a009120778fee68fca5f832635fc94d73485111a7e716494250b0a365eeb9cf3372556a8138842d2e4fb660ec5e1f1482fa8d2b77971c9656d058a37933  0020-PROTOTYPE-pvr-reuse-the-transfer-submit-scratch-per-.patch
+ebf3ce5677e170f47094a8fb532776ba650392e381e025d8e02ba485523c9c60f41ff420068b52aca70e0ea09f1f056846975c8de2720f9171a566c160725d18  0021-PROTOTYPE-pvr-keep-up-to-eight-emptied-suballocator-.patch
+e4437a70477321011d3d934d9987b62bd9396ce9fa7f849ee5c46e104623e5b7fd3ab101cbe7d1556c5cceba78503d0ecb9c7bce4d631825320b1518cd4de22a  0022-PROTOTYPE-pvr-cache-render-targets-for-up-to-32-size.patch
+04a9265302d545c11c9dc2dfffba5886787f1e1b51c06633b6a0f0ee3f1fdd9972d9b95b33d6d1c8d6f8fb5da34477ab0fbf754c9e3c4b6e81e9e234c0d1125b  0023-PROTOTYPE-pvr-only-32-bit-formats-take-the-linear-wi.patch
+688d32ed040d26a996c7eec72758389018eb773c2057322647f64848994b85425519eba4f07ef9a83997507f55265f8da4b33da5f906dbed4eeb330668e509e7  0024-PROTOTYPE-pvr-cache-the-SPM-end-of-tile-shader-too.patch
+453b1b95f7041e6d46bbbbd001a56f377770ea35a76633d8c18bbbae4241a8d7d6a3db6c334dbd53ddfad4f4bda38fe34cedff22badae98d2cdf6170f31a08c0  0025-PROTOTYPE-pvr-advertise-the-real-maxTexelBufferEleme.patch
+7be57d848891118bfb698919de9672934c60eeaecb8d8a3a681566c66c9609e3d8f2598209f6d618e6cbee5ed7279cf0fea6797dd869c90adfc3ee56b9bfcdc8  0026-PROTOTYPE-pco-one-NaN-check-for-NaN-preserving-fmin-.patch
+e9c016900b1295acc6129732e798d3491b113e4b43cbe49111db8f60adc109e556fe2fd89e469eac8488223d0dd7f0d7921e9f82ac290702c851d061835a9ec5  0027-PROTOTYPE-pco-commute-fadd-fmul-fmad-sources-instead.patch
+248782acf3f644a25a25f0f8a08de5fc3abf5cdbc26d5d64e06a01688246bea7df13ff41bfb91030aa35635d17598d3150eafa134abe732d8272bb2e132b2dad  0028-PROTOTYPE-pco-fold-a-constant-LOD-bias-into-the-samp.patch
+1b8201d698fe3f04a1741b4795302fbb2a261725a64a085808e287feedcaa94c6a493320a5a14cb9abd69143ace7cb559db507a65e114a35b485f8669bbd249a  0029-PROTOTYPE-pvr-pass-raw-single-channel-transfer-copie.patch
+747c3b94eb59d7f7b653e003c3c601f29fec7faffd7c5bf5b72755dc6ea382760f014f840a5e0250bb8401a72ea050579e0a7388f8741c214a8df7db5393ca7f  0030-PROTOTYPE-pco-take-gl_FragCoord.xy-from-the-pixel-re.patch
+1be8ef53ab5e16c7df675f45f4c389edf831999dc3b49307b9a04fae3aeeafeeb6a3f031b52fb3021c40cd6624ac5fd44dbe0bb1432923f6b23aca4baf36948b  0031-PROTOTYPE-pvr-submit-every-transfer-prepare-on-the-D.patch
+070001f40087b717d76a6994f2e20bd034d4f1f53eb93dddf5c1fb784127c7cc17aaba11e953aed4f249648d03f0bfc5c6ad37d153abdf7c291849dd59bff863  0032-PROTOTYPE-pvr-one-clip-rectangle-per-transfer-pass.patch
+2f0f9ed173e33568d5464f7f22e8ff377e727f028166f24bbc96615735b8cf1d0337c23b1798bf36c69bbb1fd1115cef3c9957b27d830406a67b47e2a1b5eeda  0033-PROTOTYPE-pco-leave-the-default-preamble-off-for-com.patch
+56b2590152755f629c7faa46f4dd487c804abe4cb0c64b8c5306e424192862e18e95f4e5b6d881e5cbf2af8bd5688fb6c467d39cbe29ebb10ebbc93f0adf55d0  0034-LOCAL-zink-free-expired-cached-BOs-once-per-frame.patch
+bad442ed6b2089efcc856e7c80632752e3c9eaaf3b1da87a50d1333182099c9f56a7dc44b785427ee9fe62e219eb303ab3496c171eac6eeca5b27c8a65e6dff8  0035-LOCAL-pvr-no-CPU-wait-for-every-earlier-job-at-each-.patch
+7e1e4353c53e868328616390cd5a5f265be0315e9dfe530b3f958f7252e02f4c68fa3c0f982d261b05f87f64a298bafbcffb4f8a621b3ed08105478d4c437a87  0036-PROTOTYPE-pco-keep-the-helper-test-for-multisampled-.patch
+a7ef4a167eb65dccb0b7a3509ace3f924abf08fcdfa69168c60bb599622119d3855f5ecc5710d3b04bd12b7e079da1801b1dfeac27046c910cade096bf75a585  0037-LOCAL-pvr-a-zero-texture-for-null-sampled-images-no-.patch
+b8dbb058bf5c69c152e4419e971982bc6a801951daa782ab3e9a33f3515e0fa18884ac4950f185bb80d0f470b74dfe422a50c8faed1602cd7a3ea47839322825  0038-LOCAL-pvr-sample-2D-textures-as-2D-unless-sampler2DV.patch
+a740419e662429ff2a78c41dc947f7d13fffc861d1748dd14bfe2e4915c75dbf785ab087210e568756b20c4291789da68dfd50e76a7487a64d4b62c589776ee5  0039-PROTOTYPE-pvr-pipeline-cache-key-and-bypass-for-the-.patch
+ce13e6a29d7242e7981bb7c1f2c0f2cc93fdfbba8b6adca8aff59786ebdb0cab0d1bd4002c886806a15b82dfd70cd4a084f4550268221a67b7b1e4610f7dc8e0  0040-PROTOTYPE-pvr-PVR_TWIDDLE_ALL-1-turns-the-linear-win.patch
+fd40e11250574ff3d9ae5bc33aee6ae611e9235bf2294ed1fbcbfa164bb447af891fe31b7892838ac8db8ddc92cf0e87b737d78ba421745edc95e5bb37f1bd34  0041-LOCAL-pvr-single-whole-render-macrotile-for-paramete.patch
+8ba7f6bd072a149746cb9ec3309dc9cb36aa5b4da3b5348cef8c1ee4b66dd6be68a17b7058ed1879f86ee0baf76a1ef911cff315261a25303049f4b744520e6a  0042-LOCAL-pvr-terminate-clip-in-tiles-on-parameter-forma.patch
+b552b78d4ca1022fd7bdb0bd39163c627dca42ac8e2b01bde42aa2ff377825c2ea58b961182600cf133e53df908196ebf0ce991ba88915710b7c7f419af84547  0043-LOCAL-pvr-ISP-merge-values-on-parameter-format-v1.patch
+6e7f6ddcc0855a88792cace111d8bc68f3b78005b8aa0be7aba19a44feffa1cd27a6fc816f9e2247b03d235dbc855c58fef741059f6435e2db6318e0e82318e9  0044-LOCAL-pvr-never-allocate-device-address-0-from-a-hea.patch
+dc04c47adc8785d43932690992aeea01f57e328185b037acbdcfd487ba545c12bc783da7b93ab331d978a2254fb01eaec452adc42e684b1529b3efa171f2f3e0  0045-LOCAL-pvr-even-stride-for-one-row-buffer-copies-and-.patch
+6f141b0b3151e6f2d6b6eddc1065edddfd37a4eb9606dc11084ff1ac27478fbe746565c2c22bcc71f628b05eba814d27596183fb67eb06f182c7c3a13865e445  0046-LOCAL-pvr-float-ZLS-load-format-for-unloaded-integer.patch
+f145660bbc6fb26e2bac74136370572c0759805e41018e654bf3a26b851e968882c9ec0fa9dfd725c3ab088cac2733603b7cebbc67b79d13091783fa70701411  0047-LOCAL-pvr-PVR_NO_D24-1-hides-24-bit-depth-attachment.patch
+6c0293ce47fe0eaab283110a17d2e45b9586552e7011ba55a827a4f4a369786f842aee718303a820487f67f7a5f9b402ebb3e35cc4eeeb4a23e40590e1c387b1  0048-LOCAL-DEBUG-pvr-PVR_DUMP_RGN-dumps-region-headers-on.patch
+49a21cd55ae809483d87afd8305412adfe3f3d0ebb3f698253998491e2a1a89e619214b28d3844134bd6bb767fcaec2a6e148a0fc8b1ca683967003e29ac4412  0049-LOCAL-DEBUG-pvr-PVR_LOG_ALLOC-logs-images-and-memory.patch
+c410c417e5f3d6128f0fe5903a7c5576fc3b9866619f4ab96595287884f5a14fc4559f3bb4f0d89b9eeba5bd0bb9aa13ede85869411ad79baec622ba0172464d  0050-LOCAL-DEBUG-pvr-fix-PVR_LOG_ALLOC-image-size-field.patch
+ade3389e08cee70630e5e3b7c99a8b7ddd0ed51085a68a780bb001c606bd981aa9d6d48037700472590405ee3d60b9104d6bb379add283047bbde1711e2d3f71  0051-LOCAL-DEBUG-pvr-PVR_LOG_ALLOC-usage-is-64-bit.patch
+1a6399e30b57211e5bf17d8500731982847af1a16553cf86b6a1b2f0f1aedb24750ec7c0e4b775f4514ead7bfd19eff5434bda0ba96e200c92c949d44f37f27b  0052-LOCAL-DEBUG-pvr-PVR_LOG_TQ-logs-every-transfer-comma.patch
+693ee2eb30417d79f0159f8d4450dd269e6037d5772b948e33b4f6c5908908b62b9698e2a7d930e64183ebdc1206acfb5bdf5bebf21cd409f6ccdacc8dcbaa86  0053-LOCAL-DEBUG-pvr-PVR_LOG_TQ-also-logs-each-pass-s-con.patch
+f2dde440c315a568152d289b840e9a2ffc2c381737d305d2b970d25ab4bbfb5c73ec6b11f778f2f354af6a015ac7afd81ee98b34bf0d6e8e8d6a0015d8992dc2  0054-LOCAL-TEST-pvr-PVR_TQ_ABS-writes-absolute-transfer-s.patch
+32700f20badef0a366939c56151f0f906de634e12459d0e690ec72fd16f5a326367b1a3769da3c955ab3dbf3fb369e25a2174b70feb9b7cc2cc87993c5c089ea  0055-LOCAL-DEBUG-zink-ZINK_LOG_SWAPCHAIN-1-logs-kopper-sw.patch
+3923a246eda84eee5104d15b6383addf79e30bb418bb3067db289467dffeb35be0a70eb3e3cbccd9c863874f0599d3a6902f721fb9bbadd06be67e723c3a3781  0056-LOCAL-TEST-pvr-PVR_FREE_LIST_MB-sets-the-initial-glo.patch
 "

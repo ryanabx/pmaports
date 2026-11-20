@@ -1,0 +1,23 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Ryan Brue <ryanbrue.dev@gmail.com>
+Date: Mon, 9 Nov 2026 23:41:52 -0600
+Subject: [PATCH 50/56] LOCAL DEBUG: pvr: fix PVR_LOG_ALLOC image size field
+
+Assisted-by: LLM
+---
+ src/imagination/vulkan/pvr_image.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/src/imagination/vulkan/pvr_image.c b/src/imagination/vulkan/pvr_image.c
+index 96ebe237e9a..5c3d6404277 100644
+--- a/src/imagination/vulkan/pvr_image.c
++++ b/src/imagination/vulkan/pvr_image.c
+@@ -396,7 +396,7 @@ VkResult pvr_CreateImage(VkDevice _device,
+               image->vk.extent.depth, image->vk.format, image->vk.mip_levels,
+               image->vk.array_layers, image->vk.samples, image->vk.tiling,
+               image->memlayout, image->vk.usage,
+-              (uint64_t)image->size / 1024);
++              (uint64_t)image->total_size / 1024);
+    }
+ 
+    *pImage = pvr_image_to_handle(image);
