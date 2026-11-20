@@ -64,7 +64,7 @@
 maintainer="Ryan Brue <ryanbrue.dev@gmail.com>"
 pkgname=mesa
 pkgver=27.0.0_git20261120
-pkgrel=0
+pkgrel=1
 _commit="6ff9e9bf99326b479efc8042aa68cdb1af103d19"
 pkgdesc="Mesa DRI OpenGL library (amazon-suez PowerVR fork)"
 url="https://www.mesa3d.org"
@@ -147,7 +147,7 @@ source="mesa-$_commit.tar.gz::https://gitlab.freedesktop.org/mesa/mesa/-/archive
 	0020-PROTOTYPE-pvr-reuse-the-transfer-submit-scratch-per-.patch
 	0021-PROTOTYPE-pvr-keep-up-to-eight-emptied-suballocator-.patch
 	0022-PROTOTYPE-pvr-cache-render-targets-for-up-to-32-size.patch
-	0023-PROTOTYPE-pvr-only-32-bit-formats-take-the-linear-wi.patch
+	0023-PROTOTYPE-pvr-no-8-or-16-bit-formats-in-the-linear-w.patch
 	0024-PROTOTYPE-pvr-cache-the-SPM-end-of-tile-shader-too.patch
 	0025-PROTOTYPE-pvr-advertise-the-real-maxTexelBufferEleme.patch
 	0026-PROTOTYPE-pco-one-NaN-check-for-NaN-preserving-fmin-.patch
@@ -311,7 +311,7 @@ e7bd6d11b41ffed97aea44d967b6b5ed05f4e6640e5fb57091a216cbf5774cb5cd5bc0945875a1b6
 94231678bc6eb1a8d480253ec664f0872dec551dddbf92b0d858ac73fc3f1e90167e90c71cba6a2cc7cd0253cde9b8e7e143bb9cdb387adc0071b78c559e0f42  0020-PROTOTYPE-pvr-reuse-the-transfer-submit-scratch-per-.patch
 cb05d17a5b11b725bcf28fe3d9365d233f219306ad542ea6ffb8dd42caa7e0ef3c75fc8d273d5e32388ea15cbe36008b771a0fd4e3c52a49dfae2abdc46928e8  0021-PROTOTYPE-pvr-keep-up-to-eight-emptied-suballocator-.patch
 71bc1b19724540e99fb6ed47d367dff12f0ff1bcaa1393bb37f1b499da37fc894016ebebcd1b5deeeacf0ce111739ae7d00b43e2062426fd2db2f87e6b306d1c  0022-PROTOTYPE-pvr-cache-render-targets-for-up-to-32-size.patch
-221f557a0de98aaa5149e6a52a396dc5c0b0ec4879b83d3579ff0b180ca81ea5962ab54970bcc6c6deac202a4181e671d6e4874151d610ff4f882f088a2cab71  0023-PROTOTYPE-pvr-only-32-bit-formats-take-the-linear-wi.patch
+ef1aa82c3de53d831033d23540087166fe06525f1f465026053394ea8a6edebdb343db2ee1fe9e42a43f99a9620ec85c79e2cf108c6aca51c71a2ad08c8894de  0023-PROTOTYPE-pvr-no-8-or-16-bit-formats-in-the-linear-w.patch
 ed9ee50f158c42f9037d07bd147db737695e52269c15ee0a9530f800857f95becec8872d8c626cb50631dbba89d234f704e965ce6606d68de21e6e6f3db8591b  0024-PROTOTYPE-pvr-cache-the-SPM-end-of-tile-shader-too.patch
 ab1bfdf847ddcf1cdccb9c20ab2cc620ae1fd007613e63c04b87fd98c7842519c79819aa8f252c644d3744f902249fe9c2c3559e4722bc247e139d711b872d66  0025-PROTOTYPE-pvr-advertise-the-real-maxTexelBufferEleme.patch
 3d65b3308950db8d1d98b51809ca4e46fcf2e7a98277be87a5c2b285fc7fd74380cf99ba11a2fdbd8a2a8e42b4a8c21cd45207fb909a8be038441c5912cbed2c  0026-PROTOTYPE-pco-one-NaN-check-for-NaN-preserving-fmin-.patch
@@ -328,5 +328,5 @@ c3fd62e14a6278380c76ed9dba93fac1f480fbfeb5f41623d7a7b9cd8cdaf1aeb57b0abdecdb0333
 d399282295640bf7dba46cf362e3716029fd99eef3686876b3bf7d42c7405bc533995131e4bb225c6f077339e401682f29c097c48a16921380263bafc9030257  0037-LOCAL-pvr-a-zero-texture-for-null-sampled-images-no-.patch
 abecf937a32f887fd4ae1724793aeda58e1f059e8c94945faf7bab3ff6f80b792607924c4c58700d9bd92026ff49a986c5b5462fbbd0af15aba96ca4e5381467  0038-LOCAL-pvr-sample-2D-textures-as-2D-unless-sampler2DV.patch
 172e9a512bd9c3de9cda411e3be5686a18a9137e4409f03fb40c0b0a4269bfe5e126a5070f5ea934510d5e1857a11c52d080ac29eb67a6c338edd748e1d0ce7e  0039-PROTOTYPE-pvr-pipeline-cache-key-and-bypass-for-the-.patch
-9cf6a98e4832004ece6d2d3e6540bb48871b34286f3b97bcce8a8647759aab01e06d1183e24dd548f276357603fa80b3f9dde593ce87b3500389f461e33130cb  0040-PROTOTYPE-pvr-PVR_TWIDDLE_ALL-1-turns-the-linear-win.patch
+4d6e9b62a38be0aa9910314e2b3e54bbff1750d8ccb10629b1a9867cee11161096e2ffaf41b0121c1650f88a76b86bf5da8a13115445ac7e0d30f85c23521268  0040-PROTOTYPE-pvr-PVR_TWIDDLE_ALL-1-turns-the-linear-win.patch
 "

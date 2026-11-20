@@ -1,0 +1,50 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Ryan Brue <ryanbrue.dev@gmail.com>
+Date: Mon, 16 Nov 2026 13:31:47 -0600
+Subject: [PATCH 23/40] PROTOTYPE pvr: no 8- or 16-bit formats in the linear
+ window-size rule
+
+Local fix to the linear window-size rule, never to be sent (Imagination
+declines LLM-generated code in src/imagination).
+
+Linear R8 images sample wrong on a GX6250: Firefox uploads software-decoded
+video as three R8 planes, and with them linear the video showed at half size
+in the top-left quadrant with the rest clamped (or garbled). Exempting 1-byte
+formats fixed it, 2 of 2 runs each way. The same images sample right on a
+GE8300 (linear R8 1280x720 read back exactly), so the cause is the GX6250 or
+Firefox's upload path; not found.
+
+Keep 8- and 16-bit formats twiddled. An earlier version kept everything but
+32-bit formats twiddled; on the GE8300 (844 MiB) that padded mpv's
+RGBA16F/RGBA32F render targets to powers of two, 371 MiB of images for a
+720p file instead of 182 MiB, and its first run ran the system out of
+memory. 32-bit and wider formats take the rule (wider ones went linear
+without trouble on both GPUs before: RGBA32F in Firefox on the GX6250, every
+format on the GE8300 for weeks).
+
+Assisted-by: LLM
+---
+ src/imagination/vulkan/pvr_image.c | 10 ++++++++++
+ 1 file changed, 10 insertions(+)
+
+diff --git a/src/imagination/vulkan/pvr_image.c b/src/imagination/vulkan/pvr_image.c
+index f7614994fb0..5ef5cc12ac1 100644
+--- a/src/imagination/vulkan/pvr_image.c
++++ b/src/imagination/vulkan/pvr_image.c
+@@ -62,6 +62,16 @@ static bool pvr_image_twiddle_padding_is_wasteful(const struct pvr_image *image)
+        image->vk.array_layers > 1 || image->vk.samples > VK_SAMPLE_COUNT_1_BIT)
+       return false;
+ 
++   /* Not for 8- and 16-bit texels: a linear R8 image sampled wrong on a
++    * GX6250 (Firefox's software-decoded video planes came out at half size,
++    * the rest clamped); 16-bit is untested there. 32-bit and wider formats
++    * take the rule: window-sized RGBA8 and D24S8/D32 buffers, and the
++    * RGBA16F/RGBA32F render targets of renderers such as mpv's, which padded
++    * to powers of two doubled mpv's GPU memory on a 1 GiB GE8300.
++    */
++   if (vk_format_get_blocksize(image->vk.format) < 4)
++      return false;
++
+    return util_next_power_of_two64(w) * util_next_power_of_two64(h) * 4 >
+           w * h * 5;
+ }

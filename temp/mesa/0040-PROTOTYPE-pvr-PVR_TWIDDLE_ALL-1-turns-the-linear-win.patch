@@ -15,7 +15,7 @@ Assisted-by: LLM
  1 file changed, 5 insertions(+)
 
 diff --git a/src/imagination/vulkan/pvr_image.c b/src/imagination/vulkan/pvr_image.c
-index 4870ff3d4c5..90268de77c6 100644
+index 5ef5cc12ac1..dca27918eeb 100644
 --- a/src/imagination/vulkan/pvr_image.c
 +++ b/src/imagination/vulkan/pvr_image.c
 @@ -39,6 +39,7 @@
