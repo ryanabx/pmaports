@@ -1,0 +1,106 @@
+From aa12437d8b41695ca742d4d41a5539b8de282c67 Mon Sep 17 00:00:00 2001
+From: Ryan Brue <ryanbrue.dev@gmail.com>
+Date: Fri, 20 Nov 2026 02:10:23 -0600
+Subject: [PATCH] v4l2transform: Keep colorimetry and chroma-site between YUV
+ formats
+
+transform_caps drops colorimetry and chroma-site from the other side's
+caps, and fixate_caps only carries the format through, so a converter
+between two YUV formats (MediaTek's MDP after the decoder: MT21C to NV12)
+outputs caps without colorimetry and downstream assumes the default,
+BT.709 for HD sizes. BT.601 streams were then shown with the BT.709
+matrix.
+
+When input and output are both YUV, fixate the output's colorimetry and
+chroma-site to the input's: the kernel's mem2mem converters copy the
+colorspace from OUTPUT to CAPTURE (mtk-mdp does).
+
+Local for suez for now.
+---
+ sys/v4l2/gstv4l2transform.c | 63 +++++++++++++++++++++++++++++++++++++
+ 1 file changed, 63 insertions(+)
+
+diff --git a/sys/v4l2/gstv4l2transform.c b/sys/v4l2/gstv4l2transform.c
+index f8dc71399e..48eb73b70c 100644
+--- a/sys/v4l2/gstv4l2transform.c
++++ b/sys/v4l2/gstv4l2transform.c
+@@ -450,6 +450,67 @@ gst_v4l2_transform_transform_caps (GstBaseTransform * btrans,
+   return result;
+ }
+ 
++static gboolean
++gst_v4l2_transform_structure_is_yuv (const GstStructure * s)
++{
++  const gchar *format = gst_structure_get_string (s, "format");
++  GstVideoFormat vformat;
++
++  if (!format)
++    return FALSE;
++
++  if (g_str_equal (format, "DMA_DRM")) {
++    const gchar *drm_format = gst_structure_get_string (s, "drm-format");
++    guint32 fourcc;
++
++    if (!drm_format)
++      return FALSE;
++
++    fourcc = gst_video_dma_drm_fourcc_from_string (drm_format, NULL);
++    vformat = gst_video_dma_drm_fourcc_to_format (fourcc);
++  } else {
++    vformat = gst_video_format_from_string (format);
++  }
++
++  if (vformat == GST_VIDEO_FORMAT_UNKNOWN)
++    return FALSE;
++
++  return GST_VIDEO_FORMAT_INFO_IS_YUV (gst_video_format_get_info (vformat));
++}
++
++/* Between two YUV formats the converter keeps the matrix, range and transfer
++ * of its input (the kernel copies the colorspace from OUTPUT to CAPTURE), so
++ * pass colorimetry and chroma-site through instead of leaving them to the
++ * downstream default, which for HD sizes is BT.709 whatever the stream is. */
++static void
++gst_v4l2_transform_fixate_yuv_info (GstStructure * ins, GstStructure * outs)
++{
++  static const gchar *fields[] = { "colorimetry", "chroma-site" };
++  guint i;
++
++  if (!gst_v4l2_transform_structure_is_yuv (ins))
++    return;
++
++  if (gst_structure_has_field (outs, "format"))
++    gst_structure_fixate_field (outs, "format");
++  if (gst_structure_has_field (outs, "drm-format"))
++    gst_structure_fixate_field (outs, "drm-format");
++  if (!gst_v4l2_transform_structure_is_yuv (outs))
++    return;
++
++  for (i = 0; i < G_N_ELEMENTS (fields); i++) {
++    const gchar *value = gst_structure_get_string (ins, fields[i]);
++
++    if (!value)
++      continue;
++
++    if (!gst_structure_has_field (outs, fields[i]))
++      gst_structure_set (outs, fields[i], G_TYPE_STRING, value, NULL);
++    else
++      gst_structure_fixate_field_string (outs, fields[i], value);
++  }
++}
++
+ static GstCaps *
+ gst_v4l2_transform_fixate_caps (GstBaseTransform * trans,
+     GstPadDirection direction, GstCaps * caps, GstCaps * othercaps)
+@@ -480,6 +541,8 @@ gst_v4l2_transform_fixate_caps (GstBaseTransform * trans,
+ 
+   }
+ 
++  gst_v4l2_transform_fixate_yuv_info (ins, outs);
++
+   from_par = gst_structure_get_value (ins, "pixel-aspect-ratio");
+   to_par = gst_structure_get_value (outs, "pixel-aspect-ratio");
+ 
+-- 
+2.56.0
+
