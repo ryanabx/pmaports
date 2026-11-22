@@ -1,7 +1,7 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Ryan Brue <ryanbrue.dev@gmail.com>
 Date: Mon, 9 Nov 2026 23:33:25 -0600
-Subject: [PATCH 50/57] LOCAL DEBUG: pvr: PVR_LOG_ALLOC logs images and memory
+Subject: [PATCH 50/58] LOCAL DEBUG: pvr: PVR_LOG_ALLOC logs images and memory
  allocations
 
 Debug aid for amazon-sheldonp; never sent. To find what pins 165 MiB of

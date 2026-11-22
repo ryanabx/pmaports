@@ -1,7 +1,7 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Ryan Brue <ryanbrue.dev@gmail.com>
 Date: Mon, 9 Nov 2026 20:37:12 -0600
-Subject: [PATCH 49/57] LOCAL DEBUG: pvr: PVR_DUMP_RGN dumps region headers on
+Subject: [PATCH 49/58] LOCAL DEBUG: pvr: PVR_DUMP_RGN dumps region headers on
  teardown
 
 Debug aid for the format v1 bring-up on amazon-sheldonp; never sent.

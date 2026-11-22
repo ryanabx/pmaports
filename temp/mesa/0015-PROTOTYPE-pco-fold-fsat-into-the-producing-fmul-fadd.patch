@@ -1,7 +1,7 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Ryan Brue <ryanbrue.dev@gmail.com>
 Date: Wed, 4 Nov 2026 09:13:46 -0600
-Subject: [PATCH 15/57] PROTOTYPE pco: fold fsat into the producing
+Subject: [PATCH 15/58] PROTOTYPE pco: fold fsat into the producing
  fmul/fadd/fmad
 
 Local experiment for amazon-suez, never to be sent (Imagination declines

@@ -1,7 +1,7 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Ryan Brue <ryanbrue.dev@gmail.com>
 Date: Mon, 16 Nov 2026 13:31:47 -0600
-Subject: [PATCH 23/57] PROTOTYPE pvr: no 8- or 16-bit formats in the linear
+Subject: [PATCH 23/58] PROTOTYPE pvr: no 8- or 16-bit formats in the linear
  window-size rule
 
 Local fix to the linear window-size rule, never to be sent (Imagination

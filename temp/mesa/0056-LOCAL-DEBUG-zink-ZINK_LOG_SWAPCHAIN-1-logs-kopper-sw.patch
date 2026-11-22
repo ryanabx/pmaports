@@ -1,7 +1,7 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Ryan Brue <ryanbrue.dev@gmail.com>
 Date: Thu, 12 Nov 2026 01:10:52 -0600
-Subject: [PATCH 56/57] LOCAL DEBUG: zink: ZINK_LOG_SWAPCHAIN=1 logs kopper
+Subject: [PATCH 56/58] LOCAL DEBUG: zink: ZINK_LOG_SWAPCHAIN=1 logs kopper
  swapchains and prune stalls
 
 Generated-by: LLM

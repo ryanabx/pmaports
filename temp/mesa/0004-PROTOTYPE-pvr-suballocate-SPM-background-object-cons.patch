@@ -1,7 +1,7 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Ryan Brue <ryanbrue.dev@gmail.com>
 Date: Sat, 31 Oct 2026 01:19:00 -0500
-Subject: [PATCH 04/57] PROTOTYPE pvr: suballocate SPM background-object
+Subject: [PATCH 04/58] PROTOTYPE pvr: suballocate SPM background-object
  constants
 
 Local measurement prototype for amazon-suez, never to be sent. The

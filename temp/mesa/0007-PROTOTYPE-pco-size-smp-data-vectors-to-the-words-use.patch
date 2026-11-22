@@ -1,7 +1,7 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Ryan Brue <ryanbrue.dev@gmail.com>
 Date: Wed, 4 Nov 2026 06:24:51 -0600
-Subject: [PATCH 07/57] PROTOTYPE pco: size smp data vectors to the words used
+Subject: [PATCH 07/58] PROTOTYPE pco: size smp data vectors to the words used
 
 Local experiment for amazon-suez, never to be sent (Imagination declines
 LLM-generated code in src/imagination). From

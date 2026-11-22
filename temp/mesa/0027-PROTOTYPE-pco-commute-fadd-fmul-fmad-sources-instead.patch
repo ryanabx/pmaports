@@ -1,7 +1,7 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Ryan Brue <ryanbrue.dev@gmail.com>
 Date: Mon, 16 Nov 2026 20:32:31 -0600
-Subject: [PATCH 27/57] PROTOTYPE pco: commute fadd/fmul/fmad sources instead
+Subject: [PATCH 27/58] PROTOTYPE pco: commute fadd/fmul/fmad sources instead
  of copying a shared register
 
 Shared and coefficient registers can only be read through S0, S2 and S3.

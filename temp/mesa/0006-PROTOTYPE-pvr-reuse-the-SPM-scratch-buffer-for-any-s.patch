@@ -1,7 +1,7 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Ryan Brue <ryanbrue.dev@gmail.com>
 Date: Sat, 31 Oct 2026 01:59:10 -0500
-Subject: [PATCH 06/57] PROTOTYPE pvr: reuse the SPM scratch buffer for any
+Subject: [PATCH 06/58] PROTOTYPE pvr: reuse the SPM scratch buffer for any
  smaller render
 
 Local measurement prototype for amazon-suez, never to be sent. The device

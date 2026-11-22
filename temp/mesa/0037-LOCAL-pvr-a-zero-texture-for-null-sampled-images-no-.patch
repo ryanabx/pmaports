@@ -1,7 +1,7 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Ryan Brue <ryanbrue.dev@gmail.com>
 Date: Wed, 11 Nov 2026 20:51:24 -0600
-Subject: [PATCH 37/57] LOCAL: pvr: a zero texture for null sampled images, no
+Subject: [PATCH 37/58] LOCAL: pvr: a zero texture for null sampled images, no
  null check on texture sampling (PVR_NULL_TEX_CHECK=1 keeps it)
 
 Generated-by: LLM

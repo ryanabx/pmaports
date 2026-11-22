@@ -1,7 +1,7 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Ryan Brue <ryanbrue.dev@gmail.com>
 Date: Tue, 10 Nov 2026 21:25:37 -0600
-Subject: [PATCH 34/57] LOCAL: zink: free expired cached BOs once per frame
+Subject: [PATCH 34/58] LOCAL: zink: free expired cached BOs once per frame
 
 pb_cache only frees expired buffers when another buffer is added, so a
 client that stops freeing keeps its last freed buffers forever. On a

@@ -1,7 +1,7 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Ryan Brue <ryanbrue.dev@gmail.com>
 Date: Fri, 13 Nov 2026 19:33:48 -0600
-Subject: [PATCH 17/57] pvr: honour explicit DRM modifier plane layouts on
+Subject: [PATCH 17/58] pvr: honour explicit DRM modifier plane layouts on
  import
 
 Importing a dmabuf whose planes share one buffer (GStreamer's udmabuf

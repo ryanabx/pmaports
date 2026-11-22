@@ -1,0 +1,35 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Ryan Brue <ryanbrue.dev@gmail.com>
+Date: Sat, 21 Nov 2026 21:50:06 -0600
+Subject: [PATCH 58/58] LOCAL TEST: pvr: SUEZ_PVR_NO_RT_CACHE=1 bypasses the
+ render target cache
+
+Local experiment, not to be sent. After every s2idle resume on the
+amazon-sheldonp GE8300 one GPU context faults (fragment page fault in the
+general heap), and the context belongs to a long-lived client started at
+boot. The render target cache keeps HWRT datasets and free lists alive
+across vkCmdBeginRendering() while the firmware restarts across suspend.
+With SUEZ_PVR_NO_RT_CACHE set, every dynamic render keeps its own render
+targets, as without the cache, to test whether the cache is the cause.
+The default is unchanged.
+
+Assisted-by: LLM
+---
+ src/imagination/vulkan/pvr_device.c | 4 ++++
+ 1 file changed, 4 insertions(+)
+
+diff --git a/src/imagination/vulkan/pvr_device.c b/src/imagination/vulkan/pvr_device.c
+index cf35690d491..d78b3373cbc 100644
+--- a/src/imagination/vulkan/pvr_device.c
++++ b/src/imagination/vulkan/pvr_device.c
+@@ -197,6 +197,10 @@ pvr_device_get_cached_render_targets(struct pvr_device *device,
+       PVR_RENDER_TARGETS_PER_FRAMEBUFFER(&device->pdevice->dev_info);
+    struct pvr_render_target *render_targets = NULL;
+ 
++   /* NULL: the caller keeps its own render targets, as without the cache. */
++   if (getenv("SUEZ_PVR_NO_RT_CACHE"))
++      return NULL;
++
+    simple_mtx_lock(&device->rt_cache_mtx);
+ 
+    for (uint32_t i = 0; i < device->rt_cache_count; i++) {

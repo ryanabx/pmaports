@@ -1,7 +1,7 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Ryan Brue <ryanbrue.dev@gmail.com>
 Date: Tue, 17 Nov 2026 09:50:31 -0600
-Subject: [PATCH 29/57] PROTOTYPE pvr: pass raw single-channel transfer copies
+Subject: [PATCH 29/58] PROTOTYPE pvr: pass raw single-channel transfer copies
  through
 
 pvr_3d_copy_blit() turns a point-sampled same-format copy into a raw

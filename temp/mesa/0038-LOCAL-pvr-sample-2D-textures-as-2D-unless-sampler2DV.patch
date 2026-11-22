@@ -1,7 +1,7 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Ryan Brue <ryanbrue.dev@gmail.com>
 Date: Thu, 19 Nov 2026 22:00:21 -0600
-Subject: [PATCH 38/57] LOCAL: pvr: sample 2D textures as 2D unless
+Subject: [PATCH 38/58] LOCAL: pvr: sample 2D textures as 2D unless
  sampler2DViewOf3D is enabled
 
 The texture lowering turned every non-array 2D sample into a 3D one (a

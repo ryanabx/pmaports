@@ -1,7 +1,7 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Ryan Brue <ryanbrue.dev@gmail.com>
 Date: Thu, 19 Nov 2026 23:11:53 -0600
-Subject: [PATCH 48/57] LOCAL: pvr: copy odd-row-length image readbacks one row
+Subject: [PATCH 48/58] LOCAL: pvr: copy odd-row-length image readbacks one row
  at a time on format v1
 
 Local patch for the GE8300 (parameter format v1) on amazon-sheldonp; not to
