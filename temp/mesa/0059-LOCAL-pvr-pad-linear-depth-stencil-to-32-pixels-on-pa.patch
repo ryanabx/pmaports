@@ -1,0 +1,47 @@
+From 98c3620c99ed5f5f70add31d04b377af404e9aa5 Mon Sep 17 00:00:00 2001
+From: Ryan Brue <ryanbrue.dev@gmail.com>
+Date: Sun, 22 Nov 2026 03:02:36 -0600
+Subject: [PATCH] LOCAL: pvr: pad linear depth/stencil to 32 pixels on
+ parameter format v1
+
+The linear window-size rule pads a linear depth/stencil image to whole ZLS
+tiles from rogue_get_zls_tile_size_xy(), which is 16x16 on a GE8300
+(simple parameter format v1; 32x32 on format v2). On the Fire TV Stick
+every resume from s2idle was followed by a GPU context reset (guilty
+lockup, fragment page fault ending in ...240) while the session ran this
+stack, and none with PVR_TWIDDLE_ALL=1. A bisect of the shared stack
+put it on the linear rule; padding to 32, as the stick's earlier
+rule did, removed it (0 of 6 resumes, against 3 of 3).
+
+Assisted-by: LLM
+---
+ src/imagination/vulkan/pvr_image.c | 13 +++++++++++++
+ 1 file changed, 13 insertions(+)
+
+diff --git a/src/imagination/vulkan/pvr_image.c b/src/imagination/vulkan/pvr_image.c
+index b2c111558b2..b527d30f213 100644
+--- a/src/imagination/vulkan/pvr_image.c
++++ b/src/imagination/vulkan/pvr_image.c
+@@ -453,6 +453,19 @@ VkResult pvr_image_init(struct pvr_device *device,
+       rogue_get_zls_tile_size_xy(&device->pdevice->dev_info,
+                                  &zls_tile_x,
+                                  &zls_tile_y);
++      /* LOCAL: on simple parameter format v1 (GE8300) the helper gives the
++       * 16x16 tile, and padding to it is not enough: with 16, a GPU page
++       * fault followed every resume from suspend; with 32 (as the
++       * GE8300's own linear rule padded), none.
++       */
++      if (PVR_HAS_FEATURE(&device->pdevice->dev_info,
++                          simple_internal_parameter_format) &&
++          PVR_GET_FEATURE_VALUE(&device->pdevice->dev_info,
++                                simple_parameter_format_version,
++                                0) == 1) {
++         zls_tile_x = MAX2(zls_tile_x, 32);
++         zls_tile_y = MAX2(zls_tile_y, 32);
++      }
+       for (uint8_t i = 0; i < image->plane_count; i++) {
+          struct pvr_image_plane *plane = &image->planes[i];
+ 
+-- 
+2.56.0
+
