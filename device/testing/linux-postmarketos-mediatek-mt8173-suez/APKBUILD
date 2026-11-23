@@ -2,7 +2,7 @@
 maintainer="Ryan Brue <ryanbrue.dev@gmail.com>"
 pkgname=linux-postmarketos-mediatek-mt8173-suez
 pkgver=7.4.0_rc4
-pkgrel=0
+pkgrel=1
 pkgdesc="Mainline kernel fork for the Amazon Fire HD 10 (2017)"
 arch="aarch64"
 _carch="arm64"
@@ -104,7 +104,7 @@ _config="config-$_flavor.$arch"
 _author="ryanabx"
 _repository="linux"
 _branch="ryanabx/devices/amazon-suez"
-_commit="a0544b3231c8fd61d9fa133aeab52c940f50fa99"
+_commit="af9fdf5c1cdfe6b4761ebb183a4856f345646855"
 source="
 	$pkgname-$_commit.tar.gz::https://github.com/$_author/$_repository/archive/$_commit.tar.gz
 	$_config
@@ -144,6 +144,6 @@ package() {
 }
 
 sha512sums="
-fcf9a3244141c91adf6d24c9b3c9b85181f6251845e863342fe6028a0c69ad86701dbb185432fa6234189e38e36119ecc3b198572a2fd76b3aa21932e6ee2b3c  linux-postmarketos-mediatek-mt8173-suez-a0544b3231c8fd61d9fa133aeab52c940f50fa99.tar.gz
+284f81f26282c7620f5ce061bab34e1a5fc3c870f89a7337a5c372ed07f08c48c665109324e5ae37fcdd1948fde981b9c7977a17f8cd6fd84c5b29b346381952  linux-postmarketos-mediatek-mt8173-suez-af9fdf5c1cdfe6b4761ebb183a4856f345646855.tar.gz
 9f87b37b68b2d52b38a12bd45a97b1bc7acd5fa368cdc2ad59a96ad5bba7f5e55c19dded2690f12c827ec3928d9e812b9e35848312353ccc603641aaa0a85df5  config-postmarketos-mediatek-mt8173-suez.aarch64
 "
