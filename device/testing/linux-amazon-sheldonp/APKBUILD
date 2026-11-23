@@ -2,8 +2,8 @@
 # the sheldonp work repo (configs/mainline-arm{32,64}-bringup.config)
 maintainer="Ryan Brue <ryanbrue.dev@gmail.com>"
 pkgname=linux-amazon-sheldonp
-pkgver=7.4_rc3
-pkgrel=1
+pkgver=7.4_rc4
+pkgrel=0
 pkgdesc="Amazon Fire TV Stick 3rd Gen mainline kernel fork"
 arch="aarch64"
 _carch="arm64"
