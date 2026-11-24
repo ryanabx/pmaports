@@ -1,0 +1,187 @@
+From dc0c0213d4e5b5e356db38c4112d5747e6005ec3 Mon Sep 17 00:00:00 2001
+From: Ryan Brue <ryanbrue.dev@gmail.com>
+Date: Mon, 23 Nov 2026 14:14:08 -0600
+Subject: [PATCH 61/61] LOCAL DEBUG: zink: ZINK_MEM_REPORT=<seconds> prints the
+ screen's VkDeviceMemory
+
+Debug aid for amazon-sheldonp's memory accounting; never sent.
+ZINK_DEBUG=mem only prints its per-resource table when an allocation
+fails, and it counts resources, not the memory behind them. With
+ZINK_MEM_REPORT=N the screen counts its live VkDeviceMemory, how much of
+it backs slabs, how much the slab entries in use take, and reads how much
+sits idle in the BO cache, and prints one line to stderr at most every N
+seconds from end-of-frame flushes; with ZINK_DEBUG=mem also the table.
+Off by default (no counting).
+
+Generated-by: LLM
+---
+ src/gallium/drivers/zink/zink_bo.c      | 49 +++++++++++++++++++++++++
+ src/gallium/drivers/zink/zink_bo.h      |  8 ++++
+ src/gallium/drivers/zink/zink_context.c |  2 +
+ src/gallium/drivers/zink/zink_types.h   |  9 +++++
+ 4 files changed, 68 insertions(+)
+
+diff --git a/src/gallium/drivers/zink/zink_bo.c b/src/gallium/drivers/zink/zink_bo.c
+index fa5410b36bc..2d67818d79d 100644
+--- a/src/gallium/drivers/zink/zink_bo.c
++++ b/src/gallium/drivers/zink/zink_bo.c
+@@ -34,6 +34,11 @@
+ #include "zink_resource.h"
+ #include "zink_screen.h"
+ #include "util/u_hash_table.h"
++#include "util/os_time.h"
++#include "util/u_debug.h"
++#include "util/u_atomic.h"
++#include <inttypes.h>
++#include <unistd.h>
+ 
+ #ifdef HAVE_LIBDRM
+ #define ZINK_USE_DMABUF
+@@ -84,6 +89,44 @@ zink_slab(struct pb_slab *pslab)
+    return (struct zink_slab*)pslab;
+ }
+ 
++/* LOCAL DEBUG: ZINK_MEM_REPORT, see zink_bo.h. */
++DEBUG_GET_ONCE_NUM_OPTION(zink_mem_report, "ZINK_MEM_REPORT", 0)
++
++#define ZINK_MEM_REPORT_ADD(screen, what, size)                               \
++   do {                                                                       \
++      if (debug_get_option_zink_mem_report()) {                               \
++         p_atomic_add(&(screen)->mem_report.what##_bytes, (int64_t)(size));   \
++         p_atomic_add(&(screen)->mem_report.what##_count,                     \
++                      (int64_t)(size) > 0 ? 1 : -1);                          \
++      }                                                                       \
++   } while (0)
++
++void
++zink_mem_report(struct zink_screen *screen)
++{
++   const int64_t interval_s = debug_get_option_zink_mem_report();
++   const uint64_t now_ms = os_time_get_nano() / 1000000;
++   const uint64_t last_ms = p_atomic_read(&screen->mem_report.last_ms);
++
++   if (interval_s <= 0 || now_ms - last_ms < (uint64_t)interval_s * 1000 ||
++       p_atomic_cmpxchg(&screen->mem_report.last_ms, last_ms, now_ms) != last_ms)
++      return;
++
++   fprintf(stderr,
++           "zink-mem: pid %d screen %p: VkDeviceMemory %d/%" PRId64
++           " KiB; slab backing %d/%" PRId64 " KiB holding %d entries of %" PRId64
++           " KiB; idle in BO cache %" PRIu64 " KiB (cap %" PRIu64 " KiB)\n",
++           (int)getpid(), (void *)screen,
++           screen->mem_report.real_count, screen->mem_report.real_bytes / 1024,
++           screen->mem_report.slab_count, screen->mem_report.slab_bytes / 1024,
++           screen->mem_report.entry_count, screen->mem_report.entry_bytes / 1024,
++           screen->pb.bo_cache.cache_size / 1024,
++           screen->pb.bo_cache.max_cache_size / 1024);
++
++   if (zink_debug & ZINK_DEBUG_MEM)
++      zink_debug_mem_print_stats(screen);
++}
++
+ /* Return the power of two size of a slab entry matching the input size. */
+ static unsigned
+ get_slab_pot_entry_size(struct zink_screen *screen, unsigned size)
+@@ -150,6 +193,7 @@ bo_destroy(struct zink_screen *screen, struct zink_bo *bo)
+       zink_bo_unmap(screen, bo);
+    }
+ 
++   ZINK_MEM_REPORT_ADD(screen, real, -(int64_t)bo->base.size);
+    VKSCR(FreeMemory)(screen->dev, bo->mem, NULL);
+ 
+    simple_mtx_destroy(&bo->lock);
+@@ -186,6 +230,7 @@ bo_slab_free(struct zink_screen *screen, struct pb_slab *pslab)
+    ASSERTED unsigned slab_size = slab->buffer->base.size;
+ 
+    assert(slab->base.num_entries * slab->base.entry_size <= slab_size);
++   ZINK_MEM_REPORT_ADD(screen, slab, -(int64_t)slab->buffer->base.size);
+    FREE(slab->entries);
+    zink_bo_unref(screen, slab->buffer);
+    FREE(slab);
+@@ -199,6 +244,7 @@ bo_slab_destroy(struct zink_screen *screen, struct zink_bo *bo)
+    struct zink_clientptr_heap *clientptr_heap = bo->u.slab.real->u.real.clientptr_heap;
+    struct pb_slabs *slabs = clientptr_heap ? &clientptr_heap->slabs : &screen->pb.bo_slabs;
+ 
++   ZINK_MEM_REPORT_ADD(screen, entry, -(int64_t)bo->u.slab.entry.slab->entry_size);
+    pb_slab_free(slabs, &bo->u.slab.entry);
+    if (!p_atomic_read_relaxed(&screen->base.num_contexts))
+       pb_slabs_reclaim(slabs);
+@@ -340,6 +386,7 @@ bo_create_internal(struct zink_screen *screen,
+    pipe_reference_init(&bo->base.reference, 1);
+    bo->base.alignment_log2 = util_logbase2(alignment);
+    bo->base.size = mai.allocationSize;
++   ZINK_MEM_REPORT_ADD(screen, real, bo->base.size);
+    bo->type = ZINK_BO_REAL;
+    bo->base.placement = mem_type_idx;
+    bo->base.usage = flags;
+@@ -650,6 +697,7 @@ zink_bo_create(struct zink_screen *screen, uint64_t size, unsigned alignment, en
+          return NULL;
+ 
+       bo = container_of(entry, struct zink_bo, u.slab.entry);
++      ZINK_MEM_REPORT_ADD(screen, entry, entry->slab->entry_size);
+       assert(bo->base.placement == mem_type_idx);
+       pipe_reference_init(&bo->base.reference, 1);
+       bo->base.size = size;
+@@ -1377,6 +1425,7 @@ bo_slab_alloc(struct zink_screen *screen, unsigned mem_type_idx, unsigned entry_
+       goto fail;
+ 
+    slab_size = slab->buffer->base.size;
++   ZINK_MEM_REPORT_ADD(screen, slab, slab_size);
+ 
+    slab->base.num_entries = slab_size / entry_size;
+    slab->base.num_free = slab->base.num_entries;
+diff --git a/src/gallium/drivers/zink/zink_bo.h b/src/gallium/drivers/zink/zink_bo.h
+index 7d54f9ea72f..da1f6563f77 100644
+--- a/src/gallium/drivers/zink/zink_bo.h
++++ b/src/gallium/drivers/zink/zink_bo.h
+@@ -112,6 +112,14 @@ zink_mem_type_idx_from_types(struct zink_screen *screen, enum zink_heap heap, ui
+ bool
+ zink_bo_init(struct zink_screen *screen);
+ 
++/* LOCAL DEBUG: ZINK_MEM_REPORT=<seconds> prints the screen's VkDeviceMemory
++ * (how much of it is slab backing, how much the slab entries in use take,
++ * how much sits idle in the BO cache) to stderr at most once per interval,
++ * from end-of-frame flushes; with ZINK_DEBUG=mem also the per-resource table.
++ */
++void
++zink_mem_report(struct zink_screen *screen);
++
+ void
+ zink_bo_deinit(struct zink_screen *screen);
+ 
+diff --git a/src/gallium/drivers/zink/zink_context.c b/src/gallium/drivers/zink/zink_context.c
+index e4e4e5ae77f..1f0c8a8adf1 100644
+--- a/src/gallium/drivers/zink/zink_context.c
++++ b/src/gallium/drivers/zink/zink_context.c
+@@ -4845,6 +4845,8 @@ zink_flush(struct pipe_context *pctx,
+        * shrank keeps its old depth buffer cached until the next free
+        * otherwise, which may never come in an idle client. */
+       pb_cache_release_expired(&screen->pb.bo_cache);
++      /* LOCAL DEBUG: ZINK_MEM_REPORT. */
++      zink_mem_report(screen);
+    }
+ 
+    if (pfence) {
+diff --git a/src/gallium/drivers/zink/zink_types.h b/src/gallium/drivers/zink/zink_types.h
+index 48a734b25c3..76aff9a0e14 100644
+--- a/src/gallium/drivers/zink/zink_types.h
++++ b/src/gallium/drivers/zink/zink_types.h
+@@ -1633,6 +1633,15 @@ struct zink_screen {
+    struct hash_table *debug_mem_sizes;
+    simple_mtx_t debug_mem_lock;
+ 
++   /* LOCAL DEBUG: live totals for ZINK_MEM_REPORT=<seconds>, see
++    * zink_mem_report().
++    */
++   struct {
++      uint64_t last_ms;
++      int64_t real_bytes, slab_bytes, entry_bytes;
++      int32_t real_count, slab_count, entry_count;
++   } mem_report;
++
+    VkPhysicalDevice pdev;
+    uint32_t vk_version, spirv_version;
+    struct util_idalloc_mt buffer_ids;
+-- 
+2.56.1
+

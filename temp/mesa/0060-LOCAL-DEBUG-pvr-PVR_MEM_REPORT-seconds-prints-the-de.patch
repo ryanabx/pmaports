@@ -1,0 +1,319 @@
+From 3d93419448acc206b9ecb1ca86eb32718f7ba8c6 Mon Sep 17 00:00:00 2001
+From: Ryan Brue <ryanbrue.dev@gmail.com>
+Date: Mon, 23 Nov 2026 14:14:08 -0600
+Subject: [PATCH 60/61] LOCAL DEBUG: pvr: PVR_MEM_REPORT=<seconds> prints the
+ device's live GPU memory
+
+Debug aid for amazon-sheldonp's memory accounting; never sent. fdinfo
+gives one number per DRM file, and PVR_LOG_ALLOC logs allocations but no
+frees, so neither says what a process holds right now. With
+PVR_MEM_REPORT=N each device counts its live vkAllocateMemory (own and
+imported) and its own pvr_bo_alloc buffers by heap, and prints one line
+to stderr at most every N seconds from queue submission and at device
+destruction, with the SPM scratch buffer the store holds. Off by default
+(no counting).
+
+Generated-by: LLM
+---
+ src/imagination/vulkan/pvr_arch_queue.c      |   3 +
+ src/imagination/vulkan/pvr_bo.c              | 106 +++++++++++++++++++
+ src/imagination/vulkan/pvr_bo.h              |  12 +++
+ src/imagination/vulkan/pvr_device.c          |  10 ++
+ src/imagination/vulkan/pvr_device.h          |  13 +++
+ src/imagination/vulkan/pvr_physical_device.c |   6 ++
+ src/imagination/vulkan/pvr_spm.c             |  13 +++
+ src/imagination/vulkan/pvr_spm.h             |   3 +
+ 8 files changed, 166 insertions(+)
+
+diff --git a/src/imagination/vulkan/pvr_arch_queue.c b/src/imagination/vulkan/pvr_arch_queue.c
+index 6cfb1e3a50f..5fc1093f12b 100644
+--- a/src/imagination/vulkan/pvr_arch_queue.c
++++ b/src/imagination/vulkan/pvr_arch_queue.c
+@@ -1079,6 +1079,9 @@ static VkResult pvr_driver_queue_submit(struct vk_queue *queue,
+    struct pvr_device *device = driver_queue->device;
+    VkResult result;
+ 
++   /* LOCAL DEBUG: PVR_MEM_REPORT. */
++   pvr_mem_report(device, false);
++
+    result = pvr_clear_last_submits_syncs(driver_queue);
+    if (result != VK_SUCCESS)
+       return result;
+diff --git a/src/imagination/vulkan/pvr_bo.c b/src/imagination/vulkan/pvr_bo.c
+index b830b02addf..28891502030 100644
+--- a/src/imagination/vulkan/pvr_bo.c
++++ b/src/imagination/vulkan/pvr_bo.c
+@@ -43,6 +43,7 @@
+ #include "pvr_dump.h"
+ #include "pvr_macros.h"
+ #include "pvr_physical_device.h"
++#include "pvr_spm.h"
+ #include "pvr_types.h"
+ #include "pvr_util.h"
+ #include "pvr_winsys.h"
+@@ -52,6 +53,10 @@
+ #include "util/u_debug.h"
+ #include "vk_alloc.h"
+ #include "vk_log.h"
++#include "util/os_time.h"
++#include "util/u_atomic.h"
++#include <inttypes.h>
++#include <unistd.h>
+ 
+ struct pvr_bo_store {
+    struct rb_tree tree;
+@@ -321,6 +326,105 @@ static inline void pvr_bo_free_bo(const struct pvr_device *const device,
+    vk_free(&device->vk.alloc, ptr);
+ }
+ 
++/* LOCAL DEBUG: PVR_MEM_REPORT, see pvr_bo.h. */
++DEBUG_GET_ONCE_NUM_OPTION(pvr_mem_report, "PVR_MEM_REPORT", 0)
++
++static unsigned pvr_mem_report_bucket(const struct pvr_device *device,
++                                      const struct pvr_winsys_heap *heap)
++{
++   const struct pvr_winsys_heap *const heaps[] = {
++      device->heaps.general_heap,       device->heaps.pds_heap,
++      device->heaps.rgn_hdr_heap,       device->heaps.transfer_frag_heap,
++      device->heaps.usc_heap,           device->heaps.vis_test_heap,
++   };
++
++   for (unsigned i = 0; i < ARRAY_SIZE(heaps); i++) {
++      if (heap == heaps[i])
++         return i;
++   }
++
++   return ARRAY_SIZE(heaps);
++}
++
++void pvr_mem_report_bo(struct pvr_device *device,
++                       const struct pvr_winsys_heap *heap,
++                       int64_t size)
++{
++   if (!debug_get_option_pvr_mem_report())
++      return;
++
++   const unsigned b = pvr_mem_report_bucket(device, heap);
++
++   p_atomic_add(&device->mem_report.bo_bytes[b], size);
++   p_atomic_add(&device->mem_report.bo_count[b], size > 0 ? 1 : -1);
++}
++
++void pvr_mem_report_memory(struct pvr_device *device,
++                           bool imported,
++                           int64_t size)
++{
++   if (!debug_get_option_pvr_mem_report())
++      return;
++
++   p_atomic_add(&device->mem_report.mem_bytes[imported], size);
++   p_atomic_add(&device->mem_report.mem_count[imported], size > 0 ? 1 : -1);
++}
++
++void pvr_mem_report(struct pvr_device *device, bool force)
++{
++   static const char *const names[] = {
++      "general", "pds", "rgn_hdr", "transfer", "usc", "vis_test", "other",
++   };
++   const int64_t interval_s = debug_get_option_pvr_mem_report();
++   const uint64_t now_ms = os_time_get_nano() / 1000000;
++   const uint64_t last_ms = p_atomic_read(&device->mem_report.last_ms);
++   int64_t internal = 0;
++   char line[640];
++   int n;
++
++   if (interval_s <= 0)
++      return;
++
++   if (!force && (now_ms - last_ms < (uint64_t)interval_s * 1000 ||
++                  p_atomic_cmpxchg(&device->mem_report.last_ms,
++                                   last_ms,
++                                   now_ms) != last_ms)) {
++      return;
++   }
++
++   n = snprintf(line,
++                sizeof(line),
++                "pvr-mem: pid %d dev %p%s: memory %d/%" PRId64
++                " KiB, imported %d/%" PRId64 " KiB; internal",
++                (int)getpid(),
++                (void *)device,
++                force ? " (destroy)" : "",
++                device->mem_report.mem_count[0],
++                device->mem_report.mem_bytes[0] / 1024,
++                device->mem_report.mem_count[1],
++                device->mem_report.mem_bytes[1] / 1024);
++
++   for (unsigned i = 0; i < ARRAY_SIZE(names) && n < (int)sizeof(line); i++) {
++      internal += device->mem_report.bo_bytes[i];
++      n += snprintf(line + n,
++                    sizeof(line) - n,
++                    " %s %d/%" PRId64,
++                    names[i],
++                    device->mem_report.bo_count[i],
++                    device->mem_report.bo_bytes[i] / 1024);
++   }
++
++   if (n < (int)sizeof(line)) {
++      snprintf(line + n,
++               sizeof(line) - n,
++               " = %" PRId64 " KiB (of which SPM scratch %" PRIu64 " KiB)\n",
++               internal / 1024,
++               pvr_spm_scratch_buffer_store_size(device) / 1024);
++   }
++
++   fputs(line, stderr);
++}
++
+ /**
+  * \brief Helper interface to allocate a GPU buffer and map it to both host and
+  * device virtual memory. Host mapping is conditional and is controlled by
+@@ -382,6 +486,7 @@ VkResult pvr_bo_alloc(struct pvr_device *device,
+       goto err_heap_free;
+ 
+    pvr_bo_store_insert(device->bo_store, pvr_bo);
++   pvr_mem_report_bo(device, heap, (int64_t)pvr_bo->bo->size);
+    *pvr_bo_out = pvr_bo;
+ 
+    return VK_SUCCESS;
+@@ -480,6 +585,7 @@ void pvr_bo_free(struct pvr_device *device, struct pvr_bo *pvr_bo)
+ #endif /* defined(HAVE_VALGRIND) */
+ 
+    pvr_bo_store_remove(device->bo_store, pvr_bo);
++   pvr_mem_report_bo(device, pvr_bo->vma->heap, -(int64_t)pvr_bo->bo->size);
+ 
+    device->ws->ops->vma_unmap(pvr_bo->vma);
+    device->ws->ops->heap_free(pvr_bo->vma);
+diff --git a/src/imagination/vulkan/pvr_bo.h b/src/imagination/vulkan/pvr_bo.h
+index c88b9fa3c45..edc780a70a5 100644
+--- a/src/imagination/vulkan/pvr_bo.h
++++ b/src/imagination/vulkan/pvr_bo.h
+@@ -164,6 +164,18 @@ struct pvr_bo *pvr_bo_store_lookup(struct pvr_device *device,
+                                    pvr_dev_addr_t addr);
+ bool pvr_bo_store_dump(struct pvr_device *device);
+ 
++/* LOCAL DEBUG: PVR_MEM_REPORT=<seconds> prints this device's live GPU
++ * memory (vkAllocateMemory and the driver's own buffers by heap) to stderr at
++ * most once per interval, from queue submission and at device destruction.
++ */
++void pvr_mem_report_bo(struct pvr_device *device,
++                       const struct pvr_winsys_heap *heap,
++                       int64_t size);
++void pvr_mem_report_memory(struct pvr_device *device,
++                           bool imported,
++                           int64_t size);
++void pvr_mem_report(struct pvr_device *device, bool force);
++
+ void pvr_bo_list_dump(struct pvr_dump_ctx *ctx,
+                       const struct list_head *bo_list,
+                       uint32_t bo_size);
+diff --git a/src/imagination/vulkan/pvr_device.c b/src/imagination/vulkan/pvr_device.c
+index d78b3373cbc..00f3a898fa6 100644
+--- a/src/imagination/vulkan/pvr_device.c
++++ b/src/imagination/vulkan/pvr_device.c
+@@ -390,6 +390,12 @@ VkResult pvr_AllocateMemory(VkDevice _device,
+          goto err_vk_device_memory_destroy;
+    }
+ 
++   if (mem->bo) {
++      pvr_mem_report_memory(device,
++                            mem->vk.import_handle_type != 0,
++                            (int64_t)mem->bo->size);
++   }
++
+    *pMem = pvr_device_memory_to_handle(mem);
+ 
+    vk_device_memory_report_emit(&device->vk, VK_SUCCESS, /* is_alloc */ true,
+@@ -481,6 +487,10 @@ void pvr_FreeMemory(VkDevice _device,
+    if (mem->bo->map)
+       device->ws->ops->buffer_unmap(mem->bo, false);
+ 
++   pvr_mem_report_memory(device,
++                         mem->vk.import_handle_type != 0,
++                         -(int64_t)mem->bo->size);
++
+    device->ws->ops->buffer_destroy(mem->bo);
+ 
+    vk_device_memory_destroy(&device->vk, pAllocator, &mem->vk);
+diff --git a/src/imagination/vulkan/pvr_device.h b/src/imagination/vulkan/pvr_device.h
+index 66dab791fdd..732a22e5f9b 100644
+--- a/src/imagination/vulkan/pvr_device.h
++++ b/src/imagination/vulkan/pvr_device.h
+@@ -143,6 +143,19 @@ struct pvr_device {
+ 
+    struct pvr_bo_store *bo_store;
+ 
++   /* LOCAL DEBUG: live totals for PVR_MEM_REPORT=<seconds>, see
++    * pvr_mem_report(). Index 0-5 of the bo arrays are the device heaps in
++    * struct pvr_winsys_heaps order, 6 is anything else; memory index 1 is
++    * imported memory.
++    */
++   struct {
++      uint64_t last_ms;
++      int64_t bo_bytes[7];
++      int32_t bo_count[7];
++      int64_t mem_bytes[2];
++      int32_t mem_count[2];
++   } mem_report;
++
+    struct pvr_bo *robustness_buffer;
+ 
+    /* PROTOTYPE: zero-filled backing that null uniform/storage buffer
+diff --git a/src/imagination/vulkan/pvr_physical_device.c b/src/imagination/vulkan/pvr_physical_device.c
+index cc9c636814a..81d41bc293b 100644
+--- a/src/imagination/vulkan/pvr_physical_device.c
++++ b/src/imagination/vulkan/pvr_physical_device.c
+@@ -1479,6 +1479,12 @@ void pvr_DestroyDevice(VkDevice _device,
+ {
+    VK_FROM_HANDLE(pvr_device, device, _device);
+ 
++   if (!device)
++      return;
++
++   /* LOCAL DEBUG: PVR_MEM_REPORT. */
++   pvr_mem_report(device, true);
++
+    enum pvr_device_arch arch = device->pdevice->dev_info.ident.arch;
+    PVR_ARCH_DISPATCH(destroy_device, arch, device, pAllocator);
+ }
+diff --git a/src/imagination/vulkan/pvr_spm.c b/src/imagination/vulkan/pvr_spm.c
+index 706aa7516b1..e8859bbe4a1 100644
+--- a/src/imagination/vulkan/pvr_spm.c
++++ b/src/imagination/vulkan/pvr_spm.c
+@@ -166,6 +166,19 @@ static void pvr_spm_scratch_buffer_store_release_head_ref_locked(
+    store->head_ref = NULL;
+ }
+ 
++uint64_t pvr_spm_scratch_buffer_store_size(struct pvr_device *device)
++{
++   struct pvr_spm_scratch_buffer_store *store =
++      &device->spm_scratch_buffer_store;
++   uint64_t size;
++
++   simple_mtx_lock(&store->mtx);
++   size = store->head_ref ? store->head_ref->size : 0;
++   simple_mtx_unlock(&store->mtx);
++
++   return size;
++}
++
+ VkResult pvr_spm_scratch_buffer_get_buffer(
+    struct pvr_device *device,
+    uint64_t size,
+diff --git a/src/imagination/vulkan/pvr_spm.h b/src/imagination/vulkan/pvr_spm.h
+index 9ffa1210358..0b5a8a7cfde 100644
+--- a/src/imagination/vulkan/pvr_spm.h
++++ b/src/imagination/vulkan/pvr_spm.h
+@@ -90,6 +90,9 @@ VkResult pvr_spm_scratch_buffer_get_buffer(
+    struct pvr_device *device,
+    uint64_t size,
+    struct pvr_spm_scratch_buffer **const buffer_out);
++/* LOCAL DEBUG: size of the scratch buffer the store holds (PVR_MEM_REPORT). */
++uint64_t pvr_spm_scratch_buffer_store_size(struct pvr_device *device);
++
+ void pvr_spm_scratch_buffer_release(struct pvr_device *device,
+                                     struct pvr_spm_scratch_buffer *buffer);
+ 
+-- 
+2.56.1
+

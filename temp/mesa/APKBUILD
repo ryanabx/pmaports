@@ -15,7 +15,7 @@
 maintainer="Ryan Brue <ryanbrue.dev@gmail.com>"
 pkgname=mesa
 pkgver=27.0.0_git20261120
-pkgrel=4
+pkgrel=5
 _commit="6ff9e9bf99326b479efc8042aa68cdb1af103d19"
 pkgdesc="Mesa DRI OpenGL library (amazon-sheldonp PowerVR test build)"
 url="https://www.mesa3d.org"
@@ -135,6 +135,8 @@ source="mesa-$_commit.tar.gz::https://gitlab.freedesktop.org/mesa/mesa/-/archive
 	0057-LOCAL-TEST-pvr-PVR_FREE_LIST_MB-sets-the-initial-glo.patch
 	0058-LOCAL-TEST-pvr-SUEZ_PVR_NO_RT_CACHE-1-bypasses-the-r.patch
 	0059-LOCAL-pvr-pad-linear-depth-stencil-to-32-pixels-on-pa.patch
+	0060-LOCAL-DEBUG-pvr-PVR_MEM_REPORT-seconds-prints-the-de.patch
+	0061-LOCAL-DEBUG-zink-ZINK_MEM_REPORT-seconds-prints-the-.patch
 	"
 builddir="$srcdir/mesa-$_commit"
 options="!check"
@@ -318,4 +320,6 @@ d4cf3e04c2eb9d92e219352d5e6cbb4cca0baa31531b81f53fae42790343e10eae37ed5ead89c0da
 32b88fd1956055ba2c643c7e3aeb59dcd40c96bbc00e4eba43ee4c1b7ea2d47bd2df6bf8d843b602e020f78e7a927b2462943aef95ef3ace3a7cd20aaeca7459  0057-LOCAL-TEST-pvr-PVR_FREE_LIST_MB-sets-the-initial-glo.patch
 394180e72816ac82d59bdb2f200b948e9f4d2d0d299b3f5b85ae58efa4e9e1a679896b971f3ccac6777ddb6ac6ff5508fc402d6968c7e50e9ad63b78d102baa5  0058-LOCAL-TEST-pvr-SUEZ_PVR_NO_RT_CACHE-1-bypasses-the-r.patch
 6da0860d78a7d8caf63374b3839c6a0e3d8db34d958c58fa4738a1daadcfb5455a4d7f3946127773f9447ef76bb3b73d4a85e26ea04f60332fa52fcebcc30eaa  0059-LOCAL-pvr-pad-linear-depth-stencil-to-32-pixels-on-pa.patch
+766e5abaacae0dec1e227e69184ec3c1ef1fa7f2631eda362b13a0b65553bd4f00606e8c883d40da177926015d6bc45f7bbc62c703abadf5d0e643a957a52060  0060-LOCAL-DEBUG-pvr-PVR_MEM_REPORT-seconds-prints-the-de.patch
+6683493f2acece806089df3e78a1891b77cc476d70808f544ee34854bd6f2d57749f4869b58f8a6dbeddcb6c2153950d6cac3aa12575b3fec34863d0a9289bfb  0061-LOCAL-DEBUG-zink-ZINK_MEM_REPORT-seconds-prints-the-.patch
 "
